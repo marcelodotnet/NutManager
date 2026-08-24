@@ -62,14 +62,16 @@
         Kept deliberately weak — strong enough to close the page off at the sides, light enough that
         it reads as the same glass as everything else rather than as a drawn frame.
       -->
-      <LinearGradientBrush x:Key="NutContentVignetteLeftBrush" StartPoint="0%,0%" EndPoint="100%,0%">
-        <GradientStop Offset="0" Color="#40000000" />
-        <GradientStop Offset="0.5" Color="#1A000000" />
+      <LinearGradientBrush x:Key="NutContentVignetteTopBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#FF000000" />
+        <GradientStop Offset="0.35" Color="#A6000000" />
+        <GradientStop Offset="0.65" Color="#4D000000" />
         <GradientStop Offset="1" Color="#00000000" />
       </LinearGradientBrush>
-      <LinearGradientBrush x:Key="NutContentVignetteRightBrush" StartPoint="100%,0%" EndPoint="0%,0%">
-        <GradientStop Offset="0" Color="#40000000" />
-        <GradientStop Offset="0.5" Color="#1A000000" />
+      <LinearGradientBrush x:Key="NutContentVignetteBottomBrush" StartPoint="0%,100%" EndPoint="0%,0%">
+        <GradientStop Offset="0" Color="#FF000000" />
+        <GradientStop Offset="0.35" Color="#A6000000" />
+        <GradientStop Offset="0.65" Color="#4D000000" />
         <GradientStop Offset="1" Color="#00000000" />
       </LinearGradientBrush>
       <!--
@@ -140,14 +142,14 @@
       </LinearGradientBrush>
       <!-- Weaker in light: the same shade that reads as depth on a dark pane reads as dirt on a
            bright one, so the light theme takes about a third of the dark theme's alpha. -->
-      <LinearGradientBrush x:Key="NutContentVignetteLeftBrush" StartPoint="0%,0%" EndPoint="100%,0%">
-        <GradientStop Offset="0" Color="#1F000000" />
-        <GradientStop Offset="0.5" Color="#0C000000" />
+      <LinearGradientBrush x:Key="NutContentVignetteTopBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Offset="0" Color="#26000000" />
+        <GradientStop Offset="0.5" Color="#0F000000" />
         <GradientStop Offset="1" Color="#00000000" />
       </LinearGradientBrush>
-      <LinearGradientBrush x:Key="NutContentVignetteRightBrush" StartPoint="100%,0%" EndPoint="0%,0%">
-        <GradientStop Offset="0" Color="#1F000000" />
-        <GradientStop Offset="0.5" Color="#0C000000" />
+      <LinearGradientBrush x:Key="NutContentVignetteBottomBrush" StartPoint="0%,100%" EndPoint="0%,0%">
+        <GradientStop Offset="0" Color="#26000000" />
+        <GradientStop Offset="0.5" Color="#0F000000" />
         <GradientStop Offset="1" Color="#00000000" />
       </LinearGradientBrush>
       <!--

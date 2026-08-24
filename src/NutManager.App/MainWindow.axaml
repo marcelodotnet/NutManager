@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:viewModels="clr-namespace:NutManager.App.ViewModels"
         xmlns:controls="clr-namespace:NutManager.App.Presentation.Controls"
@@ -425,40 +425,23 @@
         </Border>
 
         <!--
-          The edge vignette. Two overlays, one per side, painted over the page and under the frosted
-          bands so the corners are frosted along with everything else.
+          The edge vignette. Two overlays, one along the top of the page and one along the bottom,
+          painted over it.
 
-          Purely visual: they take no pointer, add no layout and cover no content — the falloff is
-          narrower than the page's own horizontal padding, so it is gone before the first card
-          begins. The sidebar and the title bar are outside this panel and keep their own surfaces.
+          They sit where content passes out of view, so the page darkens into the header and into
+          the footer instead of ending at a cut. Purely visual: they take no pointer, add no layout
+          and reserve no space. The sidebar and the title bar are outside this panel and keep their
+          own surfaces.
         -->
-        <Border Width="{DynamicResource NutContentVignetteWidth}"
-                HorizontalAlignment="Left"
+        <Border Height="{DynamicResource NutContentVignetteHeight}"
+                VerticalAlignment="Top"
                 IsHitTestVisible="False"
-                Background="{DynamicResource NutContentVignetteLeftBrush}" />
-        <Border Width="{DynamicResource NutContentVignetteWidth}"
-                HorizontalAlignment="Right"
+                Background="{DynamicResource NutContentVignetteTopBrush}" />
+        <Border Height="{DynamicResource NutContentVignetteHeight}"
+                VerticalAlignment="Bottom"
                 IsHitTestVisible="False"
-                Background="{DynamicResource NutContentVignetteRightBrush}" />
+                Background="{DynamicResource NutContentVignetteBottomBrush}" />
 
-        <!--
-          The frosted bands: one below the title bar, one above the footer. Content travelling under
-          the chrome is blurred rather than tinted, so the bars read as glass resting on the page.
-
-          Two passes each, and that is the whole reason the blur is strong. The working surface is
-          only as tall as the band, so a single pass has almost no vertical neighbourhood to sample
-          and stops responding once the radius passes the band's own height — raising it from 34 to
-          90 changed nothing. Gaussian blurs compose, so a second pass over the first pass's own
-          output reaches roughly the square root of two further, and it costs one more snapshot
-          rather than a larger surface. Inflating the surface by the radius instead was tried and
-          produced no blur at all.
-
-          No tint: the glass is meant to be colourless, with only the blur marking it. No opacity
-          mask either, and one cannot be added — a mask makes Avalonia render the element into its
-          own layer, and the snapshot then captures that empty layer rather than the window.
-        -->
-        <controls:NutBackdropBlur Height="20" VerticalAlignment="Top" IsHitTestVisible="False" Radius="15" Tint="Transparent" />
-        <controls:NutBackdropBlur Height="20" VerticalAlignment="Bottom" IsHitTestVisible="False" Radius="15" Tint="Transparent" />
       </Panel>
 
       <controls:NutReviewDrawerHost Grid.Column="2"
