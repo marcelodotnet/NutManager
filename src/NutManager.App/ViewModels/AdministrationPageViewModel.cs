@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -2441,6 +2441,18 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
         }
 
         OnPropertyChanged(nameof(IsConfigurationFileListEmpty));
+
+        // The devices screen is filled before any configuration session exists, because the agent
+        // answers without one. The driver list read at that moment therefore found no transport and
+        // came back empty — not because ups.conf has no sections, but because nobody could open it.
+        // The session arriving is the first moment that question can be answered, so it is answered
+        // here rather than left waiting for the operator to press Refresh.
+        //
+        // The ports come from the inspection that already ran, so this costs no second agent call,
+        // and passing null when the list is not an answer keeps a configured port reading as unknown
+        // rather than as absent.
+        await LoadRemoteConfiguredDriversAsync(
+            IsComPortListKnown ? ComPorts : null, CancellationToken.None);
 
         if (preservesLoadedFile)
         {

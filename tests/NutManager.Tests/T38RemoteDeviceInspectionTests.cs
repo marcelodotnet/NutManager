@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using NutManager.App.Localization;
 using NutManager.App.Services;
@@ -690,6 +690,34 @@ public sealed class T38RemoteDeviceInspectionTests
             Assert.True(view.IndexOf(handler, StringComparison.Ordinal) > start);
         }
     }
+    [Fact]
+    public void AttachingTheConfigurationSessionRereadsTheConfiguredDrivers()
+    {
+        // A remote profile fills the devices screen before any configuration session exists, because
+        // the agent answers without one. The driver read at that point finds no transport and yields
+        // an empty list, and nothing re-runs it, so the drivers stay missing until the operator
+        // presses Refresh — which is the bug this guards.
+        //
+        // The guard is over source text rather than behaviour, and that is a limitation rather than a
+        // preference: the wiring is an async void handler on an event only its declaring class can
+        // raise, so no test can drive it without opening a seam in production code. What this catches
+        // is the call being deleted. It cannot catch it being called at the wrong moment.
+        var source = File.ReadAllText(Path.Combine(
+            RepositoryRoot(), "src", "NutManager.App", "ViewModels", "AdministrationPageViewModel.cs"));
+
+        var handler = source.IndexOf("private async void OnRemoteConfigurationContextChanged", StringComparison.Ordinal);
+        Assert.True(handler > 0, "The remote configuration context handler is gone or was renamed.");
+
+        var attach = source.IndexOf("_configurationPipeline = pipeline;", handler, StringComparison.Ordinal);
+        Assert.True(attach > handler, "The handler no longer attaches the pipeline.");
+
+        var reread = source.IndexOf("LoadRemoteConfiguredDriversAsync", attach, StringComparison.Ordinal);
+        Assert.True(
+            reread > attach,
+            "The handler attaches a configuration session without re-reading the configured drivers, " +
+            "so a remote profile shows no drivers until Refresh is pressed.");
+    }
+
     // ---------------------------------------------------------------- helpers
 
     private static NutManagerLocalizer Strings() => new(UiLanguagePreference.PtBr);
