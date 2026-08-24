@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
+﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Dark">
@@ -59,20 +59,25 @@
         The edge vignette down the two sides of the content area. A pane catches less light where it
         turns away from the viewer, and this is that, not a border: two gradients that start faint
         against the edge and are gone well before any content sits, so there is never a line to see.
-        Kept deliberately weak — strong enough to close the page off at the sides, light enough that
-        it reads as the same glass as everything else rather than as a drawn frame.
+        The colour is NutHeaderBrush, the same one the title bar and the footer are painted in, so
+        the page dissolves into the bar it is running under instead of darkening against it. Change
+        that brush and these have to follow: the effect only works while the two agree.
+
+        Every stop carries that same RGB and varies only in alpha. A gradient whose last stop is
+        transparent black interpolates towards black on the way there and dirties the middle of the
+        falloff, which is the one place the effect has to be invisible.
       -->
       <LinearGradientBrush x:Key="NutContentVignetteTopBrush" StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Offset="0" Color="#FF000000" />
-        <GradientStop Offset="0.35" Color="#A6000000" />
-        <GradientStop Offset="0.65" Color="#4D000000" />
-        <GradientStop Offset="1" Color="#00000000" />
+        <GradientStop Offset="0" Color="#FF0B111A" />
+        <GradientStop Offset="0.35" Color="#A60B111A" />
+        <GradientStop Offset="0.65" Color="#4D0B111A" />
+        <GradientStop Offset="1" Color="#000B111A" />
       </LinearGradientBrush>
       <LinearGradientBrush x:Key="NutContentVignetteBottomBrush" StartPoint="0%,100%" EndPoint="0%,0%">
-        <GradientStop Offset="0" Color="#FF000000" />
-        <GradientStop Offset="0.35" Color="#A6000000" />
-        <GradientStop Offset="0.65" Color="#4D000000" />
-        <GradientStop Offset="1" Color="#00000000" />
+        <GradientStop Offset="0" Color="#FF0B111A" />
+        <GradientStop Offset="0.35" Color="#A60B111A" />
+        <GradientStop Offset="0.65" Color="#4D0B111A" />
+        <GradientStop Offset="1" Color="#000B111A" />
       </LinearGradientBrush>
       <!--
         The same pane under the pointer, catching more light: a lighter, slightly less transparent
@@ -140,17 +145,20 @@
         <GradientStop Offset="0.45" Color="#3DFFFFFF" />
         <GradientStop Offset="1" Color="#00FFFFFF" />
       </LinearGradientBrush>
-      <!-- Weaker in light: the same shade that reads as depth on a dark pane reads as dirt on a
-           bright one, so the light theme takes about a third of the dark theme's alpha. -->
+      <!-- Light's header is white, so light's vignette fades to white. Same alpha ramp as dark:
+           this is no longer a shadow whose weight has to be tuned per theme, it is the bar's own
+           colour reaching a little way into the page. -->
       <LinearGradientBrush x:Key="NutContentVignetteTopBrush" StartPoint="0%,0%" EndPoint="0%,100%">
-        <GradientStop Offset="0" Color="#26000000" />
-        <GradientStop Offset="0.5" Color="#0F000000" />
-        <GradientStop Offset="1" Color="#00000000" />
+        <GradientStop Offset="0" Color="#FFFFFFFF" />
+        <GradientStop Offset="0.35" Color="#A6FFFFFF" />
+        <GradientStop Offset="0.65" Color="#4DFFFFFF" />
+        <GradientStop Offset="1" Color="#00FFFFFF" />
       </LinearGradientBrush>
       <LinearGradientBrush x:Key="NutContentVignetteBottomBrush" StartPoint="0%,100%" EndPoint="0%,0%">
-        <GradientStop Offset="0" Color="#26000000" />
-        <GradientStop Offset="0.5" Color="#0F000000" />
-        <GradientStop Offset="1" Color="#00000000" />
+        <GradientStop Offset="0" Color="#FFFFFFFF" />
+        <GradientStop Offset="0.35" Color="#A6FFFFFF" />
+        <GradientStop Offset="0.65" Color="#4DFFFFFF" />
+        <GradientStop Offset="1" Color="#00FFFFFF" />
       </LinearGradientBrush>
       <!--
         Light glass brightens towards opaque white, but its edge cannot: white on near-white is not

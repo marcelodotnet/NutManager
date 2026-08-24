@@ -428,11 +428,32 @@
           The edge vignette. Two overlays, one along the top of the page and one along the bottom,
           painted over it.
 
-          They sit where content passes out of view, so the page darkens into the header and into
+          They sit where content passes out of view, so the page dissolves into the header and into
           the footer instead of ending at a cut. Purely visual: they take no pointer, add no layout
           and reserve no space. The sidebar and the title bar are outside this panel and keep their
           own surfaces.
+
+          Each end is two passes. The frost reads the surface underneath and blurs it, thinning out
+          across the band; the gradient then tints what the frost left, in the bar's own colour. The
+          order matters and is the order of the real material: blur the backdrop, then colour it.
+
+          The two ends are kept identical. They do not meet identical ground — above the first card
+          there is empty space for content to dissolve into, while at the bottom the card runs to the
+          edge of the viewport and the frost lands on rows of text — but matching them is deliberate,
+          and the radius is low enough that only the last row is touched.
         -->
+        <controls:NutBackdropBlur Height="{DynamicResource NutContentFrostHeight}"
+                                  VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  Radius="36"
+                                  Tint="Transparent"
+                                  FadeTowards="Bottom" />
+        <controls:NutBackdropBlur Height="{DynamicResource NutContentFrostHeight}"
+                                  VerticalAlignment="Bottom"
+                                  IsHitTestVisible="False"
+                                  Radius="36"
+                                  Tint="Transparent"
+                                  FadeTowards="Top" />
         <Border Height="{DynamicResource NutContentVignetteHeight}"
                 VerticalAlignment="Top"
                 IsHitTestVisible="False"
