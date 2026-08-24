@@ -30,6 +30,10 @@
 
   <x:Double x:Key="NutReviewDrawerWidth">368</x:Double>
   <GridLength x:Key="NutFooterHeight">30</GridLength>
+  <!-- How far the edge vignette reaches in from each side of the content area. Wide enough to be a
+       falloff rather than a line, and wide enough to reach the first card: confined to the page's
+       own padding it lands only on empty background and is invisible. -->
+  <x:Double x:Key="NutContentVignetteWidth">72</x:Double>
   <Thickness x:Key="NutPagePadding">28</Thickness>
   <Thickness x:Key="NutCardPadding">18</Thickness>
   <Thickness x:Key="NutCardPaddingCompact">14</Thickness>

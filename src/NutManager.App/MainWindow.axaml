@@ -425,6 +425,23 @@
         </Border>
 
         <!--
+          The edge vignette. Two overlays, one per side, painted over the page and under the frosted
+          bands so the corners are frosted along with everything else.
+
+          Purely visual: they take no pointer, add no layout and cover no content — the falloff is
+          narrower than the page's own horizontal padding, so it is gone before the first card
+          begins. The sidebar and the title bar are outside this panel and keep their own surfaces.
+        -->
+        <Border Width="{DynamicResource NutContentVignetteWidth}"
+                HorizontalAlignment="Left"
+                IsHitTestVisible="False"
+                Background="{DynamicResource NutContentVignetteLeftBrush}" />
+        <Border Width="{DynamicResource NutContentVignetteWidth}"
+                HorizontalAlignment="Right"
+                IsHitTestVisible="False"
+                Background="{DynamicResource NutContentVignetteRightBrush}" />
+
+        <!--
           The frosted bands: one below the title bar, one above the footer. Content travelling under
           the chrome is blurred rather than tinted, so the bars read as glass resting on the page.
 
