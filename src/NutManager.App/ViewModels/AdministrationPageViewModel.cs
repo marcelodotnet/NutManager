@@ -309,6 +309,18 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     [ObservableProperty]
     private bool _isComPortListKnown;
 
+    /// <summary>
+    /// Whether anything has actually read <c>ups.conf</c>. False before the first reading, and false
+    /// whenever the file could not be opened at all — a remote profile whose configuration session
+    /// has not been established yet has no transport to read it with.
+    ///
+    /// An empty list means one of two unrelated things, and the screen has to tell them apart: a file
+    /// that was read and declares no drivers, or a file nobody has opened. Without this the second is
+    /// reported as the first, which states something about a file the application has never seen.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isConfiguredDriverListKnown;
+
     [ObservableProperty]
     private IReadOnlyList<NutConfiguredDriver> _configuredDrivers = Array.Empty<NutConfiguredDriver>();
 
@@ -624,7 +636,12 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
 
     public bool IsDriverDiagnosticsAvailable => _driverDiagnostics is not null;
     public bool HasConfiguredDrivers => ConfiguredDrivers.Count > 0;
-    public bool HasNoConfiguredDrivers => !HasConfiguredDrivers;
+
+    /// <summary>Read, and it declares none. Only this may be stated as a fact about the file.</summary>
+    public bool HasNoConfiguredDrivers => IsConfiguredDriverListKnown && !HasConfiguredDrivers;
+
+    /// <summary>Nobody has read it. Distinct from the file being empty, and never presented as it.</summary>
+    public bool IsConfiguredDriverListUnknown => !IsConfiguredDriverListKnown;
     public bool HasSelectedConfiguredDriver => SelectedConfiguredDriver is not null;
 
     /// <summary>
@@ -1199,8 +1216,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
 
             DeviceInspectionSource = NutDeviceInspectionSource.Local;
             ApplyComPorts(snapshot.ComPorts, snapshot.IsPlatformSupported);
-            ConfiguredDrivers = snapshot.ConfiguredDrivers;
-            SelectedConfiguredDriver = snapshot.ConfiguredDrivers.Count == 1 ? snapshot.ConfiguredDrivers[0] : null;
+            ApplyConfiguredDrivers(snapshot.ConfiguredDrivers, known: true);
             UpsdrvctlPath = snapshot.UpsdrvctlPath;
             _upsConfFingerprint = snapshot.UpsConfFingerprint;
             DriverDiagnosticStatusMessage = snapshot.DiagnosticMessage;
@@ -1310,24 +1326,23 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
         var upsConf = ConfigurationFiles.FirstOrDefault(file => file.FileKind == NutConfigurationFileKind.UpsConf);
         if (_configurationPipeline is null || upsConf is not { IsManaged: true, FullPath: { } path })
         {
-            // No remote session, or the profile does not manage ups.conf. Either way there is nothing
-            // to report, and inventing an empty driver list would look like a file with no sections.
-            ConfiguredDrivers = Array.Empty<NutConfiguredDriver>();
-            SelectedConfiguredDriver = null;
+            // No remote session, or the profile does not manage ups.conf. Nothing opened the file, so
+            // nothing may be said about its contents — reporting an empty list here would describe a
+            // file with no sections, which is a different thing and may well be false.
+            ApplyConfiguredDrivers(Array.Empty<NutConfiguredDriver>(), known: false);
             return;
         }
 
         var load = await _configurationPipeline.LoadAsync(path, NutConfigurationFileKind.UpsConf, cancellationToken);
         if (load.Status != NutConfigurationLoadStatus.Success || load.Snapshot is null)
         {
-            ConfiguredDrivers = Array.Empty<NutConfiguredDriver>();
-            SelectedConfiguredDriver = null;
+            // Reached for and refused. Still not an answer about what the file contains.
+            ApplyConfiguredDrivers(Array.Empty<NutConfiguredDriver>(), known: false);
             return;
         }
 
         var drivers = NutRemoteConfiguredDriverReader.Read(load.Snapshot.Document, detectedPorts);
-        ConfiguredDrivers = drivers;
-        SelectedConfiguredDriver = drivers.Count == 1 ? drivers[0] : null;
+        ApplyConfiguredDrivers(drivers, known: true);
     }
 
     /// <summary>
@@ -1339,8 +1354,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     {
         DeviceInspectionSource = NutDeviceInspectionSource.Unavailable;
         ApplyComPorts(Array.Empty<NutComPortInfo>(), known: false);
-        ConfiguredDrivers = Array.Empty<NutConfiguredDriver>();
-        SelectedConfiguredDriver = null;
+        ApplyConfiguredDrivers(Array.Empty<NutConfiguredDriver>(), known: false);
         DriverDiagnosticStatusMessage = message;
     }
 
@@ -1349,6 +1363,18 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     {
         ComPorts = ports;
         IsComPortListKnown = known;
+    }
+
+    /// <summary>
+    /// The same for the configured drivers: one list, and whether anyone actually read the file it
+    /// claims to describe. Published together for the same reason — set apart, the two drift, and an
+    /// unread file starts reporting itself as an empty one.
+    /// </summary>
+    private void ApplyConfiguredDrivers(IReadOnlyList<NutConfiguredDriver> drivers, bool known)
+    {
+        ConfiguredDrivers = drivers;
+        IsConfiguredDriverListKnown = known;
+        SelectedConfiguredDriver = drivers.Count == 1 ? drivers[0] : null;
     }
 
     public void PrepareDriverDiagnostic(NutDriverDiagnosticKind kind)
@@ -1741,8 +1767,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     private void ClearDriverDiagnostics()
     {
         ApplyComPorts(Array.Empty<NutComPortInfo>(), known: false);
-        ConfiguredDrivers = Array.Empty<NutConfiguredDriver>();
-        SelectedConfiguredDriver = null;
+        ApplyConfiguredDrivers(Array.Empty<NutConfiguredDriver>(), known: false);
         UpsdrvctlPath = null;
         _upsConfFingerprint = null;
         DriverDiagnosticResult = null;
@@ -2290,6 +2315,12 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
         OnPropertyChanged(nameof(IsSelectedDriverPortPresent));
         OnPropertyChanged(nameof(HasSelectedDriverPortState));
         OnPropertyChanged(nameof(SelectedDriverPortStateText));
+    }
+
+    partial void OnIsConfiguredDriverListKnownChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasNoConfiguredDrivers));
+        OnPropertyChanged(nameof(IsConfiguredDriverListUnknown));
     }
 
     partial void OnConfiguredDriversChanged(IReadOnlyList<NutConfiguredDriver> value)

@@ -580,6 +580,47 @@ public sealed class T38RemoteDeviceInspectionTests
         Assert.Equal("COM4", Assert.Single(viewModel.ComPorts).PortName);
     }
 
+    [Fact]
+    public async Task AnUnreadUpsConfIsNotReportedAsAUpsConfWithNoDrivers()
+    {
+        // A remote profile reaches this state on every start: the agent answers about hardware without
+        // a configuration session, so the ports are known long before anything can open ups.conf.
+        // An empty driver list here means nobody looked, and saying "no configured driver was found in
+        // ups.conf" would assert something about a file the application has never opened.
+        var client = new StubAgentClient { Ports = [Port("COM4")] };
+        var viewModel = CreateRemoteViewModel(client);
+
+        await viewModel.InitializeAsync();
+
+        Assert.True(viewModel.IsComPortListKnown);
+        Assert.Empty(viewModel.ConfiguredDrivers);
+        Assert.False(viewModel.IsConfiguredDriverListKnown);
+        Assert.True(viewModel.IsConfiguredDriverListUnknown);
+
+        // The claim about the file's contents stays hidden while it is unread.
+        Assert.False(viewModel.HasNoConfiguredDrivers);
+    }
+
+    [Fact]
+    public async Task AUpsConfThatWasReadReportsItsContentsAsKnown()
+    {
+        // The other side of the same flag: read the file and the list becomes an answer, whether or
+        // not it found anything. Without this the flag could sit false forever and the screen would
+        // never state what it does know.
+        var client = new StubAgentClient { Ports = [Port("COM4")] };
+        var empty = new StubPipeline("/etc/nut/ups.conf", "# ups.conf with no driver sections");
+        var viewModel = CreateRemoteViewModel(client, empty);
+
+        await viewModel.InitializeAsync();
+
+        Assert.True(viewModel.IsConfiguredDriverListKnown);
+        Assert.Empty(viewModel.ConfiguredDrivers);
+
+        // Read, and it genuinely declares none: now the message may be shown.
+        Assert.True(viewModel.HasNoConfiguredDrivers);
+        Assert.False(viewModel.IsConfiguredDriverListUnknown);
+    }
+
     // ---------------------------------------------------------------- source boundaries
 
     [Fact]

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="App.Name" xml:space="preserve"><value>NUT Manager</value></data>
   <data name="Nav.Overview" xml:space="preserve"><value>Overview</value></data><data name="Nav.Devices" xml:space="preserve"><value>Devices</value></data><data name="Nav.Administration" xml:space="preserve"><value>Administration</value></data><data name="Nav.Diagnostics" xml:space="preserve"><value>Diagnostics</value></data><data name="Nav.Settings" xml:space="preserve"><value>Settings</value></data>
@@ -194,6 +194,7 @@
   <data name="Administration.Drivers.Configured" xml:space="preserve"><value>Configured devices</value></data>
   <data name="Administration.Drivers.PassiveNotice" xml:space="preserve"><value>Enumeration is passive; no COM port is opened.</value></data>
   <data name="Administration.Drivers.NoConfigured" xml:space="preserve"><value>No configured driver was found in ups.conf.</value></data>
+  <data name="Administration.Drivers.ConfiguredUnknown" xml:space="preserve"><value>ups.conf has not been read yet. The list appears once the configuration session is established.</value></data>
   <data name="Administration.Drivers.Driver" xml:space="preserve"><value>Driver</value></data>
   <data name="Administration.Drivers.Port" xml:space="preserve"><value>Port</value></data>
   <data name="Administration.Drivers.Protocol" xml:space="preserve"><value>Protocol</value></data>

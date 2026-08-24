@@ -41,7 +41,14 @@
                     Command="{Binding RefreshDeviceInspectionCommand}"
                     IsEnabled="{Binding CanRefreshDeviceInspection}" />
           </Grid>
+          <!--
+            Two statements, never interchangeable. The first says the file was read and declares no
+            drivers; the second says nobody has read it. A remote profile sits in the second state
+            until its configuration session is established, and reporting that as an empty ups.conf
+            would assert something about a file the application has not opened.
+          -->
           <TextBlock Text="{Binding Strings[Administration.Drivers.NoConfigured]}" IsVisible="{Binding HasNoConfiguredDrivers}" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding Strings[Administration.Drivers.ConfiguredUnknown]}" IsVisible="{Binding IsConfiguredDriverListUnknown}" Classes="nut-metadata" TextWrapping="Wrap" />
           <ListBox ItemsSource="{Binding ConfiguredDrivers}" SelectedItem="{Binding SelectedConfiguredDriver, Mode=TwoWay}" IsEnabled="{Binding CanSelectConfiguredDriver}" IsVisible="{Binding HasConfiguredDrivers}">
             <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="6,4"><TextBlock Text="{Binding UpsName}" FontWeight="SemiBold" /><TextBlock Text="{Binding Description}" Classes="nut-metadata" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
           </ListBox>
