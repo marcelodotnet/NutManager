@@ -43,11 +43,15 @@ internal static class NutAgentBootstrap
     {
         var authorization = new WindowsGroupAuthorization();
         var audit = new WindowsEventLogAuditSink();
+        // The hardware inspector is supplied here, and supplying it is what makes the agent
+        // advertise the capability: an installation assembled without one reports the operation as
+        // absent rather than refusing it at call time.
         var service = new NutAgentApplicationService(
             new WindowsNutServiceTargetResolver(),
             new WindowsNutAgentServiceController(),
             audit,
-            authorization);
+            authorization,
+            hardwareInspector: new WindowsNutAgentHardwareInspector());
 
         return new NutAgentComposition(service, new NutAgentRequestDispatcher(service), authorization, audit);
     }

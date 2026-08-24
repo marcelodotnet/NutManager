@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:viewModels="clr-namespace:NutManager.App.ViewModels"
         xmlns:controls="clr-namespace:NutManager.App.Presentation.Controls"
@@ -87,6 +87,7 @@
 
     <!-- ==================== Integrated title bar ==================== -->
     <Border Grid.Row="0"
+            ZIndex="1"
             Classes="nut-titlebar"
             Padding="14,0,8,0"
             PointerPressed="TitleBar_OnPointerPressed"
@@ -360,7 +361,12 @@
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
                     </ScrollViewer>
+                    <!--
+                      The same right gutter the cards take, so the button ends where they end. The
+                      surface pads only 2px on that side, and the 8px belongs to the scroll bar.
+                    -->
                     <Button Grid.Row="2"
+                            Margin="0,0,8,0"
                             Classes="nut-profile-manage"
                             Content="{Binding ManageProfilesText}"
                             Click="ManageProfiles_OnClick"
@@ -377,13 +383,87 @@
         </Grid>
       </Border>
 
-      <Border Grid.Column="1"
-              Padding="{Binding ContentPadding}"
-              Background="{DynamicResource NutWindowBrush}"
-              ClipToBounds="True"
-              IsEnabled="{Binding IsBackgroundInteractionEnabled}">
-        <ContentControl Content="{Binding CurrentPage}" />
-      </Border>
+      <!--
+        The tint and the content are separate layers on purpose. The tint stops at the row it belongs
+        to, while the content reaches past it under the bars, and one border could not do both.
+      -->
+      <Panel Grid.Column="1">
+        <Border Background="{DynamicResource NutWindowBrush}" />
+        <!--
+          Reaches under the title bar and the footer so a page scrolls beneath the chrome instead of
+          being cut off against it. The numbers are NutHeaderHeight and NutFooterHeight negated.
+
+          The padding here is horizontal only, and that is the whole trick: this padding sits inside
+          this border, so a vertical value would push the scroll viewport back down by exactly what
+          the margin lifted it and the content would never reach the bars at all. The vertical inset
+          belongs inside the page's own scroll viewer, where it scrolls away with the content.
+
+          The mask below fades content into the bars as it arrives, so the chrome reads as glass
+          over the page rather than a lid on it.
+        -->
+        <Border Margin="0,-64,0,-30"
+                Padding="{Binding ContentPadding}"
+                ClipToBounds="True"
+                IsEnabled="{Binding IsBackgroundInteractionEnabled}">
+          <!--
+            Content dissolves as it travels under the bars rather than simply disappearing behind
+            them, which is what makes the chrome read as glass over the page instead of a lid on it.
+
+            The bands are a share of the height rather than pixel counts, sized to sit roughly over
+            the title bar and the footer: the mask is opaque again just below each one, so a page at
+            rest is never dimmed and only content that has actually reached a bar is faded.
+          -->
+          <Border.OpacityMask>
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+              <GradientStop Offset="0" Color="#00000000" />
+              <GradientStop Offset="0.06" Color="#FF000000" />
+              <GradientStop Offset="0.97" Color="#FF000000" />
+              <GradientStop Offset="1" Color="#00000000" />
+            </LinearGradientBrush>
+          </Border.OpacityMask>
+          <ContentControl Content="{Binding CurrentPage}" />
+        </Border>
+
+        <!--
+          The edge vignette. Two overlays, one along the top of the page and one along the bottom,
+          painted over it.
+
+          They sit where content passes out of view, so the page dissolves into the header and into
+          the footer instead of ending at a cut. Purely visual: they take no pointer, add no layout
+          and reserve no space. The sidebar and the title bar are outside this panel and keep their
+          own surfaces.
+
+          Each end is two passes. The frost reads the surface underneath and blurs it, thinning out
+          across the band; the gradient then tints what the frost left, in the bar's own colour. The
+          order matters and is the order of the real material: blur the backdrop, then colour it.
+
+          The two ends are kept identical. They do not meet identical ground — above the first card
+          there is empty space for content to dissolve into, while at the bottom the card runs to the
+          edge of the viewport and the frost lands on rows of text — but matching them is deliberate,
+          and the radius is low enough that only the last row is touched.
+        -->
+        <controls:NutBackdropBlur Height="{DynamicResource NutContentFrostHeight}"
+                                  VerticalAlignment="Top"
+                                  IsHitTestVisible="False"
+                                  Radius="36"
+                                  Tint="Transparent"
+                                  FadeTowards="Bottom" />
+        <controls:NutBackdropBlur Height="{DynamicResource NutContentFrostHeight}"
+                                  VerticalAlignment="Bottom"
+                                  IsHitTestVisible="False"
+                                  Radius="36"
+                                  Tint="Transparent"
+                                  FadeTowards="Top" />
+        <Border Height="{DynamicResource NutContentVignetteHeight}"
+                VerticalAlignment="Top"
+                IsHitTestVisible="False"
+                Background="{DynamicResource NutContentVignetteTopBrush}" />
+        <Border Height="{DynamicResource NutContentVignetteHeight}"
+                VerticalAlignment="Bottom"
+                IsHitTestVisible="False"
+                Background="{DynamicResource NutContentVignetteBottomBrush}" />
+
+      </Panel>
 
       <controls:NutReviewDrawerHost Grid.Column="2"
                                     IsOpen="{Binding IsReviewDrawerInline}"
@@ -463,7 +543,7 @@
     </Grid>
 
     <!-- ==================== Footer ==================== -->
-    <Border Grid.Row="2" Classes="nut-footer" Padding="16,0">
+    <Border Grid.Row="2" ZIndex="1" Classes="nut-footer" Padding="16,0">
       <Grid>
         <StackPanel HorizontalAlignment="Left" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
           <PathIcon Data="{DynamicResource NutIconShield}" Width="13" Height="13" Foreground="{DynamicResource NutHealthyBrush}" />

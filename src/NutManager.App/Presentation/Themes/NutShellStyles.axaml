@@ -7,10 +7,17 @@
     saturated block, so the selected row reads as emphasis instead of a filled control.
   -->
 
+  <!--
+    Fully opaque, deliberately and permanently. The title bar carries the application name and the
+    connection state and the footer carries the authorship line, and content scrolls under both, so
+    any alpha here puts moving text directly behind fixed text. The glass in this shell belongs to
+    the frosted band inside the content area, never to the chrome itself.
+
+    The value stays a theme resource rather than a literal because these two have to follow light and
+    dark; what is pinned is the opacity, and NutHeaderBrush is opaque in both themes.
+  -->
   <Style Selector="Border.nut-titlebar">
     <Setter Property="Background" Value="{DynamicResource NutHeaderBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
-    <Setter Property="BorderThickness" Value="0,0,0,1" />
   </Style>
 
   <!-- Window buttons follow the platform hit targets; only close gets a destructive hover. -->
@@ -489,10 +496,11 @@
     <Setter Property="BorderThickness" Value="1" />
   </Style>
 
+
+  <!-- Opaque for the same reason as the title bar above: the authorship line has to stay legible
+       over whatever the page is showing, and the page scrolls underneath it. -->
   <Style Selector="Border.nut-footer">
     <Setter Property="Background" Value="{DynamicResource NutHeaderBrush}" />
-    <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
-    <Setter Property="BorderThickness" Value="0,1,0,0" />
   </Style>
 
   <!--

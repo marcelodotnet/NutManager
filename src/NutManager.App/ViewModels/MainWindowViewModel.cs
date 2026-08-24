@@ -269,11 +269,19 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public bool IsBackgroundInteractionEnabled => !IsOverlayOpen && !IsReviewDrawerOverlay;
     public bool IsNavigationToggleVisible => ShellLayout != ShellLayoutState.Medium;
     public double SidebarWidth => IsSidebarExpanded ? 220 : IsSidebarCollapsed ? 72 : 0;
+    /// <summary>
+    /// The content area's horizontal breathing room only.
+    ///
+    /// The vertical inset deliberately lives inside the page's own scroll viewer instead of here.
+    /// This padding sits inside the border that reaches under the title bar and the footer, so a
+    /// vertical value here would push the scroll viewport straight back down and cancel that reach —
+    /// the content would never travel under the bars, which is the whole point of the underlap.
+    /// </summary>
     public Thickness ContentPadding => ShellLayout switch
     {
-        ShellLayoutState.Wide => new Thickness(28),
-        ShellLayoutState.Medium => new Thickness(20),
-        _ => new Thickness(14)
+        ShellLayoutState.Wide => new Thickness(28, 0, 28, 0),
+        ShellLayoutState.Medium => new Thickness(20, 0, 20, 0),
+        _ => new Thickness(14, 0, 14, 0)
     };
     public bool IsMockMode => false;
     public string? ActiveUpsName => _overviewPage.Snapshot?.Identity.Name ?? _preferredUpsName;

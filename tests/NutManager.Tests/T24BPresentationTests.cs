@@ -41,11 +41,11 @@ public sealed class T24BPresentationTests
     [InlineData(false, AdministrationSection.WindowsService, true)]
     [InlineData(false, AdministrationSection.DevicesAndDrivers, true)]
     [InlineData(false, AdministrationSection.RemoteAccess, false)]
-    // The Windows service is applicable on a remote profile since T35: the agent reaches it. The
-    // other two are unchanged — COM ports and local tools genuinely do not project onto a remote
-    // host, and remote access has nothing to configure locally.
+    // The Windows service is applicable on a remote profile since T35: the agent reaches it. Devices
+    // and drivers joined it in T38, because the agent now enumerates the server's serial devices
+    // read-only. Remote access is unchanged — it has nothing to configure locally.
     [InlineData(true, AdministrationSection.WindowsService, true)]
-    [InlineData(true, AdministrationSection.DevicesAndDrivers, false)]
+    [InlineData(true, AdministrationSection.DevicesAndDrivers, true)]
     [InlineData(true, AdministrationSection.RemoteAccess, true)]
     public void AdministrationApplicabilityIsBoundToLocalOrRemoteContext(bool remote, AdministrationSection section, bool expected)
     {
@@ -72,16 +72,34 @@ public sealed class T24BPresentationTests
     }
 
     [Fact]
-    public void DevicesAndDriversStaysLocalOnlyOnARemoteProfile()
+    public void DevicesAndDriversIsReachedThroughTheAgentOnARemoteProfile()
     {
-        // The agent controls a service; it does not project COM ports or local tooling. Widening
-        // the service section must not quietly widen this one with it.
+        // Until T38 the agent controlled a service and nothing else, and this section correctly said
+        // it was local-only. The agent now also enumerates the server's serial devices, read-only, so
+        // the section is reachable and is described the way the service section is: through the agent.
+        // What stayed local is the active driver diagnostics, and the section itself says so.
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            var strings = new NutManagerLocalizer(language);
+            var drivers = AdministrationPresentation.CreateSections(strings, isRemote: true, canManage: true)
+                .Single(item => item.Section == AdministrationSection.DevicesAndDrivers);
+
+            Assert.True(drivers.IsApplicable);
+            Assert.Equal(strings.Get("Administration.Availability.ViaAgent"), drivers.AvailabilityText);
+            Assert.NotEqual(strings.Get("Administration.Availability.LocalOnly"), drivers.AvailabilityText);
+        }
+    }
+
+    [Fact]
+    public void DevicesAndDriversIsPlainlyAvailableOnALocalProfile()
+    {
+        // No agent is involved locally, so naming one here would be wrong in the other direction.
         var strings = new NutManagerLocalizer(UiLanguagePreference.PtBr);
-        var drivers = AdministrationPresentation.CreateSections(strings, isRemote: true, canManage: true)
+        var drivers = AdministrationPresentation.CreateSections(strings, isRemote: false, canManage: true)
             .Single(item => item.Section == AdministrationSection.DevicesAndDrivers);
 
-        Assert.False(drivers.IsApplicable);
-        Assert.Equal(strings.Get("Administration.Availability.LocalOnly"), drivers.AvailabilityText);
+        Assert.True(drivers.IsApplicable);
+        Assert.Equal(strings.Get("Administration.Availability.Available"), drivers.AvailabilityText);
     }
 
     [Fact]

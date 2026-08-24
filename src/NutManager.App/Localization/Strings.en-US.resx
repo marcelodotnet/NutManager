@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <root>
   <data name="App.Name" xml:space="preserve"><value>NUT Manager</value></data>
   <data name="Nav.Overview" xml:space="preserve"><value>Overview</value></data><data name="Nav.Devices" xml:space="preserve"><value>Devices</value></data><data name="Nav.Administration" xml:space="preserve"><value>Administration</value></data><data name="Nav.Diagnostics" xml:space="preserve"><value>Diagnostics</value></data><data name="Nav.Settings" xml:space="preserve"><value>Settings</value></data>
@@ -189,11 +189,12 @@
   <data name="Administration.Windows.AclNotice" xml:space="preserve"><value>Existing ACLs will be preserved; only Modify will be added to the specified SID.</value></data>
   <data name="Administration.Windows.Confirm" xml:space="preserve"><value>I confirm that I reviewed this administrative action.</value></data>
   <data name="Administration.Windows.Execute" xml:space="preserve"><value>Execute administrative action</value></data>
-  <data name="Administration.Drivers.Unavailable" xml:space="preserve"><value>Local diagnostics unavailable</value></data>
-  <data name="Administration.Drivers.LocalOnly" xml:space="preserve"><value>COM ports and local tools are not projected onto a remote profile.</value></data>
+  <data name="Administration.Drivers.Unavailable" xml:space="preserve"><value>Device inspection unavailable</value></data>
+  <data name="Administration.Drivers.LocalOnly" xml:space="preserve"><value>upsdrvctl, driver help, variable listing and data capture all open the device and stay restricted to local management.</value></data>
   <data name="Administration.Drivers.Configured" xml:space="preserve"><value>Configured devices</value></data>
   <data name="Administration.Drivers.PassiveNotice" xml:space="preserve"><value>Enumeration is passive; no COM port is opened.</value></data>
   <data name="Administration.Drivers.NoConfigured" xml:space="preserve"><value>No configured driver was found in ups.conf.</value></data>
+  <data name="Administration.Drivers.ConfiguredUnknown" xml:space="preserve"><value>ups.conf has not been read yet. The list appears once the configuration session is established.</value></data>
   <data name="Administration.Drivers.Driver" xml:space="preserve"><value>Driver</value></data>
   <data name="Administration.Drivers.Port" xml:space="preserve"><value>Port</value></data>
   <data name="Administration.Drivers.Protocol" xml:space="preserve"><value>Protocol</value></data>
@@ -817,6 +818,24 @@
   <data name="Administration.Windows.CapabilityUnavailable" xml:space="preserve"><value>Local Windows administration is not available in this session.</value></data>
   <data name="Administration.Drivers.PortConfiguredAndDetected" xml:space="preserve"><value>Configured · currently detected</value></data>
   <data name="Administration.Drivers.PortConfiguredNotDetected" xml:space="preserve"><value>Configured · not detected right now</value></data>
+  <data name="Administration.Drivers.PortDetectedOnServer" xml:space="preserve"><value>Configured · detected on the server</value></data>
+  <data name="Administration.Drivers.PortNotDetectedOnServer" xml:space="preserve"><value>Configured · not detected on the server</value></data>
+  <data name="Administration.Drivers.PortPresentHealthy" xml:space="preserve"><value>Present · no reported fault</value></data>
+  <data name="Administration.Drivers.PortPresentWarning" xml:space="preserve"><value>Present · Windows reports a problem</value></data>
+  <data name="Administration.Drivers.PortPresentUnknown" xml:space="preserve"><value>Present · no further metadata</value></data>
+  <data name="Administration.Drivers.PortNotExposed" xml:space="preserve"><value>Not currently exposed by Windows</value></data>
+  <data name="Administration.Drivers.Bus.Usb" xml:space="preserve"><value>USB–Serial</value></data>
+  <data name="Administration.Drivers.Bus.Pci" xml:space="preserve"><value>PCI–Serial</value></data>
+  <data name="Administration.Drivers.Bus.Bluetooth" xml:space="preserve"><value>Bluetooth–Serial</value></data>
+  <data name="Administration.Drivers.Bus.Platform" xml:space="preserve"><value>On-board serial</value></data>
+  <data name="Administration.Drivers.SourceLocal" xml:space="preserve"><value>Local Windows inspection on this machine</value></data>
+  <data name="Administration.Drivers.SourceRemoteAgent" xml:space="preserve"><value>Remote inspection through the NutManager Agent</value></data>
+  <data name="Administration.Drivers.RemoteAgentUnavailable" xml:space="preserve"><value>The agent did not answer; nothing could be inspected on this server.</value></data>
+  <data name="Administration.Drivers.RemoteCapabilityMissing" xml:space="preserve"><value>This agent does not offer device inspection. Update the NutManager Agent on the server.</value></data>
+  <data name="Administration.Drivers.RemoteSnapshotFailed" xml:space="preserve"><value>The device inspection could not be read from the server.</value></data>
+  <data name="Administration.Drivers.RemoteEnumerationFailed" xml:space="preserve"><value>The agent answered but could not enumerate the server's serial devices.</value></data>
+  <data name="Administration.Drivers.RefreshCancelled" xml:space="preserve"><value>The devices and drivers refresh was cancelled.</value></data>
+  <data name="Administration.Drivers.InspectionUnavailableHint" xml:space="preserve"><value>No device inspection source answered for this profile.</value></data>
   <data name="Ups.Editor.StateValid" xml:space="preserve"><value>valid</value></data>
   <data name="Ups.Editor.StateInvalid" xml:space="preserve"><value>has errors</value></data>
   <data name="Ups.Editor.Basic" xml:space="preserve"><value>Basic</value></data>

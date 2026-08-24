@@ -541,6 +541,9 @@ public sealed class RemoteWindowsServiceControlTests
                     new NutAgentServiceStatus("GANDALF", "Network UPS Tools", "Network UPS Tools", _state, 4242, "nut.exe", true, Observed),
                     NutAgentResultCode.Success));
 
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Control never asks for hardware.");
+
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             Record(NutAgentOperation.Start, operationId);
 

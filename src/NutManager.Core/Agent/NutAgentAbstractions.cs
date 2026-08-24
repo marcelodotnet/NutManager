@@ -77,6 +77,23 @@ public sealed record NutServiceControlOutcome(
     string? Detail = null);
 
 /// <summary>
+/// Reads the serial devices the operating system already publishes on the agent's machine.
+///
+/// One verb and no arguments, and that is the security property rather than a convenience. There is
+/// no port to name, no speed to set and no payload to send, so no request reaching this interface can
+/// make the agent open a device — the port a running NUT driver is talking on is untouched by
+/// definition, not by a check somebody has to remember to write.
+///
+/// Implementations enumerate and nothing more. Failure is a value on the snapshot rather than an
+/// escaping exception: a machine that could not be asked has to be reported as not asked, because
+/// reporting it as an empty list would tell an operator their adapter had disappeared.
+/// </summary>
+public interface INutAgentHardwareInspector
+{
+    Task<NutAgentHardwareSnapshot> InspectAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// Where control operations are recorded.
 ///
 /// <see cref="IsReadyAsync"/> exists so the agent can refuse a mutation it would not be able to

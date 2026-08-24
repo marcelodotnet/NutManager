@@ -377,6 +377,9 @@ public sealed class AgentCredentialStatusRefreshTests
         public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
             Task.FromResult(NutAgentClientResult<NutAgentServiceStatus>.Failure(NutAgentClientStatus.Failed));
 
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            Task.FromResult(NutAgentClientResult<NutAgentHardwareSnapshot>.Failure(NutAgentClientStatus.Failed));
+
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Credential validation must not mutate the service.");
 

@@ -1,4 +1,4 @@
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
+﻿<ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <x:Double x:Key="NutSpacing2">2</x:Double>
   <x:Double x:Key="NutSpacing4">4</x:Double>
@@ -30,6 +30,16 @@
 
   <x:Double x:Key="NutReviewDrawerWidth">368</x:Double>
   <GridLength x:Key="NutFooterHeight">30</GridLength>
+  <!-- How far the edge vignette reaches in from the top and bottom of the content area. Deep enough to
+       be a falloff rather than a line, and shallow enough to clear the page title: the strip it covers
+       is the one content scrolls under. -->
+  <x:Double x:Key="NutContentVignetteHeight">26</x:Double>
+  <!-- How far the frost reaches, which is deliberately further than the tint above it. Matched, the
+       two cancel: the tint is opaque exactly where the blur is strongest and hides it, and by the
+       depth the tint has thinned enough to see through, the blur has thinned away too. Running the
+       frost deeper leaves a band below the tint where content is out of the bar but still soft, and
+       hardens from there. -->
+  <x:Double x:Key="NutContentFrostHeight">44</x:Double>
   <Thickness x:Key="NutPagePadding">28</Thickness>
   <Thickness x:Key="NutCardPadding">18</Thickness>
   <Thickness x:Key="NutCardPaddingCompact">14</Thickness>

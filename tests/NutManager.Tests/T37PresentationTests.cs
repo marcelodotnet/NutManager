@@ -393,7 +393,11 @@ public sealed class T37PresentationTests
         Assert.Contains("Classes.critical=\"{Binding IsConnectionCritical}\"", overview, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding !IsPrimaryStatusUnknown}\"", overview, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding IsUnknown}\"", overview, StringComparison.Ordinal);
-        Assert.Contains("Spacing=\"16\" Margin=\"0,0,18,0\"", diagnostics, StringComparison.Ordinal);
+        // The right gutter T37 established is still 18. The vertical values arrived with the
+        // underlap: the inset that keeps content clear of the title bar and the footer lives on the
+        // scroll content, not on the scroll viewer, because padding there consumes viewport and cost
+        // the page a third of its scroll range.
+        Assert.Contains("Spacing=\"16\" Margin=\"0,92,18,58\"", diagnostics, StringComparison.Ordinal);
         Assert.DoesNotContain("Strings[Administration.Configuration.NoFiles]", administration, StringComparison.Ordinal);
         Assert.Contains("Title=\"NUT Manager\"", shell, StringComparison.Ordinal);
     }

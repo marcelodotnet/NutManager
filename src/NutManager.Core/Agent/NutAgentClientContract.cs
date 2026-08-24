@@ -70,6 +70,12 @@ public interface INutManagerAgentClient
 
     Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Reads the serial devices the agent's machine already exposes. Read-only and passive on both
+    /// sides: the request names no port, so there is nothing here a caller could open.
+    /// </summary>
+    Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken);
+
     Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken);
 
     Task<NutAgentClientResult<NutAgentOperationResult>> StopAsync(string host, Guid operationId, CancellationToken cancellationToken);

@@ -1390,6 +1390,155 @@ NUT's own protocol health stays independent of all of it, and an unauthorized ca
 Start, Stop and Restart against the live NUT service require the user's explicit authorization at the
 moment they are run. That rule does not relax because the agent is installed.
 
+## T38 — Remote COM and hardware inspection through the Windows agent
+
+**Status:** IMPLEMENTED — pending acceptance on the real server
+
+### Objective
+
+Let a remote profile see the serial hardware of the machine it manages, through the agent, on the
+same Devices and drivers screen a local profile already uses — and keep that inspection completely
+passive on the server.
+
+### Scope
+
+- one read-only agent operation that enumerates the server's serial devices;
+- capability negotiation, so an older agent is detected rather than asked;
+- equal behaviour over the named pipe and over HTTPS, with no fallback either way;
+- vendor and product identifiers parsed from the Windows PnP device id;
+- a small, verified controller catalogue with no network lookup;
+- a status for each port that never turns absent metadata into a fault;
+- the configured `port` from the server's `ups.conf` related to what was detected;
+- the existing screen reused rather than a second one built;
+- pt-BR and en-US parity for every new string.
+
+### What is passive means here
+
+The agent enumerates and does nothing else. It does not open a serial port, transmit a byte, send
+`Q1`, run `nutdrv_qx` or any other driver, change a device setting, touch the registry beyond the
+read the existing COM source already performs, or write configuration. A NUT driver already talking
+to a UPS on the configured port is unaffected by an inspection running, and that is a property of the
+contract rather than of a check: the request has no port, speed, command, executable or path field,
+so there is nothing in it through which a caller could ask for any of that.
+
+
+### Enumeration sources and who decides existence
+
+Acceptance on the real server corrected the enrichment model. `Win32_SerialPort` returned nothing at
+all for the Prolific USB-to-serial adapter on `COM3`, so the port was listed bare — no name, no
+manufacturer, no identifier and no fault code — and read as grey on a device that was working
+perfectly. `Win32_PnPEntity` knew all of it.
+
+The rule is now explicit and enforced by `WindowsComPortEnumeration.Merge`:
+
+- `SERIALCOMM` is the only source of existence. A port disabled in Device Manager leaves the device
+  map and stays a findable PnP entity, so a `COM2` in that state must not be listed.
+- `Win32_SerialPort` enriches first, being the more specific class.
+- `Win32_PnPEntity` fills only what is still missing, matched to its port by the `(COM3)` suffix
+  Windows appends to the display name. A row that resolves to no port enriches nothing.
+- Neither WMI class may introduce a port. The merge looks the resolved name up in the map built from
+  `SERIALCOMM` and drops the row when it is absent.
+
+`ConfigManagerErrorCode` is read as the number Windows stores. `CM_PROB_NONE` is zero and is a real
+answer, so it is filled in only when absent rather than when falsy, and a clean port cannot be
+overwritten by a later, less specific row. No localized description is parsed anywhere.
+
+### The capability, not a version
+
+`GetHardwareSnapshot` is announced in the handshake's capability list. An agent built before this
+task does not announce it, and NutManager reads that and reports device inspection as unavailable for
+that server instead of sending a request that would be refused.
+
+The protocol version stays at 1 deliberately. Raising it would make an older agent reject every
+request from a current client — including the handshake that would have carried the answer — turning
+a clean "this server cannot be inspected" into a total failure. In the other direction the hardware
+payload is an optional response field, so a current agent answers an older client unchanged.
+
+The capability is announced independently of control availability. An agent whose NUT service could
+not be pinned, or whose audit sink is unusable, reports control as unavailable and still enumerates
+serial devices perfectly well; gating the read behind control would report a readable machine as
+having no ports.
+
+### What is claimed about a device, and what is not
+
+The identifiers come out of the PnP device id and nothing else. `USB\VID_067B&PID_23A3\…` and FTDI's
+`FTDIBUS\VID_0403+PID_6001+…` are both read, in either case; a PCI serial port is recognised as PCI
+but its `VEN_`/`DEV_` pair is not reported as a VID/PID, because that is a different identifier space
+and presenting one as the other would be a small, confident lie.
+
+The controller name comes from a fixed local table of verified vendor/product pairs. An unrecognised
+pair produces no controller name rather than the nearest neighbour. Prolific is entered at family
+level — `PL2303` for both `067B:2303` and `067B:23A3` — because no verified offline mapping for the
+G-series suffixes was available to this build; a specific variant is never reported on the strength
+of a guess. Nothing is lost by that restraint: the driver's own friendly name is shown in full on the
+line above, and it is the driver that names the variant. There is no internet lookup of any kind.
+
+A catalogued vendor name is used only where the device itself reported no manufacturer.
+
+### Port status
+
+| State | Meaning |
+| --- | --- |
+| Healthy | Present, and Windows reported a fault code of zero. |
+| Warning | Present, and Windows reported a fault code or a status other than OK. |
+| Unknown | Present, and nothing further is known. `SERIALCOMM` lists it and WMI has no record. |
+| Critical | Named but not currently exposed by the operating system. |
+
+`SERIALCOMM` is authoritative for presence and WMI is enrichment, so a port WMI knows nothing about
+is a present port with unknown metadata — never a fault, and never absent.
+
+These states describe a Windows device. They are not a statement about NUT. A COM port that exists is
+not a UPS that answers, and the screen keeps "COM present", "driver configured", "driver running",
+"UPS answering", "agent connected" and "NUT service running" as six separate facts.
+
+### Relating the configuration to the hardware
+
+The agent does not read `ups.conf` and no second writer was introduced. The server's document is
+loaded through the profile's own configuration transport — SFTP or SMB — and interpreted by a
+platform-neutral reader that reports what cannot be established from another machine as not
+established: the driver executable is `NotApplicable` and its runtime state is `Unknown`.
+
+The comparison is informational and changes nothing. The detected ports are offered to the graphical
+`ups.conf` editor as choices for the `port` field, exactly as local ports already were; writing still
+goes through the semantic draft, the schema, the T13 document, the review, the generated preview and
+the T14 safe-write pipeline.
+
+### One screen, three states
+
+Devices and drivers is now applicable on a remote profile and is described the way the Windows
+service section has been since T35: available through the agent. The cards are the same cards; a
+source line names the machine that was examined, so a remote reading is never presented as a local
+diagnostic.
+
+The screen distinguishes local inspection, remote inspection through the agent, and no inspection at
+all. The third is a statement about the source, never about the server: an unreachable agent, or one
+without the capability, leaves the port list unknown rather than empty, and every claim about a
+configured port being present or absent is gated on the list being an answer.
+
+Active driver diagnostics stay local. `upsdrvctl`, driver help, version, variable listing, dry run
+and data capture all open the configured device through a NUT driver, which is what this task exists
+not to do remotely. The remote screen says so instead of offering buttons that would be refused, and
+no remote process execution of any kind was added.
+
+### Refresh and audit
+
+The existing Refresh button serves both profiles and routes by profile with no fallback. No new timer
+and no polling were added: serial hardware does not change between two ticks of a monitor.
+
+The read is not audited. The Event Log exists to preserve control records, and a read an operator can
+repeat at will would bury them. The audit policy for Start, Stop and Restart is unchanged.
+
+### Acceptance on the real server
+
+The agent must be rebuilt and redeployed on the server before the capability can appear there; an
+installed agent that predates this task will correctly report device inspection as unavailable.
+
+Then verify, on a remote profile: the handshake lists `GetHardwareSnapshot`; the Devices and drivers
+section lists the server's COM ports with their identity line; the configured `port` from the
+server's `ups.conf` is related to the detected list once the configuration session is connected; the
+active diagnostics remain absent; and the NUT service keeps running throughout, with its driver's
+conversation with the UPS uninterrupted.
+
 ## Task execution template
 
 Use this structure when assigning a task to a coding agent:

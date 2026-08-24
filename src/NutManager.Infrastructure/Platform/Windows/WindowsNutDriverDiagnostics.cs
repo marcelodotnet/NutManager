@@ -113,15 +113,22 @@ public sealed class WindowsNutServiceStateSource : IWindowsNutServiceStateSource
 
 public sealed class WindowsWmiComPortSource : IWindowsComPortSource
 {
+    private const string SerialCommKey = @"HARDWARE\DEVICEMAP\SERIALCOMM";
+
     /// <summary>
     /// Passive COM port enumeration.
     /// <para>
     /// The authoritative list of port names is the SERIALCOMM device map, which is exactly what
     /// <c>SerialPort.GetPortNames()</c> reads. It is queried here through the registry so no extra
-    /// package is required. Win32_SerialPort used to be the only source and it omits many devices -
-    /// notably USB and composite adapters - so a port Windows clearly exposes could be reported as
-    /// "no COM port detected". WMI now only enriches entries with friendly name, manufacturer, PNP
-    /// id and status when it happens to know them.
+    /// package is required, and it is the only thing that decides which ports exist: a port disabled
+    /// in Device Manager leaves SERIALCOMM while remaining a findable PnP entity, and listing it
+    /// would offer an operator a port they cannot use.
+    /// </para>
+    /// <para>
+    /// WMI only fills in blanks. <c>Win32_SerialPort</c> is asked first because it is the more
+    /// specific class, and <c>Win32_PnPEntity</c> covers what it misses — which on a real server is a
+    /// great deal, because <c>Win32_SerialPort</c> commonly returns nothing at all for USB-to-serial
+    /// adapters. Neither may add a port.
     /// </para>
     /// <para>No port is ever opened and no byte is transmitted; this stays a read-only enumeration.</para>
     /// </summary>
@@ -132,62 +139,247 @@ public sealed class WindowsWmiComPortSource : IWindowsComPortSource
             return Array.Empty<NutComPortInfo>();
         }
 
-        var ports = new Dictionary<string, NutComPortInfo>(StringComparer.OrdinalIgnoreCase);
+        return WindowsComPortEnumeration.Merge(
+            ReadPresentPortNames(),
+            Query("SELECT DeviceID, Name, Manufacturer, PNPDeviceID, Status, ConfigManagerErrorCode FROM Win32_SerialPort"),
+            // Restricted to the device class Windows files COM ports under, so this stays a small
+            // query rather than a walk of every PnP device on the machine. A device outside that
+            // class simply goes un-enriched; it can never go missing, because presence was already
+            // decided by SERIALCOMM.
+            Query("SELECT Name, Manufacturer, PNPDeviceID, Status, ConfigManagerErrorCode FROM Win32_PnPEntity WHERE PNPClass = 'Ports'"));
+    }
 
+    /// <summary>
+    /// The device map, read and nothing else. A failure here is deliberately not compensated for by
+    /// WMI: a list assembled without the authority on presence is not a port list, and the honest
+    /// result for a device map that could not be read is no entries rather than entries from a source
+    /// that cannot tell an available port from a disabled one.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static IReadOnlyList<string> ReadPresentPortNames()
+    {
         try
         {
-            using var serialComm = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"HARDWARE\DEVICEMAP\SERIALCOMM");
-            foreach (var valueName in serialComm?.GetValueNames() ?? [])
-            {
-                if (serialComm!.GetValue(valueName) is string name &&
-                    WindowsComPortNormalizer.TryNormalize(name, out var normalized))
-                {
-                    ports[normalized] = new NutComPortInfo(normalized, null, null, null, null, null, true);
-                }
-            }
+            using var serialComm = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(SerialCommKey);
+            if (serialComm is null) return Array.Empty<string>();
+
+            return serialComm.GetValueNames()
+                .Select(valueName => serialComm.GetValue(valueName) as string)
+                .Where(name => name is not null)
+                .Select(name => name!)
+                .ToArray();
         }
         catch
         {
-            // Enumeration is best effort; WMI below may still contribute entries.
+            return Array.Empty<string>();
         }
+    }
 
+    /// <summary>
+    /// Runs one read-only WQL query. An unavailable or failing class yields no metadata rather than
+    /// an exception: enrichment is optional by design, and the ports already stand on their own.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static IReadOnlyList<WindowsComPortMetadata> Query(string wql)
+    {
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                "SELECT DeviceID, Name, Manufacturer, PNPDeviceID, Status, ConfigManagerErrorCode FROM Win32_SerialPort");
+            using var searcher = new ManagementObjectSearcher(wql);
             using var results = searcher.Get();
-            foreach (ManagementObject port in results)
-            {
-                var rawPort = port["DeviceID"]?.ToString();
-                if (!WindowsComPortNormalizer.TryNormalize(rawPort, out var normalized))
-                {
-                    continue;
-                }
 
-                int? errorCode = port["ConfigManagerErrorCode"] is null
-                    ? null
-                    : Convert.ToInt32(port["ConfigManagerErrorCode"], System.Globalization.CultureInfo.InvariantCulture);
-                ports[normalized] = new NutComPortInfo(
-                    normalized,
-                    port["Name"]?.ToString(),
-                    port["Manufacturer"]?.ToString(),
-                    port["PNPDeviceID"]?.ToString(),
-                    port["Status"]?.ToString(),
-                    errorCode,
-                    true);
+            var rows = new List<WindowsComPortMetadata>();
+            foreach (ManagementObject entity in results)
+            {
+                using (entity)
+                {
+                    rows.Add(new WindowsComPortMetadata(
+                        Read(entity, "DeviceID"),
+                        Read(entity, "Name"),
+                        Read(entity, "Manufacturer"),
+                        Read(entity, "PNPDeviceID"),
+                        Read(entity, "Status"),
+                        ReadErrorCode(entity)));
+                }
             }
+
+            return rows;
         }
         catch
         {
-            // WMI metadata is optional: the SERIALCOMM names above already stand on their own.
+            return Array.Empty<WindowsComPortMetadata>();
+        }
+    }
+
+    /// <summary>A property the queried class does not define is absent, never an exception.</summary>
+    [SupportedOSPlatform("windows")]
+    private static string? Read(ManagementObject entity, string property)
+    {
+        try
+        {
+            return entity[property]?.ToString();
+        }
+        catch (ManagementException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The fault code as the number Windows stores it. <c>CM_PROB_NONE</c> is zero and is a real
+    /// answer that must survive to the screen, so it is read numerically and never inferred from a
+    /// description that would be localized on the machine being inspected.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static int? ReadErrorCode(ManagementObject entity)
+    {
+        try
+        {
+            return entity["ConfigManagerErrorCode"] is { } value
+                ? Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture)
+                : null;
+        }
+        catch (Exception exception) when (exception is ManagementException or FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+    }
+}
+
+/// <summary>
+/// One row of Windows metadata about a serial device, from either WMI class.
+///
+/// The two classes identify the port differently — <c>Win32_SerialPort</c> puts <c>COM3</c> in
+/// <see cref="DeviceId"/>, while <c>Win32_PnPEntity</c> only carries it inside the display name as
+/// <c>(COM3)</c> — so both forms are kept and resolution tries them in that order. Nothing here is a
+/// handle: this is metadata Windows already published, and holding it opens no device.
+/// </summary>
+public sealed record WindowsComPortMetadata(
+    string? DeviceId,
+    string? Name,
+    string? Manufacturer,
+    string? PnpDeviceId,
+    string? Status,
+    int? ConfigManagerErrorCode);
+
+/// <summary>
+/// Builds the detected port list from the three things Windows can be asked, and decides which of
+/// them is allowed to say that a port exists.
+///
+/// Only <c>SERIALCOMM</c> is. It is the device map <c>SerialPort.GetPortNames()</c> reads, it lists
+/// exactly the ports the system currently exposes, and a port disabled in Device Manager disappears
+/// from it while remaining a perfectly findable PnP entity. Letting either WMI class seed the list
+/// would put those disabled devices back on screen as though they were available — which is the
+/// defect this merge exists to prevent, observed as a `COM2` that Device Manager reports and
+/// `SERIALCOMM` does not.
+///
+/// The WMI classes therefore only ever fill in blanks on a port that is already present:
+/// <c>Win32_SerialPort</c> first because it is the more specific class, then <c>Win32_PnPEntity</c>
+/// for what is still missing. The fallback is not optional in practice — <c>Win32_SerialPort</c>
+/// returns nothing at all for many USB-to-serial adapters, so without it a real, working port is
+/// listed with no name, no manufacturer, no identifier and no fault code.
+/// </summary>
+public static partial class WindowsComPortEnumeration
+{
+    /// <summary>
+    /// Merges the authoritative names with the two enrichment sources, in priority order.
+    /// </summary>
+    /// <param name="presentPortNames">From <c>SERIALCOMM</c>. The only source of existence.</param>
+    /// <param name="primaryMetadata">From <c>Win32_SerialPort</c>. May be empty; often is.</param>
+    /// <param name="fallbackMetadata">From <c>Win32_PnPEntity</c>. Fills only what is still missing.</param>
+    public static IReadOnlyList<NutComPortInfo> Merge(
+        IEnumerable<string> presentPortNames,
+        IEnumerable<WindowsComPortMetadata> primaryMetadata,
+        IEnumerable<WindowsComPortMetadata> fallbackMetadata)
+    {
+        ArgumentNullException.ThrowIfNull(presentPortNames);
+        ArgumentNullException.ThrowIfNull(primaryMetadata);
+        ArgumentNullException.ThrowIfNull(fallbackMetadata);
+
+        var ports = new Dictionary<string, NutComPortInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in presentPortNames)
+        {
+            if (NutComPortName.TryNormalize(name, out var normalized))
+            {
+                ports[normalized] = new NutComPortInfo(normalized, null, null, null, null, null, true);
+            }
+        }
+
+        foreach (var metadata in primaryMetadata.Concat(fallbackMetadata))
+        {
+            // The lookup is what enforces the rule: a row whose port is not already present is
+            // dropped, so neither WMI class can introduce a device the system is not exposing.
+            if (metadata is not null &&
+                TryResolvePort(metadata, out var normalized) &&
+                ports.TryGetValue(normalized, out var existing))
+            {
+                ports[normalized] = Fill(existing, metadata);
+            }
         }
 
         // Natural COM ordering so COM4 precedes COM10 instead of sorting as text.
         return ports.Values
-            .OrderBy(port => WindowsComPortNormalizer.TryGetNumber(port.PortName, out var number) ? number : int.MaxValue)
+            .OrderBy(port => NutComPortName.TryGetNumber(port.PortName, out var number) ? number : int.MaxValue)
             .ThenBy(port => port.PortName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
+
+    /// <summary>
+    /// Which COM port a metadata row describes. <c>Win32_SerialPort</c> names it outright;
+    /// <c>Win32_PnPEntity</c> only ever carries it in the display name, so that is read second.
+    /// </summary>
+    public static bool TryResolvePort(WindowsComPortMetadata metadata, out string normalized)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        return NutComPortName.TryNormalize(metadata.DeviceId, out normalized) ||
+            TryReadPortFromDisplayName(metadata.Name, out normalized);
+    }
+
+    /// <summary>
+    /// Reads the <c>(COM3)</c> suffix Windows appends to a serial device's display name.
+    ///
+    /// The last occurrence wins, because that suffix is written at the end and a vendor is free to
+    /// put anything before it. A name with no such group resolves to nothing rather than to a guess:
+    /// a wrong association here would attach one device's identity to another device's port, which is
+    /// worse than showing no identity at all.
+    /// </summary>
+    public static bool TryReadPortFromDisplayName(string? displayName, out string normalized)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(displayName)) return false;
+
+        var matches = PortSuffixPattern().Matches(displayName);
+        return matches.Count > 0 &&
+            NutComPortName.TryNormalize(matches[^1].Groups[1].Value, out normalized);
+    }
+
+    /// <summary>
+    /// Adds what this row knows and the port does not know yet. Never overwrites: the caller applies
+    /// the more specific class first, so the fallback can only ever fill gaps.
+    ///
+    /// <c>ConfigManagerErrorCode</c> is treated as the number Windows stores. Zero is
+    /// <c>CM_PROB_NONE</c> and is a real answer — "no fault reported" — which is why it is filled in
+    /// only when absent rather than when falsy, and why nothing here parses a localized description.
+    /// </summary>
+    private static NutComPortInfo Fill(NutComPortInfo port, WindowsComPortMetadata metadata) =>
+        port with
+        {
+            FriendlyName = Coalesce(port.FriendlyName, metadata.Name),
+            Manufacturer = Coalesce(port.Manufacturer, metadata.Manufacturer),
+            PnpDeviceId = Coalesce(port.PnpDeviceId, metadata.PnpDeviceId),
+            Status = Coalesce(port.Status, metadata.Status),
+            ConfigManagerErrorCode = port.ConfigManagerErrorCode ?? metadata.ConfigManagerErrorCode
+        };
+
+    /// <summary>Blank is not a value: a WMI property present but empty must not block the fallback.</summary>
+    private static string? Coalesce(string? current, string? candidate) =>
+        string.IsNullOrWhiteSpace(current) ? Normalize(candidate) : current;
+
+    private static string? Normalize(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    [GeneratedRegex(@"\((COM\d{1,3})\)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex PortSuffixPattern();
 }
 
 public sealed class WindowsNutDriverDiagnostics : ILocalNutDriverDiagnostics
@@ -536,41 +728,21 @@ public sealed class WindowsNutDriverDiagnostics : ILocalNutDriverDiagnostics
     };
 }
 
+/// <summary>
+/// The Windows enumeration's view of COM port naming.
+///
+/// It forwards to <see cref="NutComPortName"/> rather than restating the rule. Both the local
+/// enumeration here and the remote comparison against another machine's <c>ups.conf</c> have to
+/// agree on what <c>COM4</c> means, and the only way to guarantee that is for there to be one rule.
+/// </summary>
 public static class WindowsComPortNormalizer
 {
     /// <summary>Extracts the numeric part of a normalized COM name so ordering is natural.</summary>
-    public static bool TryGetNumber(string? value, out int number)
-    {
-        number = 0;
-        return TryNormalize(value, out var normalized) &&
-            int.TryParse(normalized[3..], System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out number);
-    }
+    public static bool TryGetNumber(string? value, out int number) =>
+        NutComPortName.TryGetNumber(value, out number);
 
-    public static bool TryNormalize(string? value, out string normalized)
-    {
-        normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var candidate = value.Trim();
-        if (candidate.StartsWith("\\\\.\\", StringComparison.Ordinal))
-        {
-            candidate = candidate[4..];
-        }
-
-        if (!candidate.StartsWith("COM", StringComparison.OrdinalIgnoreCase) ||
-            !int.TryParse(candidate[3..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var number) ||
-            number < 1)
-        {
-            return false;
-        }
-
-        normalized = "COM" + number.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return true;
-    }
+    public static bool TryNormalize(string? value, out string normalized) =>
+        NutComPortName.TryNormalize(value, out normalized);
 }
 
 public static class WindowsNutDriverResolver

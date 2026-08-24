@@ -8,8 +8,12 @@
     Administration presents a vertical section rail beside the active surface instead of a row of
     equally weighted blocks, so the selected area and the working surface read as one workflow.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Spacing="18">
+  <!-- Matches Overview: the scroll bar keeps its own gutter instead of floating over the cards. -->
+  <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                AllowAutoHide="False">
+    <StackPanel Spacing="18" Margin="0,92,10,58">
 
       <!-- Header -->
       <StackPanel Spacing="3">

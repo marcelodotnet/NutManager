@@ -32,8 +32,13 @@ public static class AdministrationPresentation
         bool canManage)
     {
         ArgumentNullException.ThrowIfNull(strings);
-        var localAvailability = isRemote
-            ? strings.Get("Administration.Availability.LocalOnly")
+        // Devices and drivers reads through the agent on a remote profile, exactly as the service
+        // section does. It was local-only before T38 and correctly said so; a profile that now lists
+        // the server's serial ports and relates them to its ups.conf must not be told the section
+        // belongs to local management. What stays local is the active diagnostics, and the section
+        // itself says which half is which.
+        var deviceAvailability = isRemote
+            ? strings.Get("Administration.Availability.ViaAgent")
             : strings.Get("Administration.Availability.Available");
 
         // The NUT service is reachable on a remote profile, through the agent — which is the entire
@@ -65,8 +70,8 @@ public static class AdministrationPresentation
             new(AdministrationSection.DevicesAndDrivers,
                 strings.Get("Administration.Section.DevicesDrivers"),
                 strings.Get("Administration.Section.DevicesDrivers.Description"),
-                !isRemote,
-                localAvailability),
+                true,
+                deviceAvailability),
             new(AdministrationSection.RemoteAccess,
                 strings.Get("Administration.Section.RemoteAccess"),
                 strings.Get("Administration.Section.RemoteAccess.Description"),

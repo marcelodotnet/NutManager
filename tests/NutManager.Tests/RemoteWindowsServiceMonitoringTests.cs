@@ -512,6 +512,9 @@ public sealed class RemoteWindowsServiceMonitoringTests
                 : Task.FromResult(NutAgentClientResult<NutAgentServiceStatus>.Ok(_status, NutAgentResultCode.Success));
         }
 
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The monitor asks for status, never for hardware.");
+
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The monitor must never mutate.");
 
@@ -531,6 +534,9 @@ public sealed class RemoteWindowsServiceMonitoringTests
         public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
             Task.FromResult(NutAgentClientResult<NutAgentServiceStatus>.Ok(
                 NutAgentServiceStatus.Unavailable("GANDALF", Observed), NutAgentResultCode.Success));
+
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The monitor asks for status, never for hardware.");
 
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The monitor must never mutate.");
@@ -562,6 +568,9 @@ public sealed class RemoteWindowsServiceMonitoringTests
             var status = await _gate.Task.ConfigureAwait(false);
             return NutAgentClientResult<NutAgentServiceStatus>.Ok(status, NutAgentResultCode.Success);
         }
+
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The monitor asks for status, never for hardware.");
 
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The monitor must never mutate.");

@@ -1,21 +1,55 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:viewModels="clr-namespace:NutManager.App.ViewModels"
              x:Class="NutManager.App.Views.DevicesDriversAdministrationView"
              x:DataType="viewModels:AdministrationPageViewModel">
   <StackPanel Spacing="16">
-    <Border Classes="nut-card" IsVisible="{Binding IsRemoteManagementProfile}">
-      <StackPanel Spacing="6"><TextBlock Text="{Binding Strings[Administration.Drivers.Unavailable]}" Classes="nut-section-title" /><TextBlock Text="{Binding Strings[Administration.Drivers.LocalOnly]}" TextWrapping="Wrap" /></StackPanel>
+    <!--
+      Nothing answered. A remote profile whose agent is unreachable, or whose agent is older than the
+      inspection capability, lands here — and it says so rather than presenting an empty port list,
+      because "no serial ports on that server" and "nobody could look" are different findings.
+    -->
+    <Border Classes="nut-card" IsVisible="{Binding IsDeviceInspectionUnavailable}">
+      <StackPanel Spacing="8">
+        <TextBlock Text="{Binding Strings[Administration.Drivers.Unavailable]}" Classes="nut-section-title" />
+        <TextBlock Text="{Binding Strings[Administration.Drivers.InspectionUnavailableHint]}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding DriverDiagnosticStatusMessage}" Classes="nut-metadata" TextWrapping="Wrap" />
+        <Button Content="{Binding Strings[Common.Refresh]}"
+                Command="{Binding RefreshDeviceInspectionCommand}"
+                IsEnabled="{Binding CanRefreshDeviceInspection}"
+                HorizontalAlignment="Left" />
+      </StackPanel>
     </Border>
-    <StackPanel Spacing="16" IsVisible="{Binding IsLocalManagementProfile}">
+
+    <!--
+      One surface for both profiles. The cards below are the same cards whether the facts came from
+      this machine or from the agent on the managed server; only the source line and the active
+      diagnostics differ, which is what keeps the two views from drifting apart.
+    -->
+    <StackPanel Spacing="16" IsVisible="{Binding IsDeviceInspectionAvailable}">
       <Border Classes="nut-card">
-        <StackPanel Spacing="12">
+        <StackPanel Spacing="18">
+          <!-- Section one: what ups.conf configures. -->
+          <StackPanel Spacing="12">
           <Grid ColumnDefinitions="*,Auto">
-            <StackPanel Spacing="3"><TextBlock Text="{Binding Strings[Administration.Drivers.Configured]}" Classes="nut-section-title" /><TextBlock Text="{Binding Strings[Administration.Drivers.PassiveNotice]}" Classes="nut-metadata" TextWrapping="Wrap" /></StackPanel>
-            <Button Grid.Column="1" Content="{Binding Strings[Common.Refresh]}" Command="{Binding RefreshDriverDiagnosticsCommand}" IsEnabled="{Binding CanRefreshDriverDiagnostics}" />
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding Strings[Administration.Drivers.Configured]}" Classes="nut-section-title" />
+              <TextBlock Text="{Binding Strings[Administration.Drivers.PassiveNotice]}" Classes="nut-metadata" TextWrapping="Wrap" />
+            </StackPanel>
+            <Button Grid.Column="1"
+                    Content="{Binding Strings[Common.Refresh]}"
+                    Command="{Binding RefreshDeviceInspectionCommand}"
+                    IsEnabled="{Binding CanRefreshDeviceInspection}" />
           </Grid>
+          <!--
+            Two statements, never interchangeable. The first says the file was read and declares no
+            drivers; the second says nobody has read it. A remote profile sits in the second state
+            until its configuration session is established, and reporting that as an empty ups.conf
+            would assert something about a file the application has not opened.
+          -->
           <TextBlock Text="{Binding Strings[Administration.Drivers.NoConfigured]}" IsVisible="{Binding HasNoConfiguredDrivers}" TextWrapping="Wrap" />
-          <ListBox ItemsSource="{Binding ConfiguredDrivers}" SelectedItem="{Binding SelectedConfiguredDriver, Mode=TwoWay}" IsEnabled="{Binding CanPrepareDriverDiagnostic}" IsVisible="{Binding HasConfiguredDrivers}">
+          <TextBlock Text="{Binding Strings[Administration.Drivers.ConfiguredUnknown]}" IsVisible="{Binding IsConfiguredDriverListUnknown}" Classes="nut-metadata" TextWrapping="Wrap" />
+          <ListBox ItemsSource="{Binding ConfiguredDrivers}" SelectedItem="{Binding SelectedConfiguredDriver, Mode=TwoWay}" IsEnabled="{Binding CanSelectConfiguredDriver}" IsVisible="{Binding HasConfiguredDrivers}">
             <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="6,4"><TextBlock Text="{Binding UpsName}" FontWeight="SemiBold" /><TextBlock Text="{Binding Description}" Classes="nut-metadata" TextWrapping="Wrap" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
           </ListBox>
           <WrapPanel IsVisible="{Binding HasSelectedConfiguredDriver}">
@@ -27,26 +61,81 @@
               <TextBlock Text="{Binding SelectedDriverPortStateText}"
                          Classes="nut-metadata"
                          Classes.healthy="{Binding IsSelectedDriverPortPresent}"
-                         Classes.warning="{Binding !IsSelectedDriverPortPresent}"
+                         Classes.critical="{Binding !IsSelectedDriverPortPresent}"
                          IsVisible="{Binding HasSelectedDriverPortState}"
                          TextWrapping="Wrap" />
             </StackPanel>
             <StackPanel Width="220" Margin="0,0,12,8"><TextBlock Text="{Binding Strings[Administration.Drivers.Protocol]}" Classes="nut-metadata" /><TextBlock Text="{Binding SelectedConfiguredDriver.Protocol}" /></StackPanel>
             <StackPanel Width="320" Margin="0,0,12,8"><TextBlock Text="driverpath" Classes="nut-metadata" /><TextBlock Text="{Binding SelectedConfiguredDriver.DriverPath}" TextWrapping="Wrap" /></StackPanel>
-            <StackPanel Width="320" Margin="0,0,12,8"><TextBlock Text="{Binding Strings[Administration.Drivers.Executable]}" Classes="nut-metadata" /><TextBlock Text="{Binding SelectedConfiguredDriver.Executable.Path}" TextWrapping="Wrap" /><TextBlock Text="{Binding SelectedConfiguredDriverStateText}" Classes="nut-metadata" /></StackPanel>
+            <StackPanel Width="320" Margin="0,0,12,8" IsVisible="{Binding !IsRemoteDeviceInspection}"><TextBlock Text="{Binding Strings[Administration.Drivers.Executable]}" Classes="nut-metadata" /><TextBlock Text="{Binding SelectedConfiguredDriver.Executable.Path}" TextWrapping="Wrap" /><TextBlock Text="{Binding SelectedConfiguredDriverStateText}" Classes="nut-metadata" /></StackPanel>
           </WrapPanel>
-        </StackPanel>
-      </Border>
+          </StackPanel>
 
-      <Border Classes="nut-card">
+          <!-- Section two: what the inspected machine actually exposes. -->
+          <Border Classes="nut-divider" />
+
         <StackPanel Spacing="10">
-          <TextBlock Text="{Binding Strings[Administration.Drivers.ComPorts]}" Classes="nut-section-title" />
-          <TextBlock Text="{Binding Strings[Administration.Drivers.NoComPorts]}" IsVisible="{Binding HasNoComPorts}" />
-          <ItemsControl ItemsSource="{Binding ComPorts}"><ItemsControl.ItemTemplate><DataTemplate><Grid ColumnDefinitions="Auto,12,*,12,*" Margin="0,3"><TextBlock Text="{Binding PortName}" FontWeight="SemiBold" /><TextBlock Grid.Column="2" Text="{Binding FriendlyName}" TextWrapping="Wrap" /><TextBlock Grid.Column="4" Text="{Binding Manufacturer}" Classes="nut-metadata" TextWrapping="Wrap" /></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+          <StackPanel Spacing="3">
+            <TextBlock Text="{Binding Strings[Administration.Drivers.ComPorts]}" Classes="nut-section-title" />
+            <!-- Which machine was examined, always. A remote reading is never called a local one. -->
+            <TextBlock Text="{Binding DeviceInspectionSourceText}" Classes="nut-metadata" TextWrapping="Wrap" />
+          </StackPanel>
+          <TextBlock Text="{Binding Strings[Administration.Drivers.NoComPorts]}" IsVisible="{Binding HasNoComPorts}" TextWrapping="Wrap" />
+          <ItemsControl ItemsSource="{Binding DetectedComPorts}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Grid ColumnDefinitions="Auto,10,Auto,8,Auto,8,*,16,Auto" RowDefinitions="Auto,Auto" Margin="0,5">
+                  <Ellipse Grid.Row="0" Grid.Column="0" Classes="nut-port-status-dot"
+                           Classes.healthy="{Binding IsHealthy}"
+                           Classes.warning="{Binding IsWarning}"
+                           Classes.critical="{Binding IsCritical}"
+                           ToolTip.Tip="{Binding StatusText}" />
+                  <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PortName}" FontWeight="SemiBold" />
+                  <!--
+                    Separates the port from its description. Hidden when there is no description.
+
+                    Centring the box is not centring the glyph: an em dash sits on the baseline, and
+                    at a larger size than the text beside it the baseline falls below that text's
+                    optical middle. The nudge is a render transform so it corrects the glyph without
+                    the row's height changing.
+                  -->
+                  <TextBlock Grid.Row="0" Grid.Column="4" Text="—" Classes="nut-metadata" FontSize="18" FontWeight="Bold"
+                             VerticalAlignment="Center" RenderTransform="translateY(-4.5px)" IsVisible="{Binding HasFriendlyName}" />
+                  <TextBlock Grid.Row="0" Grid.Column="6" Text="{Binding FriendlyName}" IsVisible="{Binding HasFriendlyName}" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="0" Grid.Column="8" Text="{Binding Manufacturer}" IsVisible="{Binding HasManufacturer}" Classes="nut-metadata" VerticalAlignment="Center" TextWrapping="Wrap" />
+                  <!--
+                    Chipset, identifiers and bus, and only what the device actually reported. The line
+                    is composed in the view model, so what may be claimed about a device is decided in
+                    one testable place instead of in a binding. The manufacturer has its own column at
+                    the end of the row, so it is never repeated here.
+                  -->
+                  <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="7"
+                             Text="{Binding IdentityText}"
+                             IsVisible="{Binding HasIdentity}"
+                             Classes="nut-metadata"
+                             TextWrapping="Wrap" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
         </StackPanel>
       </Border>
 
-      <Border Classes="nut-card">
+      <!--
+        Active diagnostics stay local, and the remote profile is told so rather than shown buttons
+        that would have to be refused. Every one of them opens the configured device through a NUT
+        driver, which is exactly what remote inspection is built not to do.
+      -->
+      <Border Classes="nut-card" IsVisible="{Binding IsRemoteDeviceInspection}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="{Binding Strings[Administration.Drivers.Diagnostics]}" Classes="nut-section-title" />
+          <TextBlock Text="{Binding Strings[Administration.Availability.LocalOnly]}" Classes="nut-metadata" />
+          <TextBlock Text="{Binding Strings[Administration.Drivers.LocalOnly]}" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+
+      <Border Classes="nut-card" IsVisible="{Binding AreActiveDiagnosticsAvailable}">
         <StackPanel Spacing="10">
           <TextBlock Text="{Binding Strings[Administration.Drivers.Diagnostics]}" Classes="nut-section-title" />
           <TextBlock Text="{Binding UpsdrvctlPath}" Classes="nut-metadata" TextWrapping="Wrap" />

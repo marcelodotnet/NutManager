@@ -10,8 +10,11 @@
     read, so they appear in the selected-device panel rather than being guessed for every row.
     No create, edit or delete action exists in the product, so none is offered here.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Spacing="16">
+  <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                AllowAutoHide="False">
+    <StackPanel Spacing="16" Margin="0,92,10,58">
 
       <!-- ==================== Header ==================== -->
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">

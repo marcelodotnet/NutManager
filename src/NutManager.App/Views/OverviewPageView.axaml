@@ -42,10 +42,11 @@
     floating over the content, so it can never sit on top of the header readout or the cards. The
     gutter only exists while the bar is shown, so no width is wasted when the page fits.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+  <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
                 VerticalScrollBarVisibility="Auto"
                 AllowAutoHide="False">
-    <StackPanel Spacing="16" Margin="0,0,10,0">
+    <StackPanel Spacing="16" Margin="0,92,10,58">
 
       <!-- ==================== Page header ==================== -->
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">

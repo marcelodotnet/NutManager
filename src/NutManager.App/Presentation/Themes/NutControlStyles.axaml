@@ -157,6 +157,28 @@
     <Setter Property="Fill" Value="{DynamicResource NutCriticalBrush}" />
   </Style>
 
+  <!--
+    Serial port health. Static, like the agent dot above: this is an operational reading an operator
+    glances at, not something that should move. Grey is the unstyled default and means "present, and
+    nothing further is known" — the ordinary outcome for a port SERIALCOMM lists and WMI has no record
+    for, which is not a fault and must never be coloured like one.
+  -->
+  <Style Selector="Ellipse.nut-port-status-dot">
+    <Setter Property="Width" Value="9" />
+    <Setter Property="Height" Value="9" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Fill" Value="{DynamicResource NutTextMutedBrush}" />
+  </Style>
+  <Style Selector="Ellipse.nut-port-status-dot.healthy">
+    <Setter Property="Fill" Value="{DynamicResource NutHealthyBrush}" />
+  </Style>
+  <Style Selector="Ellipse.nut-port-status-dot.warning">
+    <Setter Property="Fill" Value="{DynamicResource NutWarningBrush}" />
+  </Style>
+  <Style Selector="Ellipse.nut-port-status-dot.critical">
+    <Setter Property="Fill" Value="{DynamicResource NutCriticalBrush}" />
+  </Style>
+
   <!-- ==================== Surfaces ==================== -->
   <!--
     Cards are glass: a translucent pane over the window rather than an opaque block. The border is

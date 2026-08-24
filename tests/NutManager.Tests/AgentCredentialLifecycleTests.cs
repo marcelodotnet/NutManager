@@ -393,6 +393,9 @@ public sealed class AgentCredentialLifecycleTests
         public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
             Task.FromResult(NutAgentClientResult<NutAgentServiceStatus>.Failure(status));
 
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            Task.FromResult(NutAgentClientResult<NutAgentHardwareSnapshot>.Failure(status));
+
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Validation must never mutate.");
 

@@ -18,8 +18,13 @@ public sealed record NutAgentRequest(int ProtocolVersion, NutAgentOperation Oper
 }
 
 /// <summary>
-/// One response. Exactly one of the three payloads is populated, according to the operation, and the
-/// rest stay null rather than being invented.
+/// One response. Exactly one of the payloads is populated, according to the operation, and the rest
+/// stay null rather than being invented.
+///
+/// <see cref="Hardware"/> was added after the first release and is optional on the wire, which is
+/// what lets the protocol version stay where it is: an absent property deserializes to null, and a
+/// property an older build has never heard of is ignored rather than treated as malformed. The
+/// version is reserved for a change that actually breaks a peer.
 /// </summary>
 public sealed record NutAgentResponse(
     int ProtocolVersion,
@@ -27,6 +32,7 @@ public sealed record NutAgentResponse(
     NutAgentHandshake? Handshake = null,
     NutAgentServiceStatus? Status = null,
     NutAgentOperationResult? Result = null,
+    NutAgentHardwareSnapshot? Hardware = null,
     string? Detail = null)
 {
     public static NutAgentResponse Refused(NutAgentResultCode code, string? detail = null) =>

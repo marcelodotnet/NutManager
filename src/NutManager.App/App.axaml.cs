@@ -115,6 +115,9 @@ public partial class App : Application
             runtimeProfile,
             settings.Language,
             isLocalManagement ? new WindowsNutVersionResolver() : null);
+        // The administration page also receives the agent client: the same one the service monitor
+        // uses, for one read-only hardware operation. There is no second transport here and no
+        // fallback, and a local profile gets no client at all.
         var administration = new AdministrationPageViewModel(
             installationDetector,
             isLocalManagement ? new NutConfigurationFilePipeline() : null,
@@ -125,7 +128,8 @@ public partial class App : Application
             settings.Language,
             isLocalManagement ? new WindowsNutDriverCatalogSource() : null,
             remoteWindowsService,
-            remoteWindowsServiceControl);
+            remoteWindowsServiceControl,
+            isLocalManagement ? null : agentClient);
         INutManagedFileDetector managedFileDetector = isLocalManagement
             ? new LocalNutManagedFileDetector(installationDetector ?? new WindowsNutInstallationDetector())
             : new RemoteNutManagedFileDetector(() => remoteManagement?.DirectoryValidation);

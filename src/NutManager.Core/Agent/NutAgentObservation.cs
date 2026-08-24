@@ -32,12 +32,23 @@ public sealed record NutAgentObservation(
     public bool ControlAvailable => AgentReachable && Handshake is { ControlAvailable: true };
 
     /// <summary>
-    /// Whether the agent advertised this operation. Capabilities are read from the handshake rather
-    /// than inferred from a version number: an agent whose audit sink is unusable runs a perfectly
-    /// current build and still cannot start anything.
+    /// Whether the agent advertised this operation at all, independent of whether it can control
+    /// anything.
+    ///
+    /// This is the check a read-only operation has to use. An agent whose operators group resolved
+    /// but whose NUT service could not be pinned reports control as unavailable and still enumerates
+    /// serial devices perfectly well — asking <see cref="Supports"/> about it would hide a capability
+    /// the agent is plainly offering.
     /// </summary>
-    public bool Supports(NutAgentOperation operation) =>
-        ControlAvailable && Handshake is not null && Handshake.Capabilities.Contains(operation);
+    public bool Advertises(NutAgentOperation operation) =>
+        AgentReachable && Handshake is not null && Handshake.Capabilities.Contains(operation);
+
+    /// <summary>
+    /// Whether the agent advertised this control operation. Capabilities are read from the handshake
+    /// rather than inferred from a version number: an agent whose audit sink is unusable runs a
+    /// perfectly current build and still cannot start anything.
+    /// </summary>
+    public bool Supports(NutAgentOperation operation) => ControlAvailable && Advertises(operation);
 
     /// <summary>The agent could not be reached, or reached and refused. Never a statement about NUT.</summary>
     public static NutAgentObservation Unreachable(

@@ -28,6 +28,9 @@ public sealed class UnavailableNutAgentClient : INutManagerAgentClient
     public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
         Task.FromResult(Refuse<NutAgentServiceStatus>());
 
+    public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+        Task.FromResult(Refuse<NutAgentHardwareSnapshot>());
+
     public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
         Task.FromResult(Refuse<NutAgentOperationResult>());
 

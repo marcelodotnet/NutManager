@@ -43,6 +43,16 @@ public sealed class NutAgentRequestDispatcher
                     NutAgentResultCode.Success,
                     Status: await _service.GetStatusAsync(cancellationToken).ConfigureAwait(false));
 
+            case NutAgentOperation.GetHardwareSnapshot:
+                // Same gate as GetStatus, and for the same two reasons: the transport already
+                // established that the caller is an operator on that machine, and enumerating devices
+                // Windows has already published changes nothing. Adding it here rather than in either
+                // listener is what keeps the pipe and HTTPS answering identically.
+                return new NutAgentResponse(
+                    NutAgentOptions.ProtocolVersion,
+                    NutAgentResultCode.Success,
+                    Hardware: await _service.GetHardwareSnapshotAsync(cancellationToken).ConfigureAwait(false));
+
             case NutAgentOperation.Start:
                 return Completed(await _service.StartAsync(request.OperationId, caller, cancellationToken).ConfigureAwait(false));
 

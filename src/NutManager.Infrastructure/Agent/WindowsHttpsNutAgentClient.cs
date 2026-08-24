@@ -85,6 +85,9 @@ public sealed class WindowsHttpsNutAgentClient : INutManagerAgentClient, IDispos
     public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
         ExchangeAsync(NutAgentOperation.GetStatus, Guid.NewGuid(), response => response.Status, cancellationToken);
 
+    public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+        ExchangeAsync(NutAgentOperation.GetHardwareSnapshot, Guid.NewGuid(), response => response.Hardware, cancellationToken);
+
     public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
         ExchangeAsync(NutAgentOperation.Start, operationId, response => response.Result, cancellationToken);
 

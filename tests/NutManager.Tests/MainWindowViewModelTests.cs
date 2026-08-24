@@ -403,6 +403,9 @@ public sealed class MainWindowViewModelTests
         public Task<NutAgentClientResult<NutAgentServiceStatus>> GetStatusAsync(string host, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The dashboard must not start agent I/O.");
 
+        public Task<NutAgentClientResult<NutAgentHardwareSnapshot>> GetHardwareSnapshotAsync(string host, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The dashboard must not start agent I/O.");
+
         public Task<NutAgentClientResult<NutAgentOperationResult>> StartAsync(string host, Guid operationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("The dashboard must not mutate the agent.");
 

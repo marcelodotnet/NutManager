@@ -9,8 +9,11 @@
     Only the three surfaces backed by real state are offered, and every status below is a
     categorical projection of the current polling, discovery or installation state.
   -->
-  <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Spacing="16" Margin="0,0,18,0">
+  <ScrollViewer
+                HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                AllowAutoHide="False">
+    <StackPanel Spacing="16" Margin="0,92,18,58">
 
       <!-- ==================== Header ==================== -->
       <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">

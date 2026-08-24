@@ -171,6 +171,8 @@ Normal desktop process
 
 The adapter implements local installation detection, service metadata and control, UAC helper handling, conservative ACL assessment and repair, process and Event Log inspection, passive COM metadata, and controlled NUT driver diagnostics. Core remains platform-neutral.
 
+Since T38 the same passive COM source also backs the agent's read-only hardware inspection, so the local screen and the remote one describe a serial device through one enumeration rather than two that could drift apart. The COM naming rule itself moved to Core as `NutComPortName`, because a configured port in another machine's `ups.conf` and a port that machine reported have to be compared by the same rule; the Windows normalizer forwards to it and keeps its public shape.
+
 ## 9. Local and remote management boundary
 
 Local Windows management is implemented through T17. A Remote profile explicitly selects SSH/SFTP or SMB for configuration files; neither transport accesses a remote NutManager instance. SSH/SFTP uses strict pinned-host-key verification. SMB uses only a manually supplied UNC share and either the current Windows identity or a session-scoped isolated Windows outbound identity created with `LOGON_NEW_CREDENTIALS`; it owns no global WNet connection and never maps a drive, disconnects a redirector connection, or discovers shares. Explicit SMB passwords are converted only for the native logon boundary and the resulting token is disposed when the session ends. A user may opt in after successful authentication to remember SSH or explicit-SMB secrets in Windows Credential Manager; the Core contract exposes only profile ID, fixed credential kind, and disposable secret buffers. A successful connection or browse automatically performs the read-only validation of the configured directory. Writes remain read-only by default and require a separate explicit probe plus the profile's Manage policy: Windows/OpenSSH safe replacement for SSH/SFTP, or verified UNC `File.Replace` semantics for SMB. The transport-neutral remote pipeline preserves T14-style fingerprints, candidate verification, reserved generated backups, post-write verification, rollback, and recovery paths.
@@ -203,6 +205,27 @@ semantics, backup, verification, and rollback are all unchanged — T30 changes 
 authenticates, not how it writes. NutManager still maps no drive, runs no `net use`, and never
 disconnects a Windows SMB session it did not create; a credential conflict is reported and refused
 rather than "fixed" globally.
+
+### Remote device inspection through the agent (T38)
+
+The Windows agent gained one read-only operation, `GetHardwareSnapshot`, negotiated through the
+existing handshake capability list rather than through a version number. It answers identically over
+both transports because both listeners call the same dispatcher, and it is available even when the
+agent reports control as unavailable: serial devices exist whether or not that machine has a NUT
+service the agent could pin.
+
+The operation is passive by construction. Its request has no port, speed, command, executable or
+path field, so no caller can widen it into opening a device; the implementation delegates to the
+existing `IWindowsComPortSource` and adds no enumeration of its own. It is not audited, because a
+read an operator repeats by pressing Refresh would bury the control records the Event Log exists to
+preserve; the audit policy for the mutating operations is unchanged.
+
+The agent still does not read or write NUT configuration. Relating a configured `port` to a detected
+one loads the server's `ups.conf` through the profile's own SFTP or SMB transport and interprets it
+with a platform-neutral reader that reports what it cannot establish from another machine — the
+driver executable and its runtime state — as not established rather than guessing. A port list that
+could not be read is carried as unknown rather than as an empty list, so an unreachable agent never
+makes a configured port read as absent.
 
 ## 10. Windows-first CI and packaging
 

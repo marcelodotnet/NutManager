@@ -30,8 +30,9 @@
 
   <ScrollViewer x:Name="SettingsScrollViewer"
                 HorizontalScrollBarVisibility="Disabled"
-                VerticalScrollBarVisibility="Auto">
-    <StackPanel Spacing="26" MaxWidth="1180">
+                VerticalScrollBarVisibility="Auto"
+                AllowAutoHide="False">
+    <StackPanel Spacing="26" MaxWidth="1180" Margin="0,92,10,58">
       <StackPanel Spacing="2">
         <StackPanel Orientation="Horizontal" Spacing="11">
           <TextBlock Text="{Binding Title}" Classes="nut-page-title" />

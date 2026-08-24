@@ -30,6 +30,11 @@ public sealed class NutAgentApplicationService
     private readonly TimeProvider _time;
     private readonly NutAgentOptions _options;
 
+    // Optional, and its absence is the capability answer: an agent assembled without an inspector
+    // simply does not advertise the operation, so a client learns that from the handshake instead of
+    // from a refused request.
+    private readonly INutAgentHardwareInspector? _hardware;
+
     // One mutation at a time. Start, Stop and Restart may never interleave: a Stop landing between a
     // Restart's own stop and start would leave the service down while the restart reported success.
     private readonly SemaphoreSlim _mutationGate = new(1, 1);
@@ -47,7 +52,8 @@ public sealed class NutAgentApplicationService
         INutAgentAuditSink audit,
         INutAgentAuthorization authorization,
         TimeProvider? timeProvider = null,
-        NutAgentOptions? options = null)
+        NutAgentOptions? options = null,
+        INutAgentHardwareInspector? hardwareInspector = null)
     {
         _resolver = resolver ?? throw new ArgumentNullException(nameof(resolver));
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
@@ -55,6 +61,7 @@ public sealed class NutAgentApplicationService
         _authorization = authorization ?? throw new ArgumentNullException(nameof(authorization));
         _time = timeProvider ?? TimeProvider.System;
         _options = options ?? new NutAgentOptions();
+        _hardware = hardwareInspector;
     }
 
     public string MachineName => _options.MachineName;
@@ -100,6 +107,15 @@ public sealed class NutAgentApplicationService
             capabilities.AddRange([NutAgentOperation.Start, NutAgentOperation.Stop, NutAgentOperation.Restart]);
         }
 
+        // Deliberately outside the control gate. Serial devices exist whether or not this machine has
+        // a NUT service the agent could pin, an operators group it could resolve for control, or a
+        // usable audit sink — and refusing to describe hardware because control is off would report a
+        // perfectly readable machine as having no ports. The transport still decided who may ask.
+        if (_hardware is not null)
+        {
+            capabilities.Add(NutAgentOperation.GetHardwareSnapshot);
+        }
+
         return new NutAgentHandshake(
             NutAgentOptions.ProtocolVersion, _options.AgentVersion, MachineName, capabilities, controlAvailable, reason);
     }
@@ -113,6 +129,60 @@ public sealed class NutAgentApplicationService
     {
         if (_target is null) return NutAgentServiceStatus.Unavailable(MachineName, _time.GetUtcNow());
         return await _controller.GetStatusAsync(_target, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reports the machine's serial devices.
+    ///
+    /// Outside the mutation gate and unaudited, for the same reasons <see cref="GetStatusAsync"/> is:
+    /// it changes nothing, it must keep answering while a restart holds the gate, and an operator
+    /// pressing Refresh must not be able to bury a control record under enumeration noise in the
+    /// Event Log. The mutation audit policy is untouched by this.
+    ///
+    /// An inspector that throws is reported as an enumeration failure rather than being allowed to
+    /// take the connection with it. The distinction that survives is the one that matters: "this
+    /// machine has no serial ports" and "this machine could not be asked" stay different answers.
+    /// </summary>
+    public async Task<NutAgentHardwareSnapshot> GetHardwareSnapshotAsync(CancellationToken cancellationToken)
+    {
+        if (_hardware is null)
+        {
+            return NutAgentHardwareSnapshot.Unavailable(
+                MachineName, _time.GetUtcNow(), "This agent does not provide hardware inspection.");
+        }
+
+        try
+        {
+            var snapshot = await _hardware.InspectAsync(cancellationToken).ConfigureAwait(false);
+            return Cap(snapshot);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return NutAgentHardwareSnapshot.Unavailable(MachineName, _time.GetUtcNow(), exception.GetType().Name);
+        }
+    }
+
+    /// <summary>
+    /// Keeps the snapshot inside the response ceiling both transports enforce.
+    ///
+    /// The ports that survive are real ports and are reported as such; the note says how many were
+    /// left out. Letting an oversized frame go out instead would surface to the operator as a
+    /// protocol failure, which says nothing about their hardware and sends them to the wrong place.
+    /// </summary>
+    private static NutAgentHardwareSnapshot Cap(NutAgentHardwareSnapshot snapshot)
+    {
+        if (snapshot.ComPorts.Count <= NutAgentHardware.MaxReportedPorts) return snapshot;
+
+        var detected = snapshot.ComPorts.Count;
+        return snapshot with
+        {
+            ComPorts = snapshot.ComPorts.Take(NutAgentHardware.MaxReportedPorts).ToArray(),
+            Detail = snapshot.Detail ?? $"Reported {NutAgentHardware.MaxReportedPorts} of {detected} detected serial ports."
+        };
     }
 
     public Task<NutAgentOperationResult> StartAsync(Guid operationId, NutAgentCallerContext caller, CancellationToken cancellationToken) =>
