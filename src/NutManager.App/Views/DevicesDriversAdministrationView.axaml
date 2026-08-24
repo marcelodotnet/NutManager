@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:viewModels="clr-namespace:NutManager.App.ViewModels"
              x:Class="NutManager.App.Views.DevicesDriversAdministrationView"
@@ -84,8 +84,16 @@
                            Classes.critical="{Binding IsCritical}"
                            ToolTip.Tip="{Binding StatusText}" />
                   <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding PortName}" FontWeight="SemiBold" />
-                  <!-- Reads the port into its description. Hidden when there is no description to point at. -->
-                  <TextBlock Grid.Row="0" Grid.Column="4" Text="→" Classes="nut-metadata" FontSize="17" VerticalAlignment="Center" IsVisible="{Binding HasFriendlyName}" />
+                  <!--
+                    Separates the port from its description. Hidden when there is no description.
+
+                    Centring the box is not centring the glyph: an em dash sits on the baseline, and
+                    at a larger size than the text beside it the baseline falls below that text's
+                    optical middle. The nudge is a render transform so it corrects the glyph without
+                    the row's height changing.
+                  -->
+                  <TextBlock Grid.Row="0" Grid.Column="4" Text="—" Classes="nut-metadata" FontSize="18" FontWeight="Bold"
+                             VerticalAlignment="Center" RenderTransform="translateY(-4.5px)" IsVisible="{Binding HasFriendlyName}" />
                   <TextBlock Grid.Row="0" Grid.Column="6" Text="{Binding FriendlyName}" IsVisible="{Binding HasFriendlyName}" TextWrapping="Wrap" />
                   <TextBlock Grid.Row="0" Grid.Column="8" Text="{Binding Manufacturer}" IsVisible="{Binding HasManufacturer}" Classes="nut-metadata" VerticalAlignment="Center" TextWrapping="Wrap" />
                   <!--
