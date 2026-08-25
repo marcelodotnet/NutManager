@@ -1582,8 +1582,8 @@ reproducible build path, checksums, CI, and fifteen tests over the installer aut
 Not done: **no installer has been run on any machine.** Installing requires elevation and changes the
 machine, and the agent acceptance needs a real server. Until that happens the compatibility matrix has
 no validated row, and the difference between "builds correctly" and "installs correctly" is exactly
-what remains. The operator manual is written but unpublished — no Notion connector is available in this
-environment.
+what remains. The operator manual is written and published to Notion as fifteen pages under the T39
+hub; its screenshots are still pending, because taking them means running the installers.
 
 See [Packaging and release](PACKAGING-AND-RELEASE.md) for the full record of what is and is not
 verified, and [Manual do operador](operator-manual/MANUAL-DO-OPERADOR.md) for the unpublished operator

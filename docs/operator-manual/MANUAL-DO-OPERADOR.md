@@ -1,9 +1,12 @@
-# NutManager — Manual do operador
+﻿# NutManager — Manual do operador
 
-> **Fonte pronta para publicação no Notion.** Este arquivo é o conteúdo do hub
-> *NutManager — T39 Installer, Packaging & Documentation*. Nenhum conector Notion estava disponível no
-> ambiente em que foi escrito, então **ele não foi publicado**. Cada seção abaixo corresponde a uma
-> página do hub.
+> **Publicado no Notion.** Este arquivo é a fonte das 15 páginas criadas sob o hub
+> *NutManager — T39 Installer, Packaging & Documentation*
+> (`3c657ac0-7709-810b-b8d8-ec798f82a942`). Cada seção abaixo corresponde a uma página.
+>
+> O plano da T39 que já existia no hub foi preservado integralmente — as páginas do manual entraram
+> como filhas dele, sem alterar seu conteúdo. Ao editar este arquivo, republique a página
+> correspondente para que as duas não divirjam.
 >
 > **Sem capturas de tela.** Nenhum instalador foi executado numa máquina real, e uma captura inventada
 > seria pior que a ausência dela. Os pontos onde uma imagem agregaria valor estão marcados com
