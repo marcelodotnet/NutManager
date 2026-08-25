@@ -31,11 +31,16 @@ that it has no authority and refuses every control operation.
 ## Requirements
 
 - Windows x64, with NUT installed and registered as a Windows service.
-- The **ASP.NET Core Runtime 10** on the server, unless you publish self-contained. This is stricter
-  than it used to be: the agent's optional HTTPS transport is hosted on ASP.NET Core's HTTP.sys
-  server, so the published `runtimeconfig.json` requires both `Microsoft.NETCore.App` and
-  `Microsoft.AspNetCore.App`. Installing the ASP.NET Core runtime brings the .NET runtime with it, so
-  it is one download rather than two — but the plain .NET runtime alone is no longer enough, even
+- **No .NET runtime**, if you install from `NutManager-Agent-Setup-x.y.z.exe`. Since T39 the agent
+  ships self-contained and carries its own. The cost of that is worth knowing: a runtime security fix
+  now arrives as a NutManager release rather than through whatever patches the machine's runtimes.
+
+  Building the agent by hand with `--self-contained false` still requires the **ASP.NET Core Runtime
+  10** on the server, and that is stricter than the plain .NET runtime: the optional HTTPS transport
+  is hosted on ASP.NET Core's HTTP.sys server, so the published `runtimeconfig.json` requires both
+  `Microsoft.NETCore.App` and `Microsoft.AspNetCore.App`. Installing the ASP.NET Core runtime brings
+  the .NET runtime with it, so it is one download rather than two — but the plain .NET runtime alone
+  is not enough, even
   when HTTPS stays disabled.
 - Administrative rights on the server for the installation steps below. The agent itself never
   performs any of them.

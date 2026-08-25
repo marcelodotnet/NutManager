@@ -58,7 +58,7 @@ Only one task should normally be in progress at a time.
 | T36 | DONE | Windows Agent settings and deployment UX | Agent transport, endpoint, authentication mode and account exposed in the profile editor, with the native credential lifecycle completed and kept separate from the SMB/SFTP credential |
 | T37 | DONE | UI layout, interaction and visual polish | Refined layout, navigation and responsiveness across Overview, Administration, Diagnostics and Settings, plus the official application icon, with every existing boundary preserved |
 | T38 | DONE | Remote COM and hardware inspection through the Windows Agent | Passive serial-device inspection over the negotiated `GetHardwareSnapshot` capability, with `SERIALCOMM` authoritative for presence and WMI used only for enrichment |
-| T39 | PLANNED | Windows installers, packaging and complete operator documentation | Official installers for the desktop application and the agent, safe upgrade and uninstall, release artifacts, and operator documentation written against the distributed build |
+| T39 | IN PROGRESS | Windows installers, packaging and complete operator documentation | Both installers build and are asserted by tests; manual acceptance on Windows and on the server has not been run, so the task is not complete |
 
 ---
 
@@ -1572,7 +1572,22 @@ conversation with the UPS uninterrupted.
 
 ## T39 — Windows installers, packaging and complete operator documentation
 
-**Status:** PLANNED
+**Status:** IN PROGRESS
+
+### Where it stands
+
+Built and asserted: the technology decision, the single version source, both installers, the
+reproducible build path, checksums, CI, and fifteen tests over the installer authoring.
+
+Not done: **no installer has been run on any machine.** Installing requires elevation and changes the
+machine, and the agent acceptance needs a real server. Until that happens the compatibility matrix has
+no validated row, and the difference between "builds correctly" and "installs correctly" is exactly
+what remains. The operator manual is written but unpublished — no Notion connector is available in this
+environment.
+
+See [Packaging and release](PACKAGING-AND-RELEASE.md) for the full record of what is and is not
+verified, and [Manual do operador](operator-manual/MANUAL-DO-OPERADOR.md) for the unpublished operator
+guide.
 
 ### Objective
 

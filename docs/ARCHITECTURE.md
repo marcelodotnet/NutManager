@@ -68,6 +68,14 @@ The active profile is resolved during bootstrap into an immutable runtime contex
 
 ## 5. Persistence
 
+NutManager is distributed as two independent Windows installers, built with WiX v5: one for the
+desktop application and one for the agent service. Both products publish self-contained, so neither
+requires a .NET runtime on the machine, and a runtime security fix consequently arrives as a product
+release. The agent installer declares its Windows service rather than scripting it, and neither
+installer reads, writes, starts or stops anything belonging to NUT. See
+[Installer architecture](INSTALLER-ARCHITECTURE.md) and
+[Packaging and release](PACKAGING-AND-RELEASE.md).
+
 `settings.json` schema v5 is per-user UTF-8 JSON for polling, timeout, theme, mock-mode, language, sidebar, and background-transparency preferences. It uses temporary-file, atomic persistence and has no secrets. The persistence DTO can read legacy v1/v2 endpoint fields for one-time managed-profile bootstrap, but current serialization and runtime settings no longer mirror an endpoint.
 
 `managed-servers.json` is schema-versioned, per-user metadata for managed profiles and the active profile. The current version is **v6**, reached in steps that are each still readable on load: v3 added the SMB authentication mode, v4 the non-secret SSH authentication mode and optional private-key path, v5 the per-profile selection of managed NUT files, and v6 the agent block — transport, HTTPS endpoint, authentication mode and account name. A profile written by an older build is migrated on read rather than rejected. It uses temporary-file, atomic persistence and never contains passwords, passphrases, or private-key material. Those values are session-only by default and, only after an explicit successful connection, may be saved in app-owned `CRED_TYPE_GENERIC` Windows Credential Manager entries with local-machine persistence.
