@@ -93,14 +93,19 @@ public sealed class T39PresentationLifecycleTests
     // ---------------------------------------------------------------- transient settings feedback
 
     [Fact]
-    public void LeavingSettingsClearsTheSavedBannerButNotAFailure()
+    public void LeavingSettingsClearsBothSuccessBannersButNotAFailure()
     {
+        // Two separate channels, and clearing only one is how "Configurações salvas." survived a visit:
+        // the general-settings banner is a flag, the profile banner is a message, and they are rendered
+        // by different bindings.
         var settings = new SettingsPageViewModel(new ApplicationSettings(), null);
 
-        settings.ProfileStatusMessage = settings.Localizer.Get("Settings.SaveSuccess");
-        Assert.True(settings.HasProfileStatusMessage);
+        settings.IsSaved = true;
+        settings.ProfileStatusMessage = settings.Localizer.Get("Profiles.SaveSuccess");
 
         settings.OnDeactivated();
+
+        Assert.False(settings.IsSaved);
         Assert.False(settings.HasProfileStatusMessage);
 
         // A failure is not feedback for a finished action; it is a problem nobody has dealt with, and
@@ -110,6 +115,34 @@ public sealed class T39PresentationLifecycleTests
         settings.OnDeactivated();
 
         Assert.Equal(failure, settings.ProfileStatusMessage);
+    }
+
+    [Fact]
+    public void SaveIsOfferedOnlyWhenSomethingIsUnsaved()
+    {
+        // An enabled button claims that pressing it does something. Offered on an untouched page, it
+        // rewrote the settings file with its own contents and reported success — harmless, and enough
+        // to teach an operator that the success message means nothing.
+        var settings = new SettingsPageViewModel(new ApplicationSettings(), null);
+
+        Assert.False(settings.CanSaveAll);
+
+        settings.PollingIntervalSeconds = "9";
+        Assert.True(settings.CanSaveAll);
+
+        // Back to the confirmed value: nothing to save again.
+        settings.PollingIntervalSeconds = new ApplicationSettings().PollingInterval
+            .TotalSeconds.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.False(settings.CanSaveAll);
+    }
+
+    [Fact]
+    public void TheSavedBannerCarriesACheckInBothCultures()
+    {
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            Assert.StartsWith("✅", new NutManagerLocalizer(language).Get("Settings.SaveSuccess"), StringComparison.Ordinal);
+        }
     }
 
     // ---------------------------------------------------------------- version presentation

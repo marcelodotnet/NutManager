@@ -14,7 +14,7 @@
   <data name="Settings.PollingInterval" xml:space="preserve"><value>Polling interval (seconds)</value></data>
   <data name="Settings.MockMode" xml:space="preserve"><value>Use simulated data</value></data>
   <data name="Settings.Save" xml:space="preserve"><value>Save settings</value></data>
-  <data name="Settings.SaveSuccess" xml:space="preserve"><value>Settings saved.</value></data>
+  <data name="Settings.SaveSuccess" xml:space="preserve"><value>✅ Settings saved.</value></data>
   <data name="Settings.SaveError" xml:space="preserve"><value>The general settings could not be saved.</value></data>
   <data name="Common.Save" xml:space="preserve"><value>Save</value></data>
   <data name="Common.Discard" xml:space="preserve"><value>Discard</value></data>
