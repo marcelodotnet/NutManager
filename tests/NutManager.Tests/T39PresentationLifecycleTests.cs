@@ -287,6 +287,34 @@ public sealed class T39PresentationLifecycleTests
     }
 
     [Fact]
+    public void ReconnectingIsNotReportedAsOffline()
+    {
+        // Calling a retry "offline" sends somebody to the server room for something that is already
+        // fixing itself. The amber state gets its own word.
+        var shell = Source("src", "NutManager.App", "ViewModels", "MainWindowViewModel.cs");
+
+        var footer = shell.IndexOf("public string FooterServerStatusText", StringComparison.Ordinal);
+        Assert.True(footer > 0);
+
+        var body = shell[footer..(footer + 900)];
+        Assert.Contains("IsConnectionPending", body, StringComparison.Ordinal);
+        Assert.Contains("Status.Reconnecting", body, StringComparison.Ordinal);
+
+        // All three readings exist in both cultures.
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            var strings = new NutManagerLocalizer(language);
+            foreach (var key in new[] { "Shell.ServerOnline", "Shell.ServerOffline", "Status.Reconnecting" })
+            {
+                Assert.False(string.IsNullOrWhiteSpace(strings.Get(key)));
+            }
+        }
+
+        Assert.Equal("Reconectando", new NutManagerLocalizer(UiLanguagePreference.PtBr).Get("Status.Reconnecting"));
+        Assert.Equal("Reconnecting", new NutManagerLocalizer(UiLanguagePreference.EnUs).Get("Status.Reconnecting"));
+    }
+
+    [Fact]
     public void TheFooterReadsTheNutConnectionAndNotTheAgent()
     {
         // The three connectivity domains stay apart. A stopped agent must not be able to make a healthy
@@ -296,7 +324,7 @@ public sealed class T39PresentationLifecycleTests
         var footer = shell.IndexOf("public string FooterServerStatusText", StringComparison.Ordinal);
         Assert.True(footer > 0);
 
-        var expression = shell[footer..(footer + 320)];
+        var expression = shell[footer..(footer + 900)];
         Assert.Contains("IsConnectionHealthy", expression, StringComparison.Ordinal);
         Assert.DoesNotContain("Agent", expression, StringComparison.Ordinal);
     }

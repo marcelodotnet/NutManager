@@ -330,17 +330,31 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// surfaces, and folding the two together here would let a stopped agent make a perfectly healthy
     /// monitoring session look offline — or the reverse, which is worse.
     ///
-    /// Online covers only a healthy connection. Connecting, reconnecting, failed and unavailable all
-    /// read as Offline, because from the footer's distance the useful question is whether readings are
-    /// arriving. The distinction between them is not thrown away: the dot keeps its four colours and
-    /// <see cref="ConnectionStatusText"/> still names the exact state for the accessible label and the
-    /// tooltip.
+    /// Three readings rather than two. Online and Offline are the ends, and the amber state in between
+    /// says Reconnecting — because "offline" while the client is actively retrying is wrong in the way
+    /// that matters: it tells an operator to go and investigate something that is already fixing
+    /// itself. A transient state named as a failure costs somebody a trip to the server room.
+    ///
+    /// Failed and unavailable both read as Offline. From the footer's distance the useful question is
+    /// whether readings are arriving, and the distinction between "tried and failed" and "never tried"
+    /// is not thrown away: the dot keeps its four colours and <see cref="ConnectionStatusText"/> still
+    /// names the exact state for the accessible label and the tooltip.
     ///
     /// The profile's own name is used rather than its host, because that is what the operator called
     /// this server. A profile with no name falls back to whatever ActiveProfileName resolves to.
     /// </summary>
-    public string FooterServerStatusText =>
-        $"{ActiveProfileName} · {Localizer.Get(IsConnectionHealthy ? "Shell.ServerOnline" : "Shell.ServerOffline")}";
+    public string FooterServerStatusText
+    {
+        get
+        {
+            var state =
+                IsConnectionHealthy ? Localizer.Get("Shell.ServerOnline") :
+                IsConnectionPending ? Localizer.Get("Status.Reconnecting") :
+                Localizer.Get("Shell.ServerOffline");
+
+            return $"{ActiveProfileName} · {state}";
+        }
+    }
 
     /// <summary>Names the precise state for assistive technology, not just Online or Offline.</summary>
     public string FooterServerAccessibleText => $"{ActiveProfileName} · {ConnectionStatusText}";

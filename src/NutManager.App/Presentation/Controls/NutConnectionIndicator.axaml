@@ -1,12 +1,18 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="clr-namespace:NutManager.App.Presentation.Controls"
              x:Class="NutManager.App.Presentation.Controls.NutConnectionIndicator"
-             x:Name="Root">
+             x:Name="Root"
+             ClipToBounds="False">
+  <!--
+    The root deliberately does not clip. The status light's glow is wider than the cell that holds it —
+    that is what a glow is — and clipping here cut it into a square, which is unmistakably a rendering
+    artifact rather than light. The two text panels below clip themselves, which is where trimming
+    actually needs to happen; doing it again out here only caught the halo.
+  -->
   <Grid ColumnDefinitions="Auto,*"
         ColumnSpacing="4"
         VerticalAlignment="Center"
-        ClipToBounds="True"
         ToolTip.Tip="{Binding AccessibleText, ElementName=Root}"
         AutomationProperties.Name="{Binding AccessibleText, ElementName=Root}">
     <controls:NutStatusLed Grid.Column="0" State="{Binding LedState, ElementName=Root}" />

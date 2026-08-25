@@ -39,10 +39,10 @@ public sealed class InteractionPolishTests
         Assert.Contains("x:Key=\"NutLedHealthyBrush\" Color=\"#3BEF88\"", colors, StringComparison.Ordinal);
         Assert.Contains("x:Key=\"NutHealthyBrush\" Color=\"#4ADE80\"", colors, StringComparison.Ordinal);
 
-        // The glow is a shadow, and a shadow colour cannot be bound to a resource, so the literal
-        // has to be kept in step with the token by hand. A mismatch would light the ball in one
-        // green and its halo in another.
-        Assert.Contains("#F23BEF88", Controls("NutStatusLed.axaml"), StringComparison.Ordinal);
+        // Neither a shadow colour nor a style-set border brush can be bound to a resource, so both
+        // literals have to be kept in step with the token by hand. A mismatch would light the ball in
+        // one green, its ambient glow in a second and the travelling ring in a third.
+        Assert.Contains("#FF3BEF88", Controls("NutStatusLed.axaml"), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -51,14 +51,21 @@ public sealed class InteractionPolishTests
         var source = Controls("NutStatusLed.axaml");
 
         var core = LayerSize(source, "Core");
-        var halo = LayerSize(source, "Halo");
+        var ambient = LayerSize(source, "AmbientHalo");
 
-        // The ball remains discreet while the larger source produces a stronger blurred wave.
+        // The ball remains discreet while the larger source produces a stronger blurred glow.
         Assert.Equal(8, core);
-        Assert.Equal(6, halo);
+        Assert.Equal(6, ambient);
 
-        // Whole-pixel centring: an odd size straddles a half pixel and the ball looks crooked.
-        Assert.All(new[] { core, halo }, size => Assert.Equal(0, size % 2));
+        // Whole-pixel centring: an even size inside an even cell keeps the circle on whole pixels, and
+        // an odd one straddles a half pixel, where the antialiasing comes out heavier on one side and
+        // reads as the ball sitting crooked.
+        Assert.All(new[] { core, ambient }, size => Assert.Equal(0, size % 2));
+
+        // The travelling ring is exempt. It is scaled continuously by the composition animation, so it
+        // spends nearly all its life on fractional sizes anyway and there is no whole-pixel state to
+        // protect; its own size is chosen to start at roughly the core's diameter instead.
+        Assert.Equal(11, LayerSize(source, "Halo"));
     }
 
     private static int LayerSize(string axaml, string layer)
@@ -71,9 +78,9 @@ public sealed class InteractionPolishTests
     }
 
     [Theory]
-    [InlineData(NutLedState.Healthy, 1.8)]
-    [InlineData(NutLedState.Pending, 1.8)]
-    [InlineData(NutLedState.Critical, 2.4)]
+    [InlineData(NutLedState.Healthy, 2.0)]
+    [InlineData(NutLedState.Pending, 2.0)]
+    [InlineData(NutLedState.Critical, 3.0)]
     [InlineData(NutLedState.Unavailable, 0.0)]
     public void LedPulsePeriodsAreSemanticAndDeterministic(NutLedState state, double seconds)
     {
@@ -105,7 +112,7 @@ public sealed class InteractionPolishTests
         var visual = Controls("NutStatusLed.axaml");
         Assert.Equal(1, source.Split("private void StartPulse(", StringSplitOptions.None).Length - 1);
         Assert.Contains("ApplyStateClasses(AmbientHalo)", source, StringComparison.Ordinal);
-        Assert.Contains("0 0 15 2 #F2F87171", visual, StringComparison.Ordinal);
+        Assert.Contains("0 0 21 0 #FFF87171", visual, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -135,10 +142,20 @@ public sealed class InteractionPolishTests
         Assert.DoesNotContain("x:Name=\"Highlight\"", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Fill=\"White\"", source, StringComparison.Ordinal);
 
-        // Concentric ellipses have hard edges. The glow remains a shadow, with a small spread that
-        // keeps the expanding wave luminous while it fades.
         Assert.DoesNotContain("x:Name=\"Glow\"", source, StringComparison.Ordinal);
-        Assert.Contains("Value=\"0 0 12 1 #F23BEF88\"", source, StringComparison.Ordinal);
+
+        // The resting glow is a blurred shadow and carries no spread. A spread draws a solid band
+        // before the blur begins, and once anything expands, that band becomes a travelling edge — a
+        // drawn circle rather than light.
+        Assert.Contains("Value=\"0 0 18 0 #FF3BEF88\"", source, StringComparison.Ordinal);
+
+        // The wave, by contrast, is deliberately an outline now. Scaling a filled shadow inflates the
+        // blob and reads as the glow swelling; scaling an outline carries a ring outwards through the
+        // glow, which is the gesture being imitated. It is blurred so the outline never resolves into
+        // a hard circle.
+        Assert.Contains("Border.nut-led-ring", source, StringComparison.Ordinal);
+        Assert.Contains("Value=\"blur(2.5)\"", source, StringComparison.Ordinal);
+        Assert.Contains("BorderThickness", source, StringComparison.Ordinal);
     }
 
     [Fact]
