@@ -157,7 +157,12 @@ Add-LocalGroupMember -Group "NutManager Operators" -Member "DOMINIO\usuario"
 Num **controlador de domínio** não existem grupos locais. Crie um grupo de domínio com esse nome pelo
 Active Directory Users and Computers, ou por `New-ADGroup`, e trate como a mudança de diretório que é.
 
-Sem o grupo, o Agent instala e roda, mas recusa toda operação de controle.
+**Sem o grupo o serviço não inicia.** Isso é deliberado e não um defeito: a ACL do named pipe é
+construída a partir do SID do grupo, e sem ele não há principal a quem conceder acesso — um listener
+aberto recusaria todo mundo. O agente registra a falha de inicialização no Log de Eventos e para, em
+vez de ficar de pé aparentando funcionar.
+
+Se o serviço não sobe após instalar, esta é a primeira coisa a verificar.
 
 ### Passo 2 — instale
 
@@ -245,12 +250,14 @@ Em `C:\ProgramData\NutManager\Agent\agent.json`:
 
 ```json
 {
-  "https": {
-    "enabled": true,
-    "url": "https://servidor.exemplo.local:5199/v1/agent"
-  }
+  "httpsEnabled": true,
+  "httpsPrefix": "https://servidor.exemplo.local:5199/",
+  "certificateThumbprint": "<THUMBPRINT>"
 }
 ```
+
+O `httpsPrefix` é o prefixo HTTP.sys e **termina em barra**. Não acrescente caminho: as rotas são do
+agente, não da configuração.
 
 ### 3. Binding SSL
 
@@ -258,13 +265,20 @@ Em `C:\ProgramData\NutManager\Agent\agent.json`:
 netsh http add sslcert ipport=0.0.0.0:5199 certhash=<THUMBPRINT> appid="{00000000-0000-0000-0000-000000000000}"
 ```
 
-O `appid` é um GUID qualquer que identifique a reserva; anote o que usar.
+O `appid` é um GUID qualquer que identifique a reserva; anote o que usar. Confira com:
+
+```powershell
+netsh http show sslcert ipport=0.0.0.0:5199
+```
 
 ### 4. Reserva de URL
 
 ```powershell
-netsh http add urlacl url=https://+:5199/v1/agent user="NT AUTHORITY\SYSTEM"
+netsh http add urlacl url=https://servidor.exemplo.local:5199/ user="NT AUTHORITY\SYSTEM"
 ```
+
+A URL reservada precisa ser **idêntica** ao `httpsPrefix`, barra final inclusive. Divergir aqui faz o
+listener falhar ao subir sem dizer por quê.
 
 ### 5. Firewall
 
