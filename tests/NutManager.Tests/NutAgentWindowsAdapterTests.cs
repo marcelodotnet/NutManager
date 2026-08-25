@@ -261,6 +261,49 @@ public sealed class NutAgentWindowsAdapterTests
         Assert.Equal(WindowsNutAgentServiceController.ErrorServiceDoesNotExist, outcome.Win32ErrorCode);
     }
 
+    [Theory]
+    [InlineData(
+        WindowsNutAgentServiceController.ErrorAccessDenied,
+        NutAgentServiceQueryFailureKind.AccessDenied)]
+    [InlineData(
+        WindowsNutAgentServiceController.ErrorServiceDoesNotExist,
+        NutAgentServiceQueryFailureKind.ServiceDoesNotExist)]
+    [InlineData(1722, NutAgentServiceQueryFailureKind.WindowsFailure)]
+    public void AFailedStatusQueryKeepsItsNumericWindowsCodeAndSafeCategory(
+        int win32Error,
+        NutAgentServiceQueryFailureKind expected)
+    {
+        var failure = WindowsNutAgentServiceController.MapStatusFailure(new Win32Exception(win32Error));
+
+        Assert.Equal(expected, failure.Kind);
+        Assert.Equal(win32Error, failure.Win32ErrorCode);
+        Assert.Equal(nameof(Win32Exception), failure.ExceptionType);
+        Assert.DoesNotContain(new Win32Exception(win32Error).Message, failure.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AStatusQueryTimeoutIsDistinguishedWithoutParsingItsMessage()
+    {
+        var failure = WindowsNutAgentServiceController.MapStatusFailure(new TimeoutException("localized text"));
+
+        Assert.Equal(NutAgentServiceQueryFailureKind.TimedOut, failure.Kind);
+        Assert.Null(failure.Win32ErrorCode);
+        Assert.Equal(nameof(TimeoutException), failure.ExceptionType);
+        Assert.DoesNotContain("localized text", failure.Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnUnknownStatusQueryFailureKeepsOnlyItsSafeType()
+    {
+        var failure = WindowsNutAgentServiceController.MapStatusFailure(
+            new InvalidOperationException("environmental detail that must not travel"));
+
+        Assert.Equal(NutAgentServiceQueryFailureKind.Unknown, failure.Kind);
+        Assert.Null(failure.Win32ErrorCode);
+        Assert.Equal(nameof(InvalidOperationException), failure.ExceptionType);
+        Assert.DoesNotContain("environmental detail", failure.Detail, StringComparison.Ordinal);
+    }
+
     // ---------------------------------------------------------------- audit record
 
     [Fact]

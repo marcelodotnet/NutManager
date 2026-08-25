@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.ComponentModel;
 using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Security.AccessControl;
@@ -209,6 +210,35 @@ public sealed class NutAgentProtocolTests
 
         Assert.False(NutAgentWireCodec.TryReadResponse(payload, out _, out var failure));
         Assert.Equal(NutAgentResultCode.IncompatibleProtocol, failure);
+    }
+
+    [Fact]
+    public void AStatusQueryFailureRoundTripsWithoutChangingProtocolVersion()
+    {
+        var response = new NutAgentResponse(
+            NutAgentOptions.ProtocolVersion,
+            NutAgentResultCode.Success,
+            Status: new NutAgentServiceStatus(
+                "GANDALF",
+                "Network UPS Tools",
+                "Network UPS Tools",
+                NutServiceState.Unknown,
+                null,
+                "nut.exe",
+                true,
+                DateTimeOffset.UtcNow,
+                new NutAgentServiceQueryFailure(
+                    NutAgentServiceQueryFailureKind.AccessDenied,
+                    WindowsNutAgentServiceController.ErrorAccessDenied,
+                    nameof(Win32Exception),
+                    "The SCM refused the status query.")));
+
+        var payload = NutAgentWireCodec.Serialize(response);
+        var decoded = NutAgentWireCodec.TryReadResponse(payload, out var roundTripped, out var failure);
+
+        Assert.True(decoded, failure.ToString());
+        Assert.Equal(NutAgentOptions.ProtocolVersion, roundTripped?.ProtocolVersion);
+        Assert.Equal(response.Status, roundTripped?.Status);
     }
 
     // ---------------------------------------------------------------- dispatch

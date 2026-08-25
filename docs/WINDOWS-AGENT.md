@@ -78,6 +78,12 @@ net use \\GANDALF /user:SBRA\operator
 The agent does not accept a password over the wire, and it does not fall back to any weaker
 authentication if Windows refuses the caller.
 
+On the named pipe, impersonation exists only while the server reads the caller identity and checks
+membership of `NutManager Operators`. Any failure in that step is refused before dispatch. The
+listener then explicitly restores the Agent process identity before the shared dispatcher runs, so
+status, target revalidation and Start/Stop/Restart execute as the LocalSystem service rather than
+with the caller's independent SCM rights. The caller name still travels separately for audit.
+
 ## Publishing
 
 From the repository root:
@@ -191,6 +197,11 @@ are deliberately kept apart:
 - **Service** — the NUT service's identity, state, process and pid, as the agent reports them.
 - NUT's own protocol health, which is shown elsewhere in the shell and is never touched by any of the
   above.
+
+If the local SCM query itself fails, the status payload preserves a fixed failure category, the
+numeric Win32 error when Windows supplied one, and the safe exception type. It never sends the
+localized exception message. This distinguishes a missing service or access denial from an ordinary
+`Unknown` state without turning the UI into a stack trace.
 
 An agent that cannot be reached on a server whose upsd is answering normally is an administrative
 gap. NutManager says so, and does not fall back to any other route: there is no second path to the

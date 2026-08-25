@@ -190,6 +190,15 @@ Since T38 the same passive COM source also backs the agent's read-only hardware 
 
 Local Windows management is implemented through T17. A Remote profile explicitly selects SSH/SFTP or SMB for configuration files; neither transport accesses a remote NutManager instance. SSH/SFTP uses strict pinned-host-key verification. SMB uses only a manually supplied UNC share and either the current Windows identity or a session-scoped isolated Windows outbound identity created with `LOGON_NEW_CREDENTIALS`; it owns no global WNet connection and never maps a drive, disconnects a redirector connection, or discovers shares. Explicit SMB passwords are converted only for the native logon boundary and the resulting token is disposed when the session ends. A user may opt in after successful authentication to remember SSH or explicit-SMB secrets in Windows Credential Manager; the Core contract exposes only profile ID, fixed credential kind, and disposable secret buffers. A successful connection or browse automatically performs the read-only validation of the configured directory. Writes remain read-only by default and require a separate explicit probe plus the profile's Manage policy: Windows/OpenSSH safe replacement for SSH/SFTP, or verified UNC `File.Replace` semantics for SMB. The transport-neutral remote pipeline preserves T14-style fingerprints, candidate verification, reserved generated backups, post-write verification, rollback, and recovery paths.
 
+The Windows Agent's named-pipe listener impersonates the connected Windows caller only for identity
+and SID-based operators-group authorization. A denied or indeterminate caller is refused before the
+shared dispatcher. Authorized dispatch is explicitly run under the Agent process identity, keeping
+caller identity for audit while LocalSystem remains the sole authority used for SCM status,
+revalidation and mutation. HTTPS reaches the same dispatcher after HTTP.sys authentication and the
+same group check. Neither transport falls back to the other. A failed SCM status read remains a
+validated target with `Unknown` state plus a safe query-failure category and numeric Win32 code when
+available; localized Windows exception messages never cross the wire.
+
 ### Windows-native SMB credentials (T30)
 
 SMB authentication has two shapes and NutManager owns no password control for either.
