@@ -26,7 +26,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     // The same agent client the remote service monitor uses, for one read-only operation. It is
     // absent for a local profile, and its absence is the whole of the "no remote inspection here"
     // decision — there is no second transport and no fallback to anything else.
-    private readonly INutManagerAgentClient? _agentClient;
+    private INutManagerAgentClient? _agentClient;
     private readonly RemoteManagementSessionViewModel? _remoteManagement;
     private NutInstallationInfo? _currentInstallation;
     private NutConfigurationFileSnapshot? _loadedSnapshot;
@@ -2357,8 +2357,51 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
         OnPropertyChanged(nameof(SelectedDriverPortStateText));
     }
 
+    /// <summary>
+    /// Discards a confirmation nobody answered.
+    ///
+    /// Stop and Restart ask before they act, and the question is presentation state: it belongs to the
+    /// moment the operator was looking at that panel. Leaving the screen is an answer of a kind, and
+    /// the safe reading of it is "not now" — so the question goes away rather than lying in wait to be
+    /// re-asked, out of context, whenever they come back.
+    ///
+    /// This cannot cancel anything already sent. Both paths clear their pending state before reaching
+    /// the agent or the service, so by the time an operation is in flight there is no confirmation
+    /// left here to discard, and calling this affects nothing but the prompt.
+    /// </summary>
+    private void DiscardPendingConfirmations()
+    {
+        RemoteWindowsServiceControl?.CancelConfirmation();
+        InvalidateAdministrativeAction();
+    }
+
+    public override void OnDeactivated() => DiscardPendingConfirmations();
+
+    /// <summary>
+    /// Takes the same rebuilt client the service monitor was just given, so the one read-only hardware
+    /// operation this page performs travels the transport the profile now selects.
+    ///
+    /// Leaving it pointed at the previous client would make the devices screen and the service screen
+    /// describe the same server over two different connections, and only one of them would be the one
+    /// the operator chose. There is still exactly one client per profile and no fallback between
+    /// transports.
+    /// </summary>
+    public void RebindAgentClient(INutManagerAgentClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        if (ReferenceEquals(_agentClient, client)) return;
+
+        _agentClient = client;
+
+        // What the previous transport reported is no longer an answer about the current one.
+        SetRemoteInspectionUnavailable(Strings.Get("Administration.Drivers.RemoteAgentUnavailable"));
+    }
+
     partial void OnSelectedAdministrationSectionChanged(AdministrationSectionItemViewModel value)
     {
+        // Moving between sections leaves the panel that asked, so the question goes with it.
+        DiscardPendingConfirmations();
+
         OnPropertyChanged(nameof(IsNutConfigurationSectionSelected));
         OnPropertyChanged(nameof(IsWindowsServiceSectionSelected));
         OnPropertyChanged(nameof(IsDevicesDriversSectionSelected));

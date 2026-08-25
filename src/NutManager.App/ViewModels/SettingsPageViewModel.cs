@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -602,6 +602,31 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     public bool HasProfileLoadError => !string.IsNullOrWhiteSpace(ProfileLoadError);
 
     public bool HasProfileStatusMessage => !string.IsNullOrWhiteSpace(ProfileStatusMessage);
+
+    /// <summary>
+    /// Drops the "saved" banner on the way out.
+    ///
+    /// It is feedback for an action, not a property of the page, and an action that finished two
+    /// screens ago has nothing left to report. Coming back to Settings and being told the settings
+    /// were saved is confusing precisely because it is true — the user cannot tell whether it refers
+    /// to what they just did or to something from ten minutes ago.
+    ///
+    /// Only the success messages are cleared, and only by matching the exact strings this page emits
+    /// for them. Anything else in that field is a failure or a warning that has not been dealt with,
+    /// and clearing it would hide a problem instead of tidying a banner.
+    /// </summary>
+    public override void OnDeactivated()
+    {
+        if (ProfileStatusMessage is not { } message) return;
+
+        var transient =
+            string.Equals(message, Localizer.Get("Profiles.SaveSuccess"), StringComparison.Ordinal) ||
+            string.Equals(message, Localizer.Get("Profiles.DeleteSuccess"), StringComparison.Ordinal) ||
+            string.Equals(message, Localizer.Get("Profiles.ActivateSuccess"), StringComparison.Ordinal) ||
+            string.Equals(message, Localizer.Get("Settings.SaveSuccess"), StringComparison.Ordinal);
+
+        if (transient) ProfileStatusMessage = null;
+    }
 
     public bool HasProfileSaveError => !string.IsNullOrWhiteSpace(ProfileSaveError);
 

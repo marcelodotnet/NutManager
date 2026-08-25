@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia;
 using NutManager.App.Localization;
@@ -99,6 +99,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(ConnectionPresentation));
                 OnPropertyChanged(nameof(ConnectionStatusText));
+                OnPropertyChanged(nameof(FooterServerStatusText));
+                OnPropertyChanged(nameof(FooterServerAccessibleText));
                 OnPropertyChanged(nameof(ConnectionTooltip));
                 OnPropertyChanged(nameof(ConnectionSummaryText));
                 OnPropertyChanged(nameof(ActiveUpsName));
@@ -320,6 +322,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
     };
     public string ConnectionTooltip => ConnectionSummaryText;
     public string ConnectionSummaryText => $"{ConnectionStatusText} · {ConnectionDetailText}";
+
+    /// <summary>
+    /// The footer's reading of the active server: "GANDALF · Online".
+    ///
+    /// This is the **NUT TCP** connection and nothing else. The agent has its own state and its own
+    /// surfaces, and folding the two together here would let a stopped agent make a perfectly healthy
+    /// monitoring session look offline — or the reverse, which is worse.
+    ///
+    /// Online covers only a healthy connection. Connecting, reconnecting, failed and unavailable all
+    /// read as Offline, because from the footer's distance the useful question is whether readings are
+    /// arriving. The distinction between them is not thrown away: the dot keeps its four colours and
+    /// <see cref="ConnectionStatusText"/> still names the exact state for the accessible label and the
+    /// tooltip.
+    ///
+    /// The profile's own name is used rather than its host, because that is what the operator called
+    /// this server. A profile with no name falls back to whatever ActiveProfileName resolves to.
+    /// </summary>
+    public string FooterServerStatusText =>
+        $"{ActiveProfileName} · {Localizer.Get(IsConnectionHealthy ? "Shell.ServerOnline" : "Shell.ServerOffline")}";
+
+    /// <summary>Names the precise state for assistive technology, not just Online or Offline.</summary>
+    public string FooterServerAccessibleText => $"{ActiveProfileName} · {ConnectionStatusText}";
     public string ApplicationName => Localizer.Get("App.Name");
     public bool IsConnectionHealthy => ConnectionPresentation == ConnectionPresentationState.Healthy;
     public bool IsConnectionPending => ConnectionPresentation is ConnectionPresentationState.Pending or ConnectionPresentationState.Warning;
@@ -372,6 +396,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Navigate(AppPage page)
     {
+        // Told before it is replaced, so a page can drop the state that belonged to the visit. Also
+        // fires when navigating to the page already shown, which is harmless: there is nothing to
+        // discard that the user has not just seen.
+        CurrentPage?.OnDeactivated();
+
         SelectedPage = page;
         CurrentPage = _pages[page];
         UpdateNavigationSelection();

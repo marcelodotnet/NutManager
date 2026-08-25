@@ -23,6 +23,22 @@ public abstract class PageViewModel : ObservableObject
     public string Title { get; }
 
     public string Description { get; }
+
+    /// <summary>
+    /// Called as the shell navigates away from this page.
+    ///
+    /// For discarding presentation state that belongs to the visit rather than to the product: an
+    /// unanswered confirmation, a success banner for something already finished. Both survive
+    /// navigation otherwise and reappear later out of context — a destructive confirmation that comes
+    /// back is worse than a wasted click, because the operator is being asked again about something
+    /// they walked away from.
+    ///
+    /// It must not cancel work already in progress, close a session, or discard anything the user
+    /// would have to redo. Unsaved drafts are not presentation state and stay exactly where they are.
+    /// </summary>
+    public virtual void OnDeactivated()
+    {
+    }
 }
 public sealed partial class OverviewPageViewModel : PageViewModel
 {

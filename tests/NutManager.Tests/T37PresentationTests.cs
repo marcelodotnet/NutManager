@@ -1,4 +1,4 @@
-using NutManager.App.ViewModels;
+﻿using NutManager.App.ViewModels;
 using Xunit;
 
 namespace NutManager.Tests;
@@ -212,8 +212,12 @@ public sealed class T37PresentationTests
     {
         var app = Read("src", "NutManager.App", "App.axaml.cs");
 
-        Assert.Contains("settingsPage.ProfilePersisted += profile =>", app, StringComparison.Ordinal);
-        Assert.Contains("profile.Id == runtimeProfile.Profile.Id", app, StringComparison.Ordinal);
+        Assert.Contains("settingsPage.ProfilePersisted +=", app, StringComparison.Ordinal);
+
+        // Still gated on the persisted profile being the running one. The shape changed from an if to
+        // an early return when the agent rebind joined this handler; what must not change is that a
+        // save on some other profile never reaches the runtime.
+        Assert.Contains("profile.Id != runtimeProfile.Profile.Id", app, StringComparison.Ordinal);
         Assert.Contains(
             "administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles)",
             app,
