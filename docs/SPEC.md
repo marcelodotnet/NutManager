@@ -1,4 +1,4 @@
-# NutManager Product Specification
+﻿# NutManager Product Specification
 
 ## 1. Product vision
 
@@ -45,10 +45,17 @@ The current product also implements:
 - T27 graphical `nut.conf` and `upsd.conf`;
 - T27A approved visual fidelity, shared iconography, restrained motion, and navigation hardening;
 - T28 graphical `upsd.users` and `upsmon.conf` with change-only secrets;
-- T29 graphical-configuration UX hardening.
+- T29 graphical-configuration UX hardening;
+- T30 Windows-native SMB credential authentication with per-profile managed NUT file selection;
+- T31 collapsible NUT file rail, T32 icon library adoption, T33 code-health cleanup;
+- T34 read-only remote monitoring of the Windows NUT service;
+- T35 the Windows Agent for secure remote NUT service control;
+- T36 the agent's settings and deployment UX, and its credential lifecycle;
+- T37 UI layout, interaction and visual polish, and the official application icon;
+- T38 passive remote COM and hardware inspection through the agent.
 
-T30, Windows-native SMB credential authentication with per-profile managed NUT file selection, is
-the task in progress.
+T39, Windows installers, packaging and complete operator documentation, is the next planned task.
+T22, Linux compatibility, remains deferred.
 
 ## 4. Platform and quality requirements
 
@@ -90,7 +97,9 @@ Managed profiles separate monitoring from management metadata:
 
 A remote profile can monitor through NUT TCP and manage configuration only through an explicit SSH/SFTP or SMB file session; it never falls back to local management. The user supplies the directory without server/share autodiscovery; NutManager performs its read-only validation automatically after a successful connection or browse. SSH host keys use explicit SHA-256 fingerprint pinning; an unknown key requires review and a mismatch is rejected. SMB uses an explicit UNC share and current-identity or session-only explicit authentication. A successful explicit connection may opt in to save only its secret in Windows Credential Manager; the profile JSON stores no secret.
 
-Remote ReadOnly profiles can inspect configuration. Remote Manage profiles can write only after an explicit safe-write capability probe: Windows/OpenSSH for SSH/SFTP or verified `File.Replace` behavior for SMB. Remote service control, ACL, COM-port, and driver administration remain unavailable.
+Remote ReadOnly profiles can inspect configuration. Remote Manage profiles can write only after an explicit safe-write capability probe: Windows/OpenSSH for SSH/SFTP or verified `File.Replace` behavior for SMB.
+
+Remote Windows administration is a fourth path and not part of the configuration transport. It reaches the NutManager Agent on the managed server, over an authenticated named pipe or over HTTPS, and covers NUT service monitoring and control and passive serial-hardware inspection. The agent never reads or writes a NUT configuration file. Remote ACL administration and active remote driver diagnostics remain unavailable: the latter open the device, and opening a device stays local.
 
 ## 7. Post-MVP capability status
 
@@ -101,11 +110,13 @@ Remote ReadOnly profiles can inspect configuration. Remote Manage profiles can w
 - preview, backup, safe write, recovery, and rollback;
 - Windows local service, UAC, ACL, process, Event Log, COM, and driver diagnostics;
 - SSH/SFTP and SMB remote configuration management with automatic read-only directory validation; SSH uses pinned host keys and SMB uses a share-root boundary;
-- responsive shell, shared design system, and `pt-BR`/`en-US` localization.
+- Windows-native SMB credential authentication and per-profile selection of the NUT files a profile manages;
+- responsive shell, shared design system, `pt-BR`/`en-US` localization, and the official application icon;
+- remote Windows administration through the NutManager Agent: read-only NUT service monitoring, explicitly confirmed service control, and passive COM and hardware inspection, over an authenticated named pipe or HTTPS with no fallback between them.
 
 ### Next
 
-- T30 Windows-native SMB credential authentication: the operating system's own credential dialog for an explicit SMB account, a simplified SMB profile form, and per-profile selection of the NUT files a profile manages.
+- T39 Windows installers, packaging and complete operator documentation: official installers for the desktop application and for the agent, install/upgrade/repair/uninstall, release artifacts and versioning, safe preservation of settings, profiles and credentials, validation on Windows client and Windows Server, and operator documentation written against the build actually distributed.
 
 ### Later
 

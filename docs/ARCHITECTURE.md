@@ -1,4 +1,4 @@
-# NutManager Architecture
+﻿# NutManager Architecture
 
 ## 1. Architectural goals
 
@@ -43,10 +43,15 @@ Core contains deterministic models, contracts, validation, status, and operation
 ```text
 NutManager
 ├── Monitoring
-│   └── NUT TCP protocol
+│   └── NUT TCP
 └── Management
     ├── Local Windows adapter
-    └── Remote configuration transports: SSH/SFTP or SMB
+    ├── Remote configuration
+    │   ├── SSH/SFTP
+    │   └── SMB
+    └── Remote Windows Agent
+        ├── NUT service monitoring/control
+        └── passive COM inspection
 ```
 
 The managed-profile model is implemented through `ManagedNutServerProfile`, `NutMonitoringProfile`, `NutManagementProfile`, `ManagedNutServerProfiles`, `ManagedServerCapabilities`, and `ManagedNutServerRuntimeContext`.
@@ -63,9 +68,9 @@ The active profile is resolved during bootstrap into an immutable runtime contex
 
 ## 5. Persistence
 
-`settings.json` schema v3 is per-user UTF-8 JSON for polling, timeout, theme, mock-mode, language, and sidebar preferences. It uses temporary-file, atomic persistence and has no secrets. The persistence DTO can read legacy v1/v2 endpoint fields for one-time managed-profile bootstrap, but current serialization and runtime settings no longer mirror an endpoint.
+`settings.json` schema v5 is per-user UTF-8 JSON for polling, timeout, theme, mock-mode, language, sidebar, and background-transparency preferences. It uses temporary-file, atomic persistence and has no secrets. The persistence DTO can read legacy v1/v2 endpoint fields for one-time managed-profile bootstrap, but current serialization and runtime settings no longer mirror an endpoint.
 
-`managed-servers.json` is schema-versioned, per-user metadata for managed profiles and the active profile. Schema v4 retains SSH/SMB metadata and adds non-secret SSH authentication mode and optional private-key path. It uses temporary-file, atomic persistence and never contains passwords, passphrases, or private-key material. Those values are session-only by default and, only after an explicit successful connection, may be saved in app-owned `CRED_TYPE_GENERIC` Windows Credential Manager entries with local-machine persistence.
+`managed-servers.json` is schema-versioned, per-user metadata for managed profiles and the active profile. The current version is **v6**, reached in steps that are each still readable on load: v3 added the SMB authentication mode, v4 the non-secret SSH authentication mode and optional private-key path, v5 the per-profile selection of managed NUT files, and v6 the agent block — transport, HTTPS endpoint, authentication mode and account name. A profile written by an older build is migrated on read rather than rejected. It uses temporary-file, atomic persistence and never contains passwords, passphrases, or private-key material. Those values are session-only by default and, only after an explicit successful connection, may be saved in app-owned `CRED_TYPE_GENERIC` Windows Credential Manager entries with local-machine persistence.
 
 These stores do not use backup or rollback semantics. Backup, recoverable replacement, and rollback belong to the T14 configuration-file pipeline.
 

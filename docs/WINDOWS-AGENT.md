@@ -1,4 +1,4 @@
-# NutManager Windows agent
+﻿# NutManager Windows agent
 
 The agent is a Windows service that runs on the machine hosting NUT and controls that machine's NUT
 service on behalf of authorized NutManager operators.
@@ -86,11 +86,16 @@ dotnet publish src/NutManager.Agent/NutManager.Agent.csproj --configuration Rele
 Copy the contents of `publish/agent` to the server, for example to
 `C:\Program Files\NutManager Agent`.
 
-The published payload is about 7 MB and still includes libraries the agent never calls — the SSH and
-WMI stacks arrive because the agent references `NutManager.Infrastructure` as a whole. They are
-carried, not used: no code path in the agent reaches them. Narrowing the payload is a packaging
-change worth making, and it is recorded as a known limitation rather than solved by moving
-platform-specific code into `NutManager.Core`, which is not allowed to hold it.
+The published payload is about 7 MB, because the agent references `NutManager.Infrastructure` as a
+whole and takes everything that project carries.
+
+The WMI stack is genuinely used: since T38 the passive serial inspection reads `Win32_SerialPort` and
+`Win32_PnPEntity` to enrich the ports it enumerates. The SSH stack is not. No code path in the agent
+reaches it, and it is carried only because of that whole-project reference.
+
+Narrowing the payload is a packaging change worth making, and it is recorded as a known limitation
+rather than solved by moving platform-specific code into `NutManager.Core`, which is not allowed to
+hold it.
 
 ## Installation
 
@@ -278,10 +283,14 @@ The agent must be redeployed on the server for the capability to appear.
 The profile stores the agent transport, and the named pipe is the default for new and existing
 profiles. HTTPS is selected per profile and requires the server-side setup below.
 
-The profile editor does not yet have controls for these options — that is planned work (T36), not a
-missing capability. Until then the transport, endpoint, authentication mode and account name are set
-in the profile document itself; the application reads, validates and migrates them exactly as it will
-once the editor exists.
+Since T36 the profile editor owns these options. The transport, the HTTPS endpoint, the
+authentication mode and the account name are set in the profile form; the profile document remains
+their storage, and the application reads, validates and migrates it exactly as before.
+
+The agent credential has its own lifecycle there, and it is deliberately not the SMB or SFTP one. An
+alternate Windows account is captured, saved to the Windows Credential Manager under the agent's own
+target, and removed from it, without touching the configuration-transport secret beside it. A profile
+may perfectly well read configuration over SMB as one account and control the service as another.
 
 There is no fallback in either direction. A profile that selects HTTPS never quietly uses the named
 pipe when the endpoint is wrong, and a profile on the named pipe never tries HTTPS: an operator who
