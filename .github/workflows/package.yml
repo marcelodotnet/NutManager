@@ -1,4 +1,4 @@
-name: Package MVP
+name: Package and installers
 
 on:
   push:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   package-windows:
-    name: Package Windows x64
+    name: Build Windows installers
     runs-on: windows-latest
 
     steps:
@@ -26,35 +26,69 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Restore, build and test
-        run: |
-          dotnet restore NutManager.sln
-          dotnet build NutManager.sln --configuration Release --no-restore
-          dotnet test NutManager.sln --configuration Release --no-build
+      # Pinned to the last MS-RL release. v6 and v7 refuse to build without accepting the Open Source
+      # Maintenance Fee EULA, which is a licensing decision and not one a build agent should make.
+      # See docs/INSTALLER-ARCHITECTURE.md.
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 5.0.2
 
-      - name: Publish and package
+      - name: Build release artifacts
         shell: pwsh
-        run: ./scripts/package.ps1
+        run: ./scripts/build-release.ps1
 
-      - name: Smoke test published package
+      # The script asserts its own outputs, but an artifact set that silently loses one of the two
+      # installers would still upload successfully, so the shape of the release is checked here too.
+      - name: Verify the artifact set
         shell: pwsh
         run: |
-          $extract = Join-Path $env:RUNNER_TEMP 'NutManager-win-x64-smoke'
-          Expand-Archive artifacts/packages/NutManager-win-x64.zip -DestinationPath $extract -Force
-          $application = Join-Path $extract 'NutManager.App.exe'
-          if (-not (Test-Path $application)) { throw 'Published executable was not found.' }
-          $process = Start-Process -FilePath $application -PassThru
-          try {
-            Start-Sleep -Seconds 5
-            if ($process.HasExited) { throw "Published application exited early with code $($process.ExitCode)." }
+          $version = (Select-String -Path Directory.Build.props -Pattern '<NutManagerVersion[^>]*>([0-9.]+)<').Matches[0].Groups[1].Value
+          $expected = @(
+            "NutManager-Setup-$version.exe",
+            "NutManager-Agent-Setup-$version.exe",
+            'NutManager-win-x64.zip',
+            'SHA256SUMS.txt'
+          )
+          $actual = Get-ChildItem artifacts -File | Select-Object -ExpandProperty Name
+          foreach ($name in $expected) {
+            if ($actual -notcontains $name) { throw "Missing artifact: $name" }
           }
-          finally {
-            if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          $unexpected = $actual | Where-Object { $expected -notcontains $_ }
+          if ($unexpected) { throw "Unexpected artifacts: $($unexpected -join ', ')" }
+
+      # A checksum file that does not match what is being shipped is worse than none, because it is
+      # trusted. Recomputing here proves the recorded hashes describe the uploaded bytes.
+      - name: Verify checksums
+        shell: pwsh
+        run: |
+          foreach ($line in Get-Content artifacts/SHA256SUMS.txt) {
+            $parts = $line -split '\s+', 2
+            $recorded = $parts[0]
+            $name = $parts[1].Trim()
+            $actual = (Get-FileHash "artifacts/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $recorded) { throw "Checksum mismatch for $name" }
+            Write-Host "ok  $name"
           }
 
-      - name: Upload Windows package
+      # An installer that shipped a NUT binary would be installing NUT, which neither product does.
+      - name: Verify no NUT binary was packaged
+        shell: pwsh
+        run: |
+          $forbidden = @('upsd.exe', 'upsmon.exe', 'upsdrvctl.exe', 'nutdrv_qx.exe', 'usbhid-ups.exe')
+          $extract = Join-Path $env:RUNNER_TEMP 'zip-check'
+          Expand-Archive artifacts/NutManager-win-x64.zip -DestinationPath $extract -Force
+          foreach ($name in $forbidden) {
+            if (Get-ChildItem $extract -Recurse -Filter $name -ErrorAction SilentlyContinue) {
+              throw "A NUT binary was packaged: $name"
+            }
+          }
+          Write-Host 'No NUT binary present.'
+
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: NutManager-win-x64
-          path: artifacts/packages/NutManager-win-x64.zip
+          name: NutManager-release
+          path: |
+            artifacts/*.exe
+            artifacts/*.zip
+            artifacts/SHA256SUMS.txt
           if-no-files-found: error
