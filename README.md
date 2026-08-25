@@ -1,8 +1,8 @@
-# NutManager
+﻿# NutManager
 
 NutManager is a Windows-first desktop client and local administration interface for [Network UPS Tools (NUT)](https://github.com/networkupstools/nut), built with Avalonia and .NET.
 
-> Project status: active development. Windows x64 monitoring, local and remote administration, the recoverable configuration pipeline, and dedicated graphical configuration for the supported NUT files are implemented. Windows-native SMB credential authentication is in progress as T30.
+> Project status: active development. Windows x64 monitoring, local and remote administration, the recoverable configuration pipeline, dedicated graphical configuration for the supported NUT files, and remote Windows administration through the NutManager Agent are implemented through T38. Installers, packaging, and complete operator documentation are the next planned work as T39.
 
 ## Purpose
 
@@ -34,9 +34,31 @@ Editing preserves comments, ordering, quoting, spacing, unknown directives, and 
 
 ### Remote management
 
-Remote profiles can monitor through the standard NUT TCP connection and access configuration through SSH/SFTP or SMB. The user manually browses and validates the selected remote directory; no server/share autodiscovery or local-management fallback is used. SSH/SFTP host keys require explicit SHA-256 fingerprint trust/pinning. SMB accesses only a user-supplied UNC share and can use the current Windows identity or session-only explicit credentials.
+A remote profile reaches its managed server by three independent paths. They are deliberately separate: each answers a different question, each authenticates on its own terms, and none of them stands in for another.
 
-Remote ReadOnly profiles can inspect configuration. Remote Manage profiles can write only after an explicit same-directory safe-write capability probe: Windows/OpenSSH for SSH/SFTP, or verified `File.Replace` behavior for SMB. Local, SFTP, and SMB use the same configuration architecture; the transport changes only readiness, path, and write implementation. Remote service, ACL, COM-port, and driver administration are not implemented.
+```text
+Monitoring
+→ NUT TCP
+
+Remote configuration
+→ SSH/SFTP or SMB
+→ T13/T14 safe-write
+
+Remote Windows administration
+→ NutManager Agent
+→ NUT service monitoring and control
+→ passive COM and hardware inspection
+```
+
+**Monitoring** uses the standard NUT TCP connection and is independent of every management action.
+
+**Remote configuration** goes through SSH/SFTP or SMB. The user manually browses and validates the selected remote directory; no server/share autodiscovery or local-management fallback is used. SSH/SFTP host keys require explicit SHA-256 fingerprint trust/pinning. SMB accesses only a user-supplied UNC share and can use the current Windows identity or session-only explicit credentials. Remote ReadOnly profiles can inspect configuration; remote Manage profiles can write only after an explicit same-directory safe-write capability probe: Windows/OpenSSH for SSH/SFTP, or verified `File.Replace` behavior for SMB. Local, SFTP, and SMB use the same configuration architecture; the transport changes only readiness, path, and write implementation.
+
+**Remote Windows administration** goes through the NutManager Agent, a separate privileged Windows service on the managed server. It monitors and controls the Windows NUT service and inspects serial hardware passively. It is reached over an authenticated named pipe or over HTTPS, chosen per profile, with no fallback between them.
+
+The Agent is not a configuration transport. It never reads or writes `ups.conf` or any other NUT file; configuration continues to travel only over SSH/SFTP or SMB.
+
+Two capabilities deliberately do not exist. **Remote ACL administration** is not implemented. **Active remote driver diagnostics** are not implemented: `upsdrvctl`, driver help, variable listing, and data dumps open the device and stay restricted to local management. Remote hardware inspection is passive only: it enumerates and describes serial ports without opening one, transmitting a byte, or running a NUT driver. See [Windows Agent](docs/WINDOWS-AGENT.md).
 
 ### Secrets
 
@@ -73,6 +95,7 @@ The official package is `NutManager-win-x64.zip`, a self-contained Windows x64 a
 - [Graphical NUT configuration](docs/GRAPHICAL-NUT-CONFIGURATION.md)
 - [Semantic configuration architecture](docs/SEMANTIC-CONFIGURATION-ARCHITECTURE.md)
 - [UI design system](docs/UI-DESIGN-SYSTEM.md)
+- [Windows Agent](docs/WINDOWS-AGENT.md)
 - [Localization](docs/LOCALIZATION.md)
 - [Profile validation architecture](docs/PROFILE-VALIDATION-ARCHITECTURE.md)
 - [MVP package validation](docs/MVP-VALIDATION.md) and [live validation findings](docs/LIVE-VALIDATION-FINDINGS.md) — historical acceptance records

@@ -1,9 +1,10 @@
-# NutManager Implementation Tasks
+﻿# NutManager Implementation Tasks
 
 ## Status legend
 
 - `TODO` — not started;
 - `READY` — specified and ready for implementation;
+- `PLANNED` — scoped for a future task, not yet specified in full;
 - `IN PROGRESS` — currently assigned;
 - `BLOCKED` — waiting on a dependency or decision;
 - `DEFERRED` — intentionally postponed for future evaluation;
@@ -54,7 +55,10 @@ Only one task should normally be in progress at a time.
 | T33 | DONE | Code health, dead-code cleanup and focused refactoring | Proven-dead code removed, doubtful code preserved, behaviour and visuals unchanged |
 | T34 | DONE | Remote Windows NUT service monitoring | Read-only monitoring of the Windows NUT service and its process from a remote NutManager instance, independently from NUT protocol health |
 | T35 | DONE | Windows Agent for secure remote NUT service control | Privileged Windows agent with authenticated named-pipe and HTTPS transports, service control restricted to the validated NUT service, Event Log auditing and desktop integration |
-| T36 | IN PROGRESS | Windows Agent settings and deployment UX | Expose the agent transport and authentication model in the profile editor, complete the native credential lifecycle, and carry out desktop and server acceptance |
+| T36 | DONE | Windows Agent settings and deployment UX | Agent transport, endpoint, authentication mode and account exposed in the profile editor, with the native credential lifecycle completed and kept separate from the SMB/SFTP credential |
+| T37 | DONE | UI layout, interaction and visual polish | Refined layout, navigation and responsiveness across Overview, Administration, Diagnostics and Settings, plus the official application icon, with every existing boundary preserved |
+| T38 | DONE | Remote COM and hardware inspection through the Windows Agent | Passive serial-device inspection over the negotiated `GetHardwareSnapshot` capability, with `SERIALCOMM` authoritative for presence and WMI used only for enrichment |
+| T39 | PLANNED | Windows installers, packaging and complete operator documentation | Official installers for the desktop application and the agent, safe upgrade and uninstall, release artifacts, and operator documentation written against the distributed build |
 
 ---
 
@@ -1264,7 +1268,7 @@ packaging change; the platform-specific code cannot move into `NutManager.Core`.
 
 ## T36 — Windows agent settings and deployment UX
 
-**Status:** IN PROGRESS
+**Status:** DONE
 
 ### Objective
 
@@ -1390,9 +1394,36 @@ NUT's own protocol health stays independent of all of it, and an unauthorized ca
 Start, Stop and Restart against the live NUT service require the user's explicit authorization at the
 moment they are run. That rule does not relax because the agent is installed.
 
+## T37 — UI layout, interaction and visual polish
+
+**Status:** DONE
+
+### Objective
+
+Bring the shell and the four pages to the approved visual standard, and give the application its own
+icon, without touching what any of them are allowed to do.
+
+### Scope
+
+- layout and spacing refinement across the shell and its pages;
+- navigation and responsive behaviour at the window sizes the product supports;
+- focused improvements to Overview, Administration, Diagnostics and Settings;
+- the official application icon;
+- permanent shell surface effects, recorded in the design system rather than here.
+
+### The boundary this task did not cross
+
+Presentation only. No transport, protocol, schema, credential, safe-write or agent behaviour changed,
+and no view or view model acquired a configuration writer. A visual task that alters what the product
+may do is not a visual task, and the value of recording that here is that the next reader does not
+have to re-derive it from the diff.
+
+Details of the surfaces themselves belong in the design system, not in the roadmap. See
+[UI design system](UI-DESIGN-SYSTEM.md).
+
 ## T38 — Remote COM and hardware inspection through the Windows agent
 
-**Status:** IMPLEMENTED — pending acceptance on the real server
+**Status:** DONE
 
 ### Objective
 
@@ -1538,6 +1569,36 @@ section lists the server's COM ports with their identity line; the configured `p
 server's `ups.conf` is related to the detected list once the configuration session is connected; the
 active diagnostics remain absent; and the NUT service keeps running throughout, with its driver's
 conversation with the UPS uninterrupted.
+
+## T39 — Windows installers, packaging and complete operator documentation
+
+**Status:** PLANNED
+
+### Objective
+
+Turn the validated build into something an operator can install, upgrade and remove safely, and write
+the documentation against that distributed build rather than against the source tree.
+
+### Initial scope
+
+- an official installer for the NutManager desktop application;
+- a separate official installer for the NutManager Agent;
+- install, upgrade, repair and uninstall for both;
+- versioning and release artifacts;
+- safe preservation of settings, profiles and credentials across upgrade and uninstall;
+- safe installation and upgrade of the `NutManagerAgent` Windows service;
+- validation on Windows client and on Windows Server;
+- complete documentation and tutorial in Notion;
+- troubleshooting guidance;
+- a compatibility matrix;
+- final documentation written against the build actually distributed.
+
+### Not specified yet
+
+This entry records the plan, not the design. Installer technology, signing, update strategy and the
+service upgrade procedure are open questions, and the credential and profile preservation rules in
+particular need specifying before any of it is built: an upgrade that silently loses a Credential
+Manager entry or rewrites a profile document would breach boundaries the product has held since T20.
 
 ## Task execution template
 

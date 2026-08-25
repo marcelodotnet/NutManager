@@ -1,4 +1,4 @@
-# NutManager UI Design System
+﻿# NutManager UI Design System
 
 ## Status and purpose
 
@@ -178,9 +178,12 @@ The selected tile's icon pops once when it becomes current; nothing in the strip
 ## Glass surfaces and the two-tone window (T31)
 
 The window is transparent with an `ExperimentalAcrylicBorder` behind the entire shell. This is not
-decoration for its own sake: Avalonia cannot blur in-page content, so before the pane existed the
+decoration for its own sake: Avalonia has no backdrop filter, so before the pane existed the
 translucent cards were tinting a flat colour and the effect was invisible. The transparency hint
 degrades from acrylic to Mica to plain blur.
+
+That framework limitation is still real — nothing in Avalonia blurs what is already on the page — but
+it is no longer the end of the story. `NutBackdropBlur`, below, does it with a custom draw operation.
 
 ### The backdrop actually shows the desktop (T32)
 
@@ -278,6 +281,53 @@ The acrylic pane breathes over sixteen seconds with a narrow swing. It and the c
 the only two continuous animations in the application, and neither is a control style — a looping
 style would apply to every instance of a control, which remains forbidden and is what the
 interaction tests defend.
+
+## Frosted page edges (T37)
+
+The page dissolves into the title bar and into the footer instead of ending at a cut. Two permanent
+overlays sit at each end of the content area, painted over the page and taking no part in layout: a
+frost pass and a tint pass, in that order, which is the order of the real material — blur the
+backdrop, then colour it.
+
+### NutBackdropBlur
+
+Avalonia has no backdrop filter, and the three things that look like one are not. A blur effect blurs
+the element together with its own children. The acrylic material reaches the window's backdrop rather
+than the application's content. A `VisualBrush` pointed at a visual already in the tree does not paint
+it at all.
+
+What works is the one thing Skia exposes directly. By the time a control renders, the surface already
+holds everything drawn before it, so a snapshot of that surface **is** the backdrop — the real pixels
+of the page underneath, not a second rendering of it. Blurring the snapshot and painting it back over
+the same rectangle is a backdrop filter in the only sense that matters here.
+
+Two properties of the implementation constrain how it may be used, and both are load-bearing:
+
+- **It reads the frame buffer every time it renders.** It belongs on a small, fixed band and not on a
+  large or frequently invalidated surface.
+- **Its falloff cannot be an `OpacityMask`.** A mask puts the control on its own render layer, and the
+  layer the snapshot then reads is empty — the blur disappears silently while everything else still
+  renders. The gradient is applied inside the draw operation instead.
+
+### The tint, and why it is the header's own colour
+
+The tint gradient is `NutHeaderBrush`, the colour the title bar and the footer already carry, so the
+page dissolves into the bar it is running under rather than darkening against it. Every stop holds
+that same RGB and varies only in alpha: a ramp ending in transparent black interpolates towards black
+on the way there and dirties the middle of the fade.
+
+### Two things measurement settled
+
+The blur radius stops doing anything past roughly forty on a band this shallow. What reads as a weak
+effect is not fixed by raising it — the mask weights are what matter, because at half alpha the sharp
+original shows through the frost and its edges are what the eye picks up.
+
+The band has to stop above the page title. Any perceptible blur reaching further sits on the title and
+softens it at rest, and content at rest must never look degraded.
+
+The haze inside the band is the blur itself: bright text redistributed into the dark gaps around it,
+which raises the darkest pixel from near zero to around forty. No parameter separates the two, because
+they are the same operation. The tint reaches far enough down to absorb it.
 
 ## Icon system policy (T32)
 
