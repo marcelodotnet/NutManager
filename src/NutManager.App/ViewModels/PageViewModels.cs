@@ -565,7 +565,7 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     private readonly DevicesPageViewModel? _devices;
     private readonly ILocalNutInstallationDetector? _installationDetector;
     private readonly ILocalNutVersionResolver? _versionResolver;
-    private readonly ManagedNutServerRuntimeContext? _profileContext;
+    private ManagedNutServerRuntimeContext? _profileContext;
     private PollingState _pollingState;
     private NutInstallationInfo _localInstallation = NutInstallationInfo.NotDetected();
     private NutVersionSource _localVersionSource = NutVersionSource.Unavailable;
@@ -671,6 +671,28 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     public string ManagedProfileName => _profileContext?.Profile.Name ?? Strings.Get("Diagnostics.CurrentLocalProfile");
     public string ManagementModeText => _profileContext?.Profile.Management.Mode == NutManagementMode.Remote ? Strings.Get("Management.Remote") : Strings.Get("Management.Local");
     public string ManagementAccessText => _profileContext?.Profile.AccessMode == ManagedNutServerAccessMode.ReadOnly ? Strings.Get("Access.ReadOnly") : Strings.Get("Diagnostics.AccessManage");
+
+    /// <summary>
+    /// Keeps the diagnostic report honest about the access mode after it is changed and saved.
+    ///
+    /// The report is copied and pasted into support conversations, so a stale access mode there is
+    /// worse than a stale one on screen: it travels, and nobody reading it knows it is old.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_profileContext is not { } context || context.Profile.AccessMode == accessMode) return;
+
+        var profile = new ManagedNutServerProfile(
+            context.Profile.Id, context.Profile.Name, context.Profile.Monitoring, context.Profile.Management, accessMode);
+
+        _profileContext = context with
+        {
+            Profile = profile,
+            Capabilities = ManagedServerCapabilities.FromProfile(profile)
+        };
+
+        OnPropertyChanged(nameof(ManagementAccessText));
+    }
     public bool IsLocalManagementProfile => _profileContext?.Profile.Management.Mode != NutManagementMode.Remote;
 
     public int DiscoveredUpsCount => _devices?.Devices.Count ?? 0;

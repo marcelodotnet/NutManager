@@ -362,6 +362,156 @@ public sealed class T39PresentationLifecycleTests
         Assert.DoesNotContain("Agent", expression, StringComparison.Ordinal);
     }
 
+    // ---------------------------------------------------------------- access mode
+
+    [Fact]
+    public void ChangingAccessModeTakesEffectWithoutARestart()
+    {
+        // Every surface reporting access derives it from a profile copy taken at startup, so the
+        // interface went on claiming Manage after the profile had been saved read-only. A stale claim
+        // about authorization is the worst kind to leave standing.
+        var page = new AdministrationPageViewModel(
+            null, null, null, null, RemoteContext(ManagedNutServerAccessMode.Manage),
+            null, UiLanguagePreference.PtBr, null, null, null, null);
+
+        var manageSections = page.AdministrationSections.Count;
+        var manageText = page.AccessModeDisplayText;
+
+        page.ApplyAccessMode(ManagedNutServerAccessMode.ReadOnly);
+
+        Assert.NotEqual(manageText, page.AccessModeDisplayText);
+        Assert.True(
+            page.AdministrationSections.Count <= manageSections,
+            "Narrowing to read-only must not offer more sections than Manage did.");
+
+        // And back again, so the change is not one-way.
+        page.ApplyAccessMode(ManagedNutServerAccessMode.Manage);
+        Assert.Equal(manageText, page.AccessModeDisplayText);
+        Assert.Equal(manageSections, page.AdministrationSections.Count);
+    }
+
+    [Fact]
+    public void TheSelectedSectionSurvivesAnAccessModeChangeWhenItStillExists()
+    {
+        // The section list is rebuilt rather than edited, so every item is a new object. Carrying the
+        // selection by identity would silently drop the operator back to the first section.
+        var page = new AdministrationPageViewModel(
+            null, null, null, null, RemoteContext(ManagedNutServerAccessMode.Manage),
+            null, UiLanguagePreference.PtBr, null, null, null, null);
+
+        var chosen = page.AdministrationSections[^1].Section;
+        page.SelectedAdministrationSection = page.AdministrationSections[^1];
+
+        page.ApplyAccessMode(ManagedNutServerAccessMode.ReadOnly);
+
+        if (page.AdministrationSections.Any(section => section.Section == chosen))
+        {
+            Assert.Equal(chosen, page.SelectedAdministrationSection.Section);
+        }
+        else
+        {
+            // Removed by the narrower mode: falling back to the first is correct, and leaving the
+            // selection pointing at a section that is no longer offered would not be.
+            Assert.Equal(page.AdministrationSections[0].Section, page.SelectedAdministrationSection.Section);
+        }
+    }
+
+    [Fact]
+    public void WideningToManageGrantsNoWriteWithoutTheSafeWriteProbe()
+    {
+        // The T19 boundary. Applying Manage at runtime must not become a way around the probe that a
+        // remote session performs before anything may be written.
+        var app = Source("src", "NutManager.App", "App.axaml.cs");
+        var handler = app.IndexOf("settingsPage.ProfilePersisted +=", StringComparison.Ordinal);
+        var close = app.IndexOf("        };", handler, StringComparison.Ordinal);
+        var body = app[handler..close];
+
+        Assert.Contains("ApplyAccessMode(profile.AccessMode)", body, StringComparison.Ordinal);
+
+        // Nothing here probes, authorizes or marks a capability verified.
+        foreach (var forbidden in new[] { "ProbeWrite", "CanEditConfiguration =", "IsWriteCapabilityUnverified" })
+        {
+            Assert.False(
+                body.Contains(forbidden, StringComparison.Ordinal),
+                $"The handler touches '{forbidden}'. Access mode is declared intent, not verified capability.");
+        }
+
+        // The gate itself still requires the probe.
+        var administration = Source("src", "NutManager.App", "ViewModels", "AdministrationPageViewModel.cs");
+        Assert.Contains("IsWriteCapabilityUnverified: true", administration, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NarrowingToReadOnlyRevokesWriteAuthorization()
+    {
+        // The defect this exists for: switching a profile to read-only left the write capability
+        // granted until restart. The header said read-only while the session went on reporting the
+        // write authorization as still in force, and the two disagreed about the same profile.
+        //
+        // The session is what decides, because CanEditConfiguration requires the profile to say Manage
+        // and the copy it holds was taken at startup.
+        var session = Source("src", "NutManager.App", "ViewModels", "RemoteManagementSessionViewModel.cs");
+
+        var gate = session.IndexOf("public bool CanEditConfiguration", StringComparison.Ordinal);
+        Assert.True(gate > 0);
+        Assert.Contains(
+            "_profile.AccessMode == ManagedNutServerAccessMode.Manage",
+            session[gate..(gate + 300)],
+            StringComparison.Ordinal);
+
+        // And that copy is now updated when the profile is saved.
+        Assert.Contains("public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)", session, StringComparison.Ordinal);
+        Assert.Contains("OnPropertyChanged(nameof(CanEditConfiguration));", session, StringComparison.Ordinal);
+
+        // The probe's result is not touched, so widening still grants nothing on its own.
+        var apply = session.IndexOf("public void ApplyAccessMode", StringComparison.Ordinal);
+        var body = session[apply..(apply + 700)];
+        Assert.DoesNotContain("WriteCapability =", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSessionIsToldBeforeAnySurfaceRenders()
+    {
+        // Order matters when narrowing: the session owns the write decision, so it has to revoke before
+        // a page has the chance to render the previous answer.
+        var app = Source("src", "NutManager.App", "App.axaml.cs");
+
+        var session = app.IndexOf("remoteManagement?.ApplyAccessMode(profile.AccessMode);", StringComparison.Ordinal);
+        var page = app.IndexOf("administration.ApplyAccessMode(profile.AccessMode);", StringComparison.Ordinal);
+
+        Assert.True(session > 0, "The session is no longer told about an access-mode change.");
+        Assert.True(session < page, "The session must be updated before the surfaces that read from it.");
+    }
+
+    [Fact]
+    public void TheSidebarCardFollowsTheSavedAccessMode()
+    {
+        // The card reads a field of its own rather than the profile, so it kept saying Manage beside a
+        // header that already said read-only.
+        var shell = Source("src", "NutManager.App", "ViewModels", "MainWindowViewModel.cs");
+
+        var apply = shell.IndexOf("public void ApplyAccessMode", StringComparison.Ordinal);
+        Assert.True(apply > 0);
+
+        var body = shell[apply..(apply + 800)];
+        Assert.Contains("_accessMode = accessMode;", body, StringComparison.Ordinal);
+        Assert.Contains("OnPropertyChanged(nameof(ActiveProfileModeText));", body, StringComparison.Ordinal);
+    }
+
+    private static ManagedNutServerRuntimeContext RemoteContext(ManagedNutServerAccessMode access)
+    {
+        var profile = new ManagedNutServerProfile(
+            Guid.NewGuid(),
+            "GANDALF",
+            new NutMonitoringProfile("gandalf.example.local", 3493, "NOBREAK"),
+            new NutManagementProfile(NutManagementMode.Remote, "gandalf.example.local", "/etc/nut"),
+            access);
+
+        return ManagedNutServerRuntimeContext.FromProfiles(
+            new ManagedNutServerProfiles(ManagedNutServerProfiles.CurrentSchemaVersion, profile.Id, [profile]),
+            new ApplicationSettings());
+    }
+
     // ---------------------------------------------------------------- remote diagnostics
 
     [Fact]

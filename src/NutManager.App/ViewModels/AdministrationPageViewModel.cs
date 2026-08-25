@@ -21,7 +21,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     private readonly ILocalNutWindowsAdministration? _windowsAdministration;
     private readonly ILocalNutDriverDiagnostics? _driverDiagnostics;
     private readonly ILocalNutDriverCatalogSource? _driverCatalogSource;
-    private readonly ManagedNutServerRuntimeContext? _profileContext;
+    private ManagedNutServerRuntimeContext? _profileContext;
 
     // The same agent client the remote service monitor uses, for one read-only operation. It is
     // absent for a local profile, and its absence is the whole of the "no remote inspection here"
@@ -100,7 +100,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
 
     public NutManagerLocalizer Strings { get; }
 
-    public IReadOnlyList<AdministrationSectionItemViewModel> AdministrationSections { get; }
+    public IReadOnlyList<AdministrationSectionItemViewModel> AdministrationSections { get; private set; }
 
     [ObservableProperty]
     private AdministrationSectionItemViewModel _selectedAdministrationSection;
@@ -2386,6 +2386,60 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
     /// the operator chose. There is still exactly one client per profile and no fallback between
     /// transports.
     /// </summary>
+    /// <summary>
+    /// Applies a saved change of access mode without a restart.
+    ///
+    /// Only the access mode. Replacing the whole persisted profile here would make this page describe a
+    /// transport the running session is not using — the configuration session was established at
+    /// startup and still speaks whatever it was built for, so showing the newly saved one would be a
+    /// confident lie.
+    ///
+    /// Capabilities are recomputed from the profile rather than edited, so the same derivation decides
+    /// them here as at startup and there is no second place where an access mode turns into a set of
+    /// permissions.
+    ///
+    /// Widening to Manage grants nothing on its own. Writing still requires the safe-write probe, and
+    /// <see cref="RequiresRemoteWriteAuthorization"/> reports the capability as unverified until that
+    /// probe has run — which is the T19 boundary, and the reason this is safe to apply live.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_profileContext is not { } context || context.Profile.AccessMode == accessMode) return;
+
+        // AccessMode is get-only rather than an init-settable positional member, so the profile is
+        // rebuilt the same way the update service rebuilds it. Everything else is carried across
+        // unchanged, which is what keeps this to the one field.
+        var profile = new ManagedNutServerProfile(
+            context.Profile.Id,
+            context.Profile.Name,
+            context.Profile.Monitoring,
+            context.Profile.Management,
+            accessMode);
+        _profileContext = context with
+        {
+            Profile = profile,
+            Capabilities = ManagedServerCapabilities.FromProfile(profile)
+        };
+
+        // The section list is built from what the profile may do, so it is rebuilt rather than edited.
+        // The selection is carried across by which section it is, not by object identity, because every
+        // item in the list is new.
+        var previous = SelectedAdministrationSection.Section;
+        AdministrationSections = AdministrationPresentation.CreateSections(
+            Strings,
+            IsRemoteManagementProfile,
+            accessMode != ManagedNutServerAccessMode.ReadOnly);
+        OnPropertyChanged(nameof(AdministrationSections));
+
+        SelectedAdministrationSection =
+            AdministrationSections.FirstOrDefault(section => section.Section == previous)
+            ?? AdministrationSections[0];
+
+        OnPropertyChanged(nameof(AccessModeDisplayText));
+        OnPropertyChanged(nameof(RequiresRemoteWriteAuthorization));
+        NotifyWorkflowPropertiesChanged();
+    }
+
     public void RebindAgentClient(INutManagerAgentClient client)
     {
         ArgumentNullException.ThrowIfNull(client);

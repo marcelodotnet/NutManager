@@ -216,6 +216,20 @@ public partial class App : Application
             administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
             viewModel.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
 
+            // The access mode, which used to need a restart. Every surface reporting it derives from a
+            // profile copy taken at startup, so the interface went on claiming Manage after the profile
+            // had been saved as read-only — a stale claim about authorization, which is the worst kind
+            // to leave standing.
+            //
+            // Widening to Manage still grants nothing by itself: writing remains gated on the safe-write
+            // probe, and the administration page reports the capability as unverified until it has run.
+            // The session goes first: it owns the write decision, and narrowing to read-only has to
+            // revoke before any surface has a chance to render the old answer.
+            remoteManagement?.ApplyAccessMode(profile.AccessMode);
+            administration.ApplyAccessMode(profile.AccessMode);
+            viewModel.ApplyAccessMode(profile.AccessMode);
+            diagnostics.ApplyAccessMode(profile.AccessMode);
+
             // The agent's own settings, which used to need a restart for no good reason. Changing a
             // profile from named pipe to HTTPS and then finding the administration screen still using
             // the old transport is indistinguishable from the setting not having been saved.

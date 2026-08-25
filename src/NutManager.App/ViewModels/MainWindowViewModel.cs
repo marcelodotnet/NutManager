@@ -15,9 +15,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly string? _activeEndpoint;
     private readonly string? _activeProfileName;
     private readonly NutManagementMode? _managementMode;
-    private readonly ManagedNutServerAccessMode? _accessMode;
+    private ManagedNutServerAccessMode? _accessMode;
     private readonly string? _preferredUpsName;
-    private readonly ManagedNutServerProfile? _activeProfile;
+    private ManagedNutServerProfile? _activeProfile;
     private readonly RemoteWindowsServiceViewModel? _remoteWindowsService;
     private ManagedNutConfigurationFiles _managedConfigurationFiles = ManagedNutConfigurationFiles.Create([]);
     private bool _isOverlayOpen;
@@ -122,6 +122,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
             };
         }
         UpdateNavigationSelection();
+        PublishDashboardContext();
+    }
+
+    /// <summary>
+    /// Carries a saved access mode into the shell's own copy of the active profile.
+    ///
+    /// The Overview reads access from here, and holding the value from startup meant the card kept
+    /// saying Manage after the profile had been saved as read-only — a claim about authorization,
+    /// which is the worst kind to leave stale.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_activeProfile is not { } profile || profile.AccessMode == accessMode) return;
+
+        _activeProfile = new ManagedNutServerProfile(
+            profile.Id, profile.Name, profile.Monitoring, profile.Management, accessMode);
+
+        // The sidebar card reads a separate field rather than the profile, so both have to move or the
+        // card goes on saying Manage next to a header that says read-only.
+        _accessMode = accessMode;
+        OnPropertyChanged(nameof(ActiveProfileModeText));
+
         PublishDashboardContext();
     }
 

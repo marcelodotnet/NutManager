@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using NutManager.App.Localization;
 using NutManager.App.Services;
@@ -175,6 +175,31 @@ public sealed partial class RemoteManagementSessionViewModel : ObservableObject,
         WriteCapability is { IsSupported: true } && (IsSmb || Platform == RemoteNutPlatform.Windows);
 
     public bool IsWriteCapabilityUnverified => WriteCapability is null;
+
+    /// <summary>
+    /// Applies a saved access mode to the session's own copy of the profile.
+    ///
+    /// This is the one that actually decides whether configuration may be written: CanEditConfiguration
+    /// requires the profile to say Manage, and the copy held here was taken at startup. Saving a profile
+    /// as read-only therefore left write authorization standing until the application was restarted —
+    /// the header said read-only while the session went on reporting the write capability as granted.
+    ///
+    /// Narrowing revokes immediately, which is the direction that matters. Widening grants nothing on
+    /// its own: WriteCapability is the safe-write probe's result, it is untouched here, and a profile
+    /// that has not been probed still reports the capability as unverified.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_profile.AccessMode == accessMode) return;
+
+        _profile = new ManagedNutServerProfile(
+            _profile.Id, _profile.Name, _profile.Monitoring, _profile.Management, accessMode);
+
+        OnPropertyChanged(nameof(CanEditConfiguration));
+        OnPropertyChanged(nameof(IsWriteCapabilitySupported));
+        OnPropertyChanged(nameof(WriteCapabilityText));
+        OnPropertyChanged(nameof(CanProbeWriteCapability));
+    }
 
     public bool IsWriteCapabilitySupported => CanEditConfiguration;
 
