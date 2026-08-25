@@ -470,6 +470,31 @@ public sealed class T39PresentationLifecycleTests
     }
 
     [Fact]
+    public void AStatusMessageFromThePreviousAccessModeIsDropped()
+    {
+        // The state panel shows the last directory validation's message, and that validation ran under
+        // the previous access mode — after switching to Manage the panel went on saying the profile is
+        // configured read-only, beside a header already saying otherwise. A sentence that is untrue is
+        // worse than none, because the reader cannot tell it describes a past state.
+        var session = Source("src", "NutManager.App", "ViewModels", "RemoteManagementSessionViewModel.cs");
+
+        var apply = session.IndexOf("public void ApplyAccessMode", StringComparison.Ordinal);
+        Assert.True(apply > 0);
+
+        var body = session[apply..(apply + 2800)];
+        Assert.Contains("StatusMessage = null;", body, StringComparison.Ordinal);
+
+        // And nothing re-validates. Reaching the remote host as a side effect of saving a settings form
+        // is not something a save should do.
+        foreach (var forbidden in new[] { "ValidateDirectoryAsync", "ConnectAsync", "ProbeWriteCapabilityAsync" })
+        {
+            Assert.False(
+                body.Contains(forbidden, StringComparison.Ordinal),
+                $"ApplyAccessMode calls '{forbidden}'. Saving a form must not reach the remote host.");
+        }
+    }
+
+    [Fact]
     public void TheSessionIsToldBeforeAnySurfaceRenders()
     {
         // Order matters when narrowing: the session owns the write decision, so it has to revoke before

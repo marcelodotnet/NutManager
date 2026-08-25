@@ -199,6 +199,22 @@ public sealed partial class RemoteManagementSessionViewModel : ObservableObject,
         OnPropertyChanged(nameof(IsWriteCapabilitySupported));
         OnPropertyChanged(nameof(WriteCapabilityText));
         OnPropertyChanged(nameof(CanProbeWriteCapability));
+
+        // The stored status message is dropped rather than kept.
+        //
+        // It holds whatever the last directory validation reported, and that validation ran under the
+        // previous access mode — after switching to Manage the panel went on stating that the profile
+        // is configured read-only, beside a header already saying otherwise. A sentence that is simply
+        // untrue is worse than no sentence: the reader has no way to tell it is describing a past state.
+        //
+        // The cost is that an unrelated message — a host-key warning, a credential problem — is dropped
+        // with it, because a stored string cannot be told apart from one about the access mode. Losing
+        // a message the operator can regenerate by reconnecting is the cheaper mistake, and the panel
+        // falls back to its neutral prompt rather than to silence.
+        //
+        // Nothing is re-validated here. Reaching the remote host as a side effect of saving a settings
+        // form is not something a save should do.
+        StatusMessage = null;
     }
 
     public bool IsWriteCapabilitySupported => CanEditConfiguration;
