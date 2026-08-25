@@ -1,4 +1,4 @@
-using NutManager.App.Localization;
+﻿using NutManager.App.Localization;
 using NutManager.App.ViewModels;
 using NutManager.Core.Models;
 using Xunit;
@@ -47,8 +47,12 @@ public sealed class ShellPresentationTests
         Assert.Equal("Open profiles", english.Get("Shell.OpenProfiles"));
         Assert.Equal("Gerenciar perfis", portuguese.Get("Shell.ManageProfiles"));
         Assert.Equal("Manage profiles", english.Get("Shell.ManageProfiles"));
-        Assert.Equal("© 2026 · NUT Manager · Marcelo Pacheco", portuguese.Get("Shell.Authorship"));
-        Assert.Equal(portuguese.Get("Shell.Authorship"), english.Get("Shell.Authorship"));
+        // The authorship line is prose now rather than a symbol and a name, so it translates. It used
+        // to be identical in both cultures because "© 2026 · NUT Manager · Marcelo Pacheco" had nothing
+        // in it to translate; asserting sameness now would be asserting that it was left untranslated.
+        Assert.Equal("Desenvolvido por Marcelo Pacheco", portuguese.Get("Shell.Authorship"));
+        Assert.Equal("Developed by Marcelo Pacheco", english.Get("Shell.Authorship"));
+        Assert.NotEqual(portuguese.Get("Shell.Authorship"), english.Get("Shell.Authorship"));
     }
 
     [Fact]

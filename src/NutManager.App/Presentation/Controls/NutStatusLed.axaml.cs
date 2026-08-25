@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using Avalonia;
 using Avalonia.Animation.Easings;
 using Avalonia.Controls;
@@ -98,9 +98,21 @@ public partial class NutStatusLed : UserControl
         StartPulse(period);
     }
 
+    /// <summary>
+    /// How long one breath takes, per state.
+    ///
+    /// A failed connection breathes too, and slower. Standing still is what an indicator does when it
+    /// has nothing to say, so a static red dot reads as an old value nobody refreshed rather than as a
+    /// live fault — the one reading it must not have. The slower period keeps it from competing with
+    /// the healthy state for attention while still being unmistakably alive.
+    ///
+    /// Only the halo moves. The core never fades, so the state stays legible at every point in the
+    /// cycle, and the text beside it never animates at all.
+    /// </summary>
     public static TimeSpan PulsePeriodFor(NutLedState state) => state switch
     {
         NutLedState.Healthy or NutLedState.Pending => TimeSpan.FromSeconds(1.8),
+        NutLedState.Critical => TimeSpan.FromSeconds(2.4),
         _ => TimeSpan.Zero
     };
 

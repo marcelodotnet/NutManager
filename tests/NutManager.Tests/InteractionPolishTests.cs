@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using NutManager.App.Presentation.Controls;
 using Xunit;
 
@@ -73,7 +73,7 @@ public sealed class InteractionPolishTests
     [Theory]
     [InlineData(NutLedState.Healthy, 1.8)]
     [InlineData(NutLedState.Pending, 1.8)]
-    [InlineData(NutLedState.Critical, 0.0)]
+    [InlineData(NutLedState.Critical, 2.4)]
     [InlineData(NutLedState.Unavailable, 0.0)]
     public void LedPulsePeriodsAreSemanticAndDeterministic(NutLedState state, double seconds)
     {
@@ -81,13 +81,25 @@ public sealed class InteractionPolishTests
     }
 
     [Fact]
-    public void HealthyAndPendingShareTheWaveWhileCriticalKeepsItsStaticBlur()
+    public void EveryLiveStateBreathesAndCriticalBreathesSlowest()
     {
         Assert.NotEqual(TimeSpan.Zero, NutStatusLed.PulsePeriodFor(NutLedState.Healthy));
         Assert.Equal(
             NutStatusLed.PulsePeriodFor(NutLedState.Healthy),
             NutStatusLed.PulsePeriodFor(NutLedState.Pending));
-        Assert.Equal(TimeSpan.Zero, NutStatusLed.PulsePeriodFor(NutLedState.Critical));
+
+        // A failed connection breathes too. A static red dot reads as a stale value nobody refreshed,
+        // which is the one thing a fault indicator must not look like — so Critical animates, and does
+        // it slower than the healthy wave so the two are told apart by rhythm rather than by colour
+        // alone.
+        var critical = NutStatusLed.PulsePeriodFor(NutLedState.Critical);
+        Assert.NotEqual(TimeSpan.Zero, critical);
+        Assert.True(
+            critical > NutStatusLed.PulsePeriodFor(NutLedState.Healthy),
+            "Critical must breathe more slowly than healthy, not compete with it for attention.");
+
+        // Unavailable is the only genuinely static state: nothing is being reported, so nothing moves.
+        Assert.Equal(TimeSpan.Zero, NutStatusLed.PulsePeriodFor(NutLedState.Unavailable));
 
         var source = Controls("NutStatusLed.axaml.cs");
         var visual = Controls("NutStatusLed.axaml");

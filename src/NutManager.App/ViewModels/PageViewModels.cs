@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Threading;
@@ -556,7 +556,7 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     private string? _diagnosticCopyStatusMessage;
 
     public DiagnosticsPageViewModel()
-        : this(new ApplicationSettings(), new ApplicationRuntimeInfo("-", "-", "-", "-"))
+        : this(new ApplicationSettings(), new ApplicationRuntimeInfo("-", "-", "-", "-", "-"))
     {
     }
 
@@ -633,7 +633,15 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     public bool HasDiagnosticCopyStatusMessage => !string.IsNullOrWhiteSpace(DiagnosticCopyStatusMessage);
 
     public string ApplicationName => "NUT Manager";
-    public string ApplicationVersion => _runtimeInfo.Version;
+    /// <summary>
+    /// What the card shows: "v1.0.0". The technical version, with its build metadata, goes into the
+    /// copied report instead — see <see cref="CreateDiagnosticReport"/>. Separating them is the whole
+    /// point: support needs the exact build, and nobody reading a version field needs a commit hash.
+    /// </summary>
+    public string ApplicationVersion => _runtimeInfo.DisplayVersion;
+
+    /// <summary>The full informational version, kept for the report and for support.</summary>
+    public string ApplicationBuildVersion => _runtimeInfo.Version;
     public string Runtime => _runtimeInfo.Runtime;
     public string OperatingSystem => _runtimeInfo.OperatingSystem;
     public string Architecture => _runtimeInfo.Architecture;
@@ -670,9 +678,24 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
         : NutTimestampPresentation.Local(_pollingState.Snapshot.LastSuccessfulUpdate, "g");
     public string LastErrorText => string.IsNullOrWhiteSpace(_pollingState.LastError) ? Strings.Get("Diagnostics.NoError") : _pollingState.LastError;
 
-    public string LocalInstallationStatusText => _localInstallation.IsDetected
-        ? Strings.Get("Diagnostics.InstallationFound")
-        : Strings.Get("Diagnostics.InstallationNotFound");
+    /// <summary>
+    /// Whether a NUT installation was found **on this machine**.
+    ///
+    /// For a remote profile that question has no bearing on anything the operator is looking at, and
+    /// answering it with "no installation found" invites exactly the wrong reading: that the server
+    /// being managed has no NUT. The station running the desktop application usually has none, and
+    /// that says nothing at all about GANDALF.
+    ///
+    /// So a remote profile gets a state of its own rather than a local answer dressed up as a remote
+    /// one. Nothing here probes the server: no agent operation, no new endpoint, no inferred remote
+    /// detection. It reports that the local question does not apply, which is the only honest thing it
+    /// knows.
+    /// </summary>
+    public string LocalInstallationStatusText => IsLocalManagementProfile
+        ? (_localInstallation.IsDetected
+            ? Strings.Get("Diagnostics.InstallationFound")
+            : Strings.Get("Diagnostics.InstallationNotFound"))
+        : Strings.Get("Diagnostics.LocalTechnicalNotApplicable");
     public string InstallationDirectoryText => _localInstallation.InstallationDirectory ?? Strings.Get("Status.Unavailable");
     public string ConfigurationDirectoryText => _localInstallation.ConfigurationDirectory ?? Strings.Get("Status.Unavailable");
     public string LocalInstallationVersionText => _localInstallation.Version ?? Strings.Get("Status.Unavailable");
@@ -696,7 +719,7 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
         var lines = new[]
         {
             Strings.Get("Diagnostics.Report.Title"),
-            ReportLine("Diagnostics.Report.ApplicationVersion", ApplicationVersion),
+            ReportLine("Diagnostics.Report.ApplicationVersion", ApplicationBuildVersion),
             ReportLine("Diagnostics.Report.Runtime", Runtime),
             ReportLine("Diagnostics.Report.OperatingSystem", OperatingSystem),
             ReportLine("Diagnostics.Report.Architecture", Architecture),
