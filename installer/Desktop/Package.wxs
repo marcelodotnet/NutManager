@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?include ..\Common\Product.wxi ?>
+
+  <!--
+    The NutManager desktop application.
+
+    Self-contained: the published payload carries its own runtime, so an operator installs one thing
+    and no .NET prerequisite. That is a deliberate trade of about seventy megabytes against a support
+    burden, and the burden is the expensive side.
+  -->
+  <Package Name="$(DesktopName)"
+           Manufacturer="$(Publisher)"
+           Version="$(Version)"
+           UpgradeCode="$(DesktopUpgradeCode)"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <!--
+      Removes the older version before laying down the new one, and refuses a downgrade rather than
+      half-applying it. AllowSameVersionUpgrades lets a rebuild of the same version reinstall over
+      itself instead of registering a second copy.
+    -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed. Remove it before installing this one." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="NutManagerIcon" SourceFile="$(BrandingIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="NutManagerIcon" />
+    <Property Id="ARPNOREPAIR" Value="0" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(DesktopName)" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="$(DesktopName)" />
+    </StandardDirectory>
+
+    <!--
+      Everything dotnet publish produced, harvested rather than listed. A hand-maintained file list
+      silently stops shipping a dependency the day one is added.
+    -->
+    <ComponentGroup Id="ApplicationFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(PublishDir)\**" />
+    </ComponentGroup>
+
+    <ComponentGroup Id="ApplicationShortcuts" Directory="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcut" Guid="{2F5B8A17-9C4D-4E60-B3A8-7D1E6F09C245}">
+        <Shortcut Id="StartMenuNutManager"
+                  Name="$(DesktopName)"
+                  Description="Monitor and administer Network UPS Tools"
+                  Target="[INSTALLFOLDER]NutManager.App.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="NutManagerIcon" />
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+        <!--
+          The keypath is a per-user registry value rather than the shortcut file, which is what makes
+          the shortcut repairable. It is also the only thing this installer writes under HKCU.
+        -->
+        <RegistryValue Root="HKCU"
+                       Key="Software\$(Publisher)\$(DesktopName)"
+                       Name="StartMenuShortcut"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="$(DesktopName)" Level="1">
+      <ComponentGroupRef Id="ApplicationFiles" />
+      <ComponentGroupRef Id="ApplicationShortcuts" />
+    </Feature>
+
+    <!--
+      Nothing here removes settings.json, managed-servers.json or any Windows Credential Manager
+      entry. They live under the user profile and in the credential store, outside every component
+      this package declares, so uninstall cannot reach them and upgrade cannot disturb them. That is
+      the mechanism, not a promise: a component that does not exist cannot be scheduled for removal.
+    -->
+  </Package>
+</Wix>

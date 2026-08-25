@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?include ..\Common\Product.wxi ?>
+
+  <!--
+    The NutManager Agent: a Windows service, installed and removed independently of the desktop
+    application. Neither installer contains the other.
+
+    What this package must never do is act on NUT. It does not install it, remove it, configure it,
+    or start, stop or restart its service. The agent it installs is NutManagerAgent, and the only
+    service this package names anywhere is that one.
+  -->
+  <Package Name="$(AgentName)"
+           Manufacturer="$(Publisher)"
+           Version="$(Version)"
+           UpgradeCode="$(AgentUpgradeCode)"
+           Scope="perMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed. Remove it before installing this one." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="NutManagerIcon" SourceFile="$(BrandingIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="NutManagerIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(AgentName)" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="ProgramDataNutManager" Name="NutManager">
+        <Directory Id="AgentDataFolder" Name="Agent" />
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
+      <!--
+        Everything except the service executable, which needs a component of its own so the service
+        can be declared against it.
+      -->
+      <Files Include="$(PublishDir)\**">
+        <Exclude Files="$(PublishDir)\NutManager.Agent.exe" />
+      </Files>
+
+      <Component Id="AgentExecutable" Guid="{7B3E5D91-8A26-4C7F-9E14-5B08D2A6F730}">
+        <File Id="AgentExecutableFile" Source="$(PublishDir)\NutManager.Agent.exe" KeyPath="yes" />
+
+        <!--
+          Declared, not scripted. The Windows Installer engine registers the service, replaces it on
+          upgrade and rolls the registration back if the transaction fails. Nothing in the product or
+          this package invokes sc.exe.
+
+          LocalSystem is the account the whole authorization model assumes: the agent decides a
+          caller's rights by group membership rather than inheriting whoever started it. Running as
+          anything else is a different security posture than the one that was reviewed.
+        -->
+        <ServiceInstall Id="AgentServiceInstall"
+                        Name="$(AgentServiceName)"
+                        DisplayName="$(AgentName)"
+                        Description="Controls the Windows NUT service and inspects serial hardware for a remote NutManager, read-only unless explicitly authorized."
+                        Type="ownProcess"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Vital="yes" />
+
+        <!--
+          Stop and Remove name $(AgentServiceName) explicitly and nothing else. No wildcard, no
+          discovered service, no NUT. Upgrade stops this agent to replace its binaries; the NUT
+          service is never named here and so is never touched.
+        -->
+        <ServiceControl Id="AgentServiceControl"
+                        Name="$(AgentServiceName)"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+
+      <!--
+        The Event Log source, as a registry key the installer owns and therefore may remove. The
+        agent does not create this at runtime and must not start doing so: a service that can create
+        its own log source is a service that keeps running when its audit trail is missing, and the
+        fail-closed boundary from T35 depends on it refusing instead.
+      -->
+      <Component Id="AgentEventLogSource" Guid="{A16C4F82-3D95-4E27-8C60-B4F71E2D8A09}">
+        <RegistryKey Root="HKLM"
+                     Key="SYSTEM\CurrentControlSet\Services\EventLog\Application\$(AgentName)">
+          <RegistryValue Name="EventMessageFile"
+                         Type="expandable"
+                         Value="%SystemRoot%\System32\EventCreate.exe"
+                         KeyPath="yes" />
+          <RegistryValue Name="TypesSupported" Type="integer" Value="7" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <!--
+      The data directory is created and then left alone. agent.json is deliberately not a component
+      of this package: the installer never writes it, so upgrade cannot overwrite it and uninstall
+      cannot delete it. That is a mechanism rather than a promise — a file the package does not
+      declare is a file the engine has no way to schedule for removal.
+
+      Permanent="yes" keeps the directory itself after uninstall, so a reinstall finds its
+      configuration where it left it.
+    -->
+    <ComponentGroup Id="AgentData" Directory="AgentDataFolder">
+      <Component Id="AgentDataDirectory" Guid="{D82F6E04-5C71-4A38-B9E2-0F63A7C15D46}" Permanent="yes">
+        <CreateFolder />
+        <RegistryValue Root="HKLM"
+                       Key="SOFTWARE\$(Publisher)\$(AgentName)"
+                       Name="DataFolder"
+                       Type="string"
+                       Value="[AgentDataFolder]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="$(AgentName)" Level="1">
+      <ComponentGroupRef Id="AgentFiles" />
+      <ComponentGroupRef Id="AgentData" />
+    </Feature>
+
+    <!--
+      Not authored here, and each absence is deliberate:
+
+      - the NutManager Operators group. Creating a local group silently would be surprising; creating
+        a domain group from an installer running on a domain controller would be a change to the
+        directory. The administrator creates it, and the agent refuses to authorize anyone until it
+        exists.
+      - certificates, SSL bindings, URL reservations and firewall rules. HTTPS stays an explicit
+        administrative decision.
+      - anything belonging to NUT.
+    -->
+  </Package>
+</Wix>
