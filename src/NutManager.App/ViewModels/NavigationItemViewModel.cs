@@ -22,6 +22,7 @@ public sealed partial class NavigationItemViewModel : ObservableObject
     public bool IsAdministration => Page == AppPage.Administration;
     public bool IsDiagnostics => Page == AppPage.Diagnostics;
     public bool IsSettings => Page == AppPage.Settings;
+    public bool IsAbout => Page == AppPage.About;
 
     public ICommand NavigateCommand { get; }
 

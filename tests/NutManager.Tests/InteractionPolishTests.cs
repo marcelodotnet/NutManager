@@ -273,7 +273,7 @@ public sealed class InteractionPolishTests
     {
         var icon = Controls("NutNavigationIcon.axaml.cs");
 
-        // Five destinations, five different gestures — not one wiggle applied five times. Each one
+        // Six destinations use gestures suited to their meanings rather than one shared wiggle. Each one
         // now moves the whole glyph, because the library gives one shape per icon and there are no
         // detail layers left to move on their own.
         Assert.Contains("NutIconMotion.Breathe(OverviewGlyph", icon, StringComparison.Ordinal);
@@ -282,6 +282,8 @@ public sealed class InteractionPolishTests
         Assert.Contains("NutIconMotion.Breathe(DiagnosticsGlyph", icon, StringComparison.Ordinal);
         Assert.Contains("case AppPage.Settings:", icon, StringComparison.Ordinal);
         Assert.Contains("NutIconMotion.Spin(SettingsGlyph", icon, StringComparison.Ordinal);
+        Assert.Contains("case AppPage.About:", icon, StringComparison.Ordinal);
+        Assert.Contains("NutIconMotion.Breathe(AboutGlyph", icon, StringComparison.Ordinal);
 
         // Overview and Diagnostics share a helper, so the distinction is the cadence: a dashboard
         // breathes slowly, a pulse trace beats. Equal periods would be the same gesture twice.
@@ -305,16 +307,16 @@ public sealed class InteractionPolishTests
         // One Path per destination and nothing layered on top of it. A second shape inside a
         // destination's Grid is how the old per-part animation worked, and reintroducing one would
         // quietly take that destination back off the icon library.
-        Assert.Equal(5, Regex.Matches(control, @"<shapes:Path\b").Count);
-        Assert.Equal(5, Regex.Matches(control, @"Classes=""nut-nav-glyph""").Count);
+        Assert.Equal(6, Regex.Matches(control, @"<shapes:Path\b").Count);
+        Assert.Equal(6, Regex.Matches(control, @"Classes=""nut-nav-glyph""").Count);
         Assert.DoesNotContain("nut-nav-base", control, StringComparison.Ordinal);
         Assert.DoesNotContain("nut-nav-detail", control, StringComparison.Ordinal);
 
         // Every glyph is normalised into the shared slot rather than drawn at native coordinates.
-        // Unscaled, the library's five navigation icons span 18 to 22 units on their longest side
+        // Unscaled, the library's navigation icons span different dimensions on their longest side
         // and two of them are off the grid's axis, which showed up on screen as the cog crowding
         // the selection bar and the diagnostics trace reading small.
-        Assert.Equal(5, Regex.Matches(control, @"Classes=""nut-nav-slot""").Count);
+        Assert.Equal(6, Regex.Matches(control, @"Classes=""nut-nav-slot""").Count);
         Assert.DoesNotContain("Stretch=\"None\"", control, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Stretch\" Value=\"Uniform\" />", shell, StringComparison.Ordinal);
 

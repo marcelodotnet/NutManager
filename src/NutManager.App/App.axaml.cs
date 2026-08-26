@@ -120,9 +120,10 @@ public partial class App : Application
         // when it appears; that call is idempotent and now finds the loop already running.
         remoteWindowsService?.StartMonitoring();
         var installationDetector = isLocalManagement ? new WindowsNutInstallationDetector() : null;
+        var applicationRuntimeInfo = ApplicationRuntimeInfo.CreateCurrent();
         var diagnostics = new DiagnosticsPageViewModel(
             settings,
-            ApplicationRuntimeInfo.CreateCurrent(),
+            applicationRuntimeInfo,
             polling,
             devices,
             installationDetector,
@@ -177,6 +178,10 @@ public partial class App : Application
         };
         if (loadError is not null) settingsPage.SetLoadError(loadError);
         if (profileBootstrap.Warning is not null) settingsPage.SetProfileLoadError(profileBootstrap.Warning, profileBootstrap.IsProfileDocumentLoadFailure);
+        var about = new AboutPageViewModel(
+            applicationRuntimeInfo,
+            new WindowsExternalResourceLauncher(),
+            settings.Language);
         var viewModel = new MainWindowViewModel(
             settings.Theme,
             overview,
@@ -193,7 +198,8 @@ public partial class App : Application
             runtimeProfile.Profile.AccessMode,
             runtimeProfile.Profile.Monitoring.PreferredUpsName,
             runtimeProfile.Profile,
-            remoteWindowsService);
+            remoteWindowsService,
+            about);
         viewModel.SetTransparencyPreference(settings.BackgroundTransparency);
         administration.SemanticReviewChanged += viewModel.SetSemanticReview;
         viewModel.ThemeChanged += async preference =>

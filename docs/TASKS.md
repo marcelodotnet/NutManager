@@ -59,6 +59,7 @@ Only one task should normally be in progress at a time.
 | T37 | DONE | UI layout, interaction and visual polish | Refined layout, navigation and responsiveness across Overview, Administration, Diagnostics and Settings, plus the official application icon, with every existing boundary preserved |
 | T38 | DONE | Remote COM and hardware inspection through the Windows Agent | Passive serial-device inspection over the negotiated `GetHardwareSnapshot` capability, with `SERIALCOMM` authoritative for presence and WMI used only for enrichment |
 | T39 | IN PROGRESS | Windows installers, packaging and complete operator documentation | Both installers build and are asserted by tests; manual acceptance on Windows and on the server has not been run, so the task is not complete |
+| T40 | DONE | About page, developer information and official resources | Localized product/runtime details and fixed, reviewed external destinations behind an enum-only launcher boundary |
 
 ---
 
@@ -1614,6 +1615,24 @@ This entry records the plan, not the design. Installer technology, signing, upda
 service upgrade procedure are open questions, and the credential and profile preservation rules in
 particular need specifying before any of it is built: an upgrade that silently loses a Credential
 Manager entry or rewrites a profile document would breach boundaries the product has held since T20.
+
+## T40 — About page, developer information and official resources
+
+**Status:** DONE
+
+### Objective
+
+Add a localized About destination after Settings using the existing shell and card language. Present
+the official application asset, friendly and technical build information from
+`ApplicationRuntimeInfo`, developer attribution, technologies, GPL-2.0 licensing, and a copyable
+support summary that contains no profile, endpoint or credential data.
+
+### External-resource boundary
+
+External opening accepts only a typed resource enum. The Windows implementation maps those values to
+fixed project-owned destinations for the project repository, developer profile, published operator
+manual, technical documentation and license. UI, profiles and configuration cannot provide a URI,
+and no browser, HTTP client, telemetry or update capability was added.
 
 ## Task execution template
 

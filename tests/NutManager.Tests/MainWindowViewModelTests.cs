@@ -42,8 +42,20 @@ public sealed class MainWindowViewModelTests
         Assert.IsType<AdministrationPageViewModel>(viewModel.CurrentPage);
         Assert.True(viewModel.NavigationItems.Single(item => item.Page == AppPage.Administration).IsSelected);
         Assert.Equal(
-            [AppPage.Overview, AppPage.Devices, AppPage.Administration, AppPage.Diagnostics, AppPage.Settings],
+            [AppPage.Overview, AppPage.Devices, AppPage.Administration, AppPage.Diagnostics, AppPage.Settings, AppPage.About],
             viewModel.NavigationItems.Select(item => item.Page));
+    }
+
+    [Fact]
+    public void AboutIsTheLastNavigationDestinationAndOpensItsPageViewModel()
+    {
+        var viewModel = new MainWindowViewModel();
+
+        viewModel.NavigateCommand.Execute(AppPage.About);
+
+        Assert.Equal(AppPage.About, viewModel.SelectedPage);
+        Assert.IsType<AboutPageViewModel>(viewModel.CurrentPage);
+        Assert.True(viewModel.NavigationItems.Single(item => item.Page == AppPage.About).IsSelected);
     }
 
     [Fact]

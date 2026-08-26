@@ -36,5 +36,8 @@
     <DataTemplate DataType="viewModels:SettingsPageViewModel">
       <views:SettingsPageView />
     </DataTemplate>
+    <DataTemplate DataType="viewModels:AboutPageViewModel">
+      <views:AboutPageView />
+    </DataTemplate>
   </Application.DataTemplates>
 </Application>

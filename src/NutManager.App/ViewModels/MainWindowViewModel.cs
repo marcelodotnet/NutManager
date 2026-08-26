@@ -2,8 +2,10 @@
 using CommunityToolkit.Mvvm.Input;
 using Avalonia;
 using NutManager.App.Localization;
+using NutManager.App.Services;
 using NutManager.Core.Agent;
 using NutManager.Core.Models;
+using NutManager.Infrastructure.Platform.Windows;
 
 namespace NutManager.App.ViewModels;
 
@@ -49,7 +51,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
         ManagedNutServerAccessMode? accessMode = null,
         string? preferredUpsName = null,
         ManagedNutServerProfile? activeProfile = null,
-        RemoteWindowsServiceViewModel? remoteWindowsService = null)
+        RemoteWindowsServiceViewModel? remoteWindowsService = null,
+        AboutPageViewModel? aboutPage = null)
     {
         ArgumentNullException.ThrowIfNull(overviewPage);
         ArgumentNullException.ThrowIfNull(devicesPage);
@@ -73,7 +76,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             [AppPage.Devices] = devicesPage,
             [AppPage.Administration] = administrationPage ?? new AdministrationPageViewModel(),
             [AppPage.Diagnostics] = diagnosticsPage ?? new DiagnosticsPageViewModel(),
-            [AppPage.Settings] = _settingsPage
+            [AppPage.Settings] = _settingsPage,
+            [AppPage.About] = aboutPage ?? new AboutPageViewModel(
+                ApplicationRuntimeInfo.CreateCurrent(),
+                new WindowsExternalResourceLauncher(),
+                language)
         };
 
         NavigationItems = new List<NavigationItemViewModel>
@@ -82,7 +89,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             CreateNavigationItem(AppPage.Devices, "Nav.Devices"),
             CreateNavigationItem(AppPage.Administration, "Nav.Administration"),
             CreateNavigationItem(AppPage.Diagnostics, "Nav.Diagnostics"),
-            CreateNavigationItem(AppPage.Settings, "Nav.Settings")
+            CreateNavigationItem(AppPage.Settings, "Nav.Settings"),
+            CreateNavigationItem(AppPage.About, "Nav.About")
         };
         ThemeOptions =
         [

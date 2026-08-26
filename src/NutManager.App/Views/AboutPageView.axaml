@@ -1,0 +1,143 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:viewModels="clr-namespace:NutManager.App.ViewModels"
+             x:Class="NutManager.App.Views.AboutPageView"
+             x:DataType="viewModels:AboutPageViewModel">
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                VerticalScrollBarVisibility="Auto"
+                AllowAutoHide="False">
+    <StackPanel Spacing="22" MaxWidth="1180" Margin="0,92,10,58">
+      <StackPanel Spacing="2">
+        <StackPanel Orientation="Horizontal" Spacing="11">
+          <TextBlock Text="{Binding Title}" Classes="nut-page-title" />
+          <PathIcon Data="{DynamicResource NutIconInfo}" Width="20" Height="20"
+                    Foreground="{DynamicResource NutAccentBrightBrush}" VerticalAlignment="Center" />
+        </StackPanel>
+        <TextBlock Text="{Binding Description}" Classes="nut-page-subtitle" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Border Classes="nut-card">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="22">
+          <Border Width="100" Height="100" CornerRadius="22"
+                  Background="{DynamicResource NutSurface1Brush}"
+                  BorderBrush="{DynamicResource NutBorderSubtleBrush}" BorderThickness="1">
+            <Image Source="/Assets/Branding/NutManager.png" Margin="14" Stretch="Uniform"
+                   AutomationProperties.Name="{Binding ProductName}" />
+          </Border>
+          <StackPanel Grid.Column="1" Spacing="7" VerticalAlignment="Center">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock Text="{Binding ProductName}" FontSize="25" FontWeight="Bold" />
+              <Border Classes="nut-pill accent" VerticalAlignment="Center">
+                <TextBlock Text="{Binding DisplayVersion}" />
+              </Border>
+            </StackPanel>
+            <TextBlock Text="{Binding ProductDescription}" Classes="nut-body"
+                       MaxWidth="780" TextWrapping="Wrap" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Border Classes="nut-card">
+        <StackPanel Spacing="14">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <PathIcon Data="{DynamicResource NutIconProfile}" Classes="accent" Width="18" Height="18" />
+            <TextBlock Text="{Binding Strings[About.Developer.Title]}" Classes="nut-section-title" />
+          </StackPanel>
+          <Border Classes="nut-divider" />
+          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="18">
+            <StackPanel Spacing="3">
+              <TextBlock Text="{Binding DeveloperName}" Classes="nut-card-title" />
+              <TextBlock Text="{Binding Strings[About.Developer.Role]}" Classes="nut-body" />
+            </StackPanel>
+            <TextBlock Grid.Column="1" Text="{Binding Strings[About.Developer.Description]}"
+                       Classes="nut-body" TextWrapping="Wrap" VerticalAlignment="Center" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <StackPanel Spacing="12">
+        <TextBlock Text="{Binding Strings[About.Resources.Title]}" Classes="nut-section-title" />
+        <ItemsControl ItemsSource="{Binding Resources}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:AboutResourceViewModel">
+              <Border Classes="nut-card-flat" Width="350" MinHeight="150" Margin="0,0,12,12">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                  <TextBlock Text="{Binding Title}" Classes="nut-card-title" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="nut-body" TextWrapping="Wrap" />
+                  <Button Grid.Row="2" Command="{Binding OpenCommand}" IsEnabled="{Binding IsAvailable}"
+                          HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{DynamicResource NutIconForward}" Width="14" Height="14" />
+                      <TextBlock Text="{Binding ActionText}" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{Binding ResourceStatusMessage}" IsVisible="{Binding HasResourceStatusMessage}"
+                   Classes="nut-metadata" TextWrapping="Wrap" />
+      </StackPanel>
+
+      <Border Classes="nut-card">
+        <StackPanel Spacing="16">
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <PathIcon Data="{DynamicResource NutIconInfo}" Classes="cyan" Width="18" Height="18" />
+            <TextBlock Text="{Binding Strings[About.ApplicationInfo.Title]}" Classes="nut-section-title" />
+          </StackPanel>
+          <Border Classes="nut-divider" />
+          <WrapPanel Orientation="Horizontal">
+            <StackPanel Width="260" Margin="0,0,18,14" Spacing="3">
+              <TextBlock Text="{Binding Strings[About.Version]}" Classes="nut-label" />
+              <TextBlock Text="{Binding DisplayVersion}" Classes="nut-card-title" />
+            </StackPanel>
+            <StackPanel Width="260" Margin="0,0,18,14" Spacing="3">
+              <TextBlock Text="{Binding Strings[About.Build]}" Classes="nut-label" />
+              <TextBlock Text="{Binding BuildIdentifier}" Classes="nut-body" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Width="260" Margin="0,0,18,14" Spacing="3">
+              <TextBlock Text="{Binding Strings[About.Platform]}" Classes="nut-label" />
+              <TextBlock Text="{Binding Platform}" Classes="nut-body" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Width="260" Margin="0,0,18,14" Spacing="3">
+              <TextBlock Text="{Binding Strings[About.Architecture]}" Classes="nut-label" />
+              <TextBlock Text="{Binding Architecture}" Classes="nut-body" />
+            </StackPanel>
+            <StackPanel Width="260" Margin="0,0,18,14" Spacing="3">
+              <TextBlock Text="{Binding Strings[About.Runtime]}" Classes="nut-label" />
+              <TextBlock Text="{Binding Runtime}" Classes="nut-body" TextWrapping="Wrap" />
+            </StackPanel>
+          </WrapPanel>
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <Button Click="CopySupportInformationButton_OnClick">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <PathIcon Data="{DynamicResource NutIconCopy}" Width="15" Height="15" />
+                <TextBlock Text="{Binding Strings[About.CopyInformation]}" />
+              </StackPanel>
+            </Button>
+            <TextBlock Text="{Binding CopyStatusMessage}" IsVisible="{Binding HasCopyStatusMessage}"
+                       Classes="nut-metadata" VerticalAlignment="Center" TextWrapping="Wrap" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <Border Classes="nut-card">
+        <StackPanel Spacing="14">
+          <TextBlock Text="{Binding Strings[About.Technologies.Title]}" Classes="nut-section-title" />
+          <Border Classes="nut-divider" />
+          <WrapPanel Orientation="Horizontal">
+            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text=".NET 10" /></Border>
+            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Avalonia" /></Border>
+            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Network UPS Tools" /></Border>
+            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Windows x64" /></Border>
+          </WrapPanel>
+          <TextBlock Text="{Binding Strings[About.LicenseNotice]}" Classes="nut-body" TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

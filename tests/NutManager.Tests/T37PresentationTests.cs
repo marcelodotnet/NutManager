@@ -13,9 +13,9 @@ public sealed class T37PresentationTests
         var icon = Read("src", "NutManager.App", "Presentation", "Controls", "NutNavigationIcon.axaml");
         var viewModel = new MainWindowViewModel();
 
-        Assert.Equal(5, viewModel.NavigationItems.Count);
+        Assert.Equal(6, viewModel.NavigationItems.Count);
         Assert.Equal(2, window.Split("<controls:NutNavigationIcon Kind=\"{Binding Page}\" />", StringSplitOptions.None).Length - 1);
-        foreach (var flag in new[] { "IsOverview", "IsDevices", "IsAdministration", "IsDiagnostics", "IsSettings" })
+        foreach (var flag in new[] { "IsOverview", "IsDevices", "IsAdministration", "IsDiagnostics", "IsSettings", "IsAbout" })
         {
             Assert.Contains($"IsVisible=\"{{Binding {flag}, ElementName=Root}}\"", icon, StringComparison.Ordinal);
         }
