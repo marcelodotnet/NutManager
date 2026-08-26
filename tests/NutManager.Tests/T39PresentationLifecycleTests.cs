@@ -391,6 +391,46 @@ public sealed class T39PresentationLifecycleTests
     }
 
     [Fact]
+    public void ReadOnlyWriteAuthorizationExplainsWhyTheProbeIsUnavailable()
+    {
+        var page = new AdministrationPageViewModel(
+            null, null, null, null, RemoteContext(ManagedNutServerAccessMode.ReadOnly),
+            null, UiLanguagePreference.PtBr, null, null, null, null);
+
+        Assert.Equal(
+            "A escrita não está disponível enquanto este perfil estiver em modo Somente leitura. Altere o acesso para Gerenciar nas Configurações para habilitar a verificação de escrita.",
+            page.RemoteWriteAuthorizationUnavailableTooltip);
+
+        page.ApplyAccessMode(ManagedNutServerAccessMode.Manage);
+
+        Assert.Null(page.RemoteWriteAuthorizationUnavailableTooltip);
+        var view = Source("src", "NutManager.App", "Views", "RemoteAccessAdministrationView.axaml");
+        Assert.Contains(
+            "ToolTip.Tip=\"{Binding RemoteWriteAuthorizationUnavailableTooltip}\"",
+            view,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AgentTransportNamesAreConsistentAcrossOfficialCultures()
+    {
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            var strings = new NutManagerLocalizer(language);
+
+            Assert.Equal("SMB (Named Pipe)", strings.Get("RemoteService.Transport.NamedPipe"));
+            Assert.Equal("SMB (Named Pipe)", strings.Get("Settings.Agent.Transport.NamedPipe"));
+            Assert.Equal("SMB (Named Pipe)", strings.Get("Agent.Transport.NamedPipe"));
+            Assert.Equal("HTTPS", strings.Get("RemoteService.Transport.Https"));
+            Assert.Equal("HTTPS", strings.Get("Settings.Agent.Transport.Https"));
+            Assert.Equal("HTTPS", strings.Get("Agent.Transport.Https"));
+        }
+
+        Assert.Equal("SMB", new NutManagerLocalizer(UiLanguagePreference.PtBr).Get("Transport.Smb"));
+        Assert.Equal("SMB", new NutManagerLocalizer(UiLanguagePreference.EnUs).Get("Transport.Smb"));
+    }
+
+    [Fact]
     public void TheSelectedSectionSurvivesAnAccessModeChangeWhenItStillExists()
     {
         // The section list is rebuilt rather than edited, so every item is a new object. Carrying the

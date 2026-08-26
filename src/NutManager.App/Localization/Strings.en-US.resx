@@ -454,6 +454,7 @@
   <data name="Administration.Remote.SmbDirectory.Fixed" xml:space="preserve"><value>This directory is defined by the profile in Settings. NutManager only connects to and validates the saved location here.</value></data>
   <data name="Administration.Remote.SafeWrite.Title" xml:space="preserve"><value>Safe replacement with File.Replace</value></data>
   <data name="Administration.Remote.SafeWrite.Help" xml:space="preserve"><value>SMB writes require explicit authorization: the check creates temporary files, confirms atomic replacement with File.Replace, and removes every artifact before writes are enabled.</value></data>
+  <data name="Administration.Remote.SafeWrite.ReadOnlyTooltip" xml:space="preserve"><value>Writing is not available while this profile is in Read-only mode. Change access to Manage in Settings to enable the write verification.</value></data>
   <data name="Administration.Remote.SafeWrite.Verify" xml:space="preserve"><value>AUTHORIZE WRITE</value></data>
   <data name="Administration.Remote.SafeWrite.Verified" xml:space="preserve"><value>AUTHORIZED</value></data>
   <data name="Administration.Configuration.WriteAuthorizationRequired" xml:space="preserve"><value>Authorize safe writes in Remote access before saving changes to this file.</value></data>
@@ -1018,8 +1019,8 @@
   <data name="RemoteService.Agent.Failed" xml:space="preserve"><value>Failed</value></data>
   <data name="RemoteService.Agent.ProtocolDetail" xml:space="preserve"><value>Protocol result: {0}</value></data>
   <data name="RemoteService.Transport.Label" xml:space="preserve"><value>Connection</value></data>
-  <data name="RemoteService.Transport.NamedPipe" xml:space="preserve"><value>SMB (Windows network)</value></data>
-  <data name="RemoteService.Transport.Https" xml:space="preserve"><value>HTTPS (dedicated port)</value></data>
+  <data name="RemoteService.Transport.NamedPipe" xml:space="preserve"><value>SMB (Named Pipe)</value></data>
+  <data name="RemoteService.Transport.Https" xml:space="preserve"><value>HTTPS</value></data>
   <data name="RemoteService.Control.Start" xml:space="preserve"><value>Start</value></data>
   <data name="RemoteService.Control.Stop" xml:space="preserve"><value>Stop</value></data>
   <data name="RemoteService.Control.Restart" xml:space="preserve"><value>Restart</value></data>
@@ -1045,14 +1046,14 @@
   <data name="RemoteService.Control.TransportFailure" xml:space="preserve"><value>The agent could not be reached: {0}.</value></data>
   <data name="Settings.Agent.Section" xml:space="preserve"><value>Service control agent</value></data>
   <data name="Settings.Agent.Transport" xml:space="preserve"><value>Agent transport</value></data>
-  <data name="Settings.Agent.Transport.NamedPipe" xml:space="preserve"><value>Named pipe</value></data>
+  <data name="Settings.Agent.Transport.NamedPipe" xml:space="preserve"><value>SMB (Named Pipe)</value></data>
   <data name="Settings.Agent.Transport.Https" xml:space="preserve"><value>HTTPS</value></data>
   <data name="Settings.Agent.HttpsEndpoint" xml:space="preserve"><value>Agent HTTPS endpoint</value></data>
   <data name="Settings.Agent.HttpsEndpoint.Invalid" xml:space="preserve"><value>Enter an absolute https:// address without embedded credentials.</value></data>
   <data name="Agent.Section" xml:space="preserve"><value>NUT service control</value></data>
   <data name="Agent.Transport" xml:space="preserve"><value>Service control, via</value></data>
-  <data name="Agent.Transport.NamedPipe" xml:space="preserve"><value>SMB (Windows network)</value></data>
-  <data name="Agent.Transport.Https" xml:space="preserve"><value>HTTPS (dedicated port)</value></data>
+  <data name="Agent.Transport.NamedPipe" xml:space="preserve"><value>SMB (Named Pipe)</value></data>
+  <data name="Agent.Transport.Https" xml:space="preserve"><value>HTTPS</value></data>
   <data name="Agent.HttpsEndpoint" xml:space="preserve"><value>Agent address</value></data>
   <data name="Agent.HttpsEndpoint.Invalid" xml:space="preserve"><value>Enter an absolute https:// address that names a host and carries no credentials.</value></data>
   <data name="Agent.Authentication" xml:space="preserve"><value>Sign in as</value></data>
