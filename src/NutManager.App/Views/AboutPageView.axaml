@@ -18,12 +18,11 @@
 
       <Border Classes="nut-card">
         <Grid ColumnDefinitions="Auto,*" ColumnSpacing="22">
-          <Border Width="100" Height="100" CornerRadius="22"
-                  Background="{DynamicResource NutSurface1Brush}"
-                  BorderBrush="{DynamicResource NutBorderSubtleBrush}" BorderThickness="1">
-            <Image Source="/Assets/Branding/NutManager.png" Margin="14" Stretch="Uniform"
-                   AutomationProperties.Name="{Binding ProductName}" />
-          </Border>
+          <Image Width="100" Height="100"
+                 Source="/Assets/Branding/NutManager.png"
+                 Stretch="Uniform"
+                 RenderOptions.BitmapInterpolationMode="HighQuality"
+                 AutomationProperties.Name="{Binding ProductName}" />
           <StackPanel Grid.Column="1" Spacing="7" VerticalAlignment="Center">
             <StackPanel Orientation="Horizontal" Spacing="10">
               <TextBlock Text="{Binding ProductName}" FontSize="25" FontWeight="Bold" />
@@ -37,52 +36,12 @@
         </Grid>
       </Border>
 
-      <Border Classes="nut-card">
-        <StackPanel Spacing="14">
-          <StackPanel Orientation="Horizontal" Spacing="9">
-            <PathIcon Data="{DynamicResource NutIconProfile}" Classes="accent" Width="18" Height="18" />
-            <TextBlock Text="{Binding Strings[About.Developer.Title]}" Classes="nut-section-title" />
-          </StackPanel>
-          <Border Classes="nut-divider" />
-          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="18">
-            <StackPanel Spacing="3">
-              <TextBlock Text="{Binding DeveloperName}" Classes="nut-card-title" />
-              <TextBlock Text="{Binding Strings[About.Developer.Role]}" Classes="nut-body" />
-            </StackPanel>
-            <TextBlock Grid.Column="1" Text="{Binding Strings[About.Developer.Description]}"
-                       Classes="nut-body" TextWrapping="Wrap" VerticalAlignment="Center" />
-          </Grid>
-        </StackPanel>
-      </Border>
-
-      <StackPanel Spacing="12">
-        <TextBlock Text="{Binding Strings[About.Resources.Title]}" Classes="nut-section-title" />
-        <ItemsControl ItemsSource="{Binding Resources}">
-          <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
-          </ItemsControl.ItemsPanel>
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="viewModels:AboutResourceViewModel">
-              <Border Classes="nut-card-flat" Width="350" MinHeight="150" Margin="0,0,12,12">
-                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
-                  <TextBlock Text="{Binding Title}" Classes="nut-card-title" TextWrapping="Wrap" />
-                  <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="nut-body" TextWrapping="Wrap" />
-                  <Button Grid.Row="2" Command="{Binding OpenCommand}" IsEnabled="{Binding IsAvailable}"
-                          HorizontalAlignment="Left">
-                    <StackPanel Orientation="Horizontal" Spacing="7">
-                      <PathIcon Data="{DynamicResource NutIconForward}" Width="14" Height="14" />
-                      <TextBlock Text="{Binding ActionText}" />
-                    </StackPanel>
-                  </Button>
-                </Grid>
-              </Border>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-        <TextBlock Text="{Binding ResourceStatusMessage}" IsVisible="{Binding HasResourceStatusMessage}"
-                   Classes="nut-metadata" TextWrapping="Wrap" />
-      </StackPanel>
-
+      <!--
+        One card, two titled subsections. What the build is and who maintains it are close enough
+        to the same question that two cards side by side made the page look like it held more than
+        it does. The technologies list that used to follow was removed for the same reason: it
+        restated the runtime and platform already named a few lines above it.
+      -->
       <Border Classes="nut-card">
         <StackPanel Spacing="16">
           <StackPanel Orientation="Horizontal" Spacing="9">
@@ -122,22 +81,58 @@
             <TextBlock Text="{Binding CopyStatusMessage}" IsVisible="{Binding HasCopyStatusMessage}"
                        Classes="nut-metadata" VerticalAlignment="Center" TextWrapping="Wrap" />
           </StackPanel>
+
+          <Border Classes="nut-divider" Margin="0,6,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="9">
+            <PathIcon Data="{DynamicResource NutIconProfile}" Classes="accent" Width="18" Height="18" />
+            <TextBlock Text="{Binding Strings[About.Developer.Title]}" Classes="nut-section-title" />
+          </StackPanel>
+          <Border Classes="nut-divider" />
+          <StackPanel Spacing="3">
+            <TextBlock Text="{Binding DeveloperName}" Classes="nut-card-title" />
+            <!--
+              Only the handle is the affordance. The button carries no address of its own: it raises
+              a command naming an allowlisted destination, so the UI never holds a URL that a binding
+              or a profile value could redirect.
+            -->
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Text="{Binding DeveloperCreditPrefix}" Classes="nut-body" VerticalAlignment="Center" />
+              <Button Classes="nut-link"
+                      Content="{Binding DeveloperHandle}"
+                      Command="{Binding OpenDeveloperProfileCommand}"
+                      AutomationProperties.Name="{Binding DeveloperCreditText}" />
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
       </Border>
 
-      <Border Classes="nut-card">
-        <StackPanel Spacing="14">
-          <TextBlock Text="{Binding Strings[About.Technologies.Title]}" Classes="nut-section-title" />
-          <Border Classes="nut-divider" />
-          <WrapPanel Orientation="Horizontal">
-            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text=".NET 10" /></Border>
-            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Avalonia" /></Border>
-            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Network UPS Tools" /></Border>
-            <Border Classes="nut-pill accent" Margin="0,0,8,8"><TextBlock Text="Windows x64" /></Border>
-          </WrapPanel>
-          <TextBlock Text="{Binding Strings[About.LicenseNotice]}" Classes="nut-body" TextWrapping="Wrap" />
-        </StackPanel>
-      </Border>
+      <StackPanel Spacing="12">
+        <TextBlock Text="{Binding Strings[About.Resources.Title]}" Classes="nut-section-title" />
+        <ItemsControl ItemsSource="{Binding Resources}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate><WrapPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="viewModels:AboutResourceViewModel">
+              <Border Classes="nut-card-flat" Width="350" MinHeight="150" Margin="0,0,12,12">
+                <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                  <TextBlock Text="{Binding Title}" Classes="nut-card-title" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="1" Text="{Binding Description}" Classes="nut-body" TextWrapping="Wrap" />
+                  <Button Grid.Row="2" Command="{Binding OpenCommand}" IsEnabled="{Binding IsAvailable}"
+                          HorizontalAlignment="Left">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{DynamicResource NutIconForward}" Width="14" Height="14" />
+                      <TextBlock Text="{Binding ActionText}" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="{Binding ResourceStatusMessage}" IsVisible="{Binding HasResourceStatusMessage}"
+                   Classes="nut-metadata" TextWrapping="Wrap" />
+      </StackPanel>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

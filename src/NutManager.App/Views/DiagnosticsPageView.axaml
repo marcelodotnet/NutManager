@@ -6,8 +6,9 @@
   <!--
     Read-only diagnostics. The reference shows a health score, a pass/fail tally, quick tests,
     an event log and a latency chart; none of those exist in NutManager, so none is fabricated.
-    Only the three surfaces backed by real state are offered, and every status below is a
-    categorical projection of the current polling, discovery or installation state.
+    Only the surfaces backed by real state are offered, and every status below is a categorical
+    projection of the current polling, discovery or installation state. Product identity - version,
+    runtime, platform - is not a diagnostic and now lives on the About page instead.
   -->
   <ScrollViewer
                 HorizontalScrollBarVisibility="Disabled"
@@ -155,186 +156,146 @@
         </Grid>
       </StackPanel>
 
-      <!-- ==================== Connectivity ==================== -->
-      <StackPanel Spacing="14">
-        <StackPanel Spacing="8">
-          <StackPanel Orientation="Horizontal" Spacing="9">
+      <!-- ==================== Connection and polling ==================== -->
+      <!--
+        One card, two titled subsections. Connection and polling describe the same link - where the
+        server is and how often it is read - and keeping them in separate cards made a reader compare
+        two surfaces to answer one question. No group heading above it: the card titles itself twice
+        already, and a third heading repeating the same word said nothing the card did not.
+        Presentation only - every value below is the binding it already was.
+      -->
+      <Border Classes="nut-card">
+        <StackPanel Spacing="12">
+          <StackPanel Orientation="Horizontal" Spacing="10">
             <PathIcon Data="{DynamicResource NutIconNetwork}" Classes="accent" Width="17" Height="17" />
-            <TextBlock Text="{Binding Strings[Diagnostics.Group.Connection]}" Classes="nut-section-title" />
+            <TextBlock Text="{Binding Strings[Diagnostics.Group.Connection]}" Classes="nut-card-title" VerticalAlignment="Center" />
           </StackPanel>
           <Border Classes="nut-divider" />
-        </StackPanel>
-        <!-- Configured endpoint and measured state only: no probe, ping or latency history exists. -->
-        <Border Classes="nut-card">
-          <StackPanel Spacing="12">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <PathIcon Data="{DynamicResource NutIconNetwork}" Classes="accent" Width="17" Height="17" />
-              <TextBlock Text="{Binding Strings[Diagnostics.Group.Connection]}" Classes="nut-card-title" VerticalAlignment="Center" />
+          <!-- Configured endpoint and measured state only: no probe, ping or latency history exists. -->
+          <WrapPanel>
+            <StackPanel Width="200" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Common.Host]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding Host}" FontSize="13" TextTrimming="CharacterEllipsis" />
             </StackPanel>
-            <Border Classes="nut-divider" />
-            <WrapPanel>
-              <StackPanel Width="200" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.Host]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding Host}" FontSize="13" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <StackPanel Width="120" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Administration.Drivers.Port]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding Port}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.State]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ConnectionStateText}" FontSize="13" FontWeight="SemiBold"
-                           Classes.healthy="{Binding IsConnectionHealthy}" Classes.critical="{Binding IsConnectionCritical}" />
-              </StackPanel>
-              <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.Profile]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ManagedProfileName}" FontSize="13" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-              <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Administration.Context.Management]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ManagementModeText}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="160" Margin="0,0,0,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Administration.Context.Access]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ManagementAccessText}" FontSize="13" Classes="accent" />
-              </StackPanel>
-            </WrapPanel>
-          </StackPanel>
-        </Border>
+            <StackPanel Width="120" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Administration.Drivers.Port]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding Port}" FontSize="13" />
+            </StackPanel>
+            <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Common.State]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding ConnectionStateText}" FontSize="13" FontWeight="SemiBold"
+                         Classes.healthy="{Binding IsConnectionHealthy}" Classes.critical="{Binding IsConnectionCritical}" />
+            </StackPanel>
+            <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Diagnostics.Profile]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding ManagedProfileName}" FontSize="13" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+            <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Administration.Context.Management]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding ManagementModeText}" FontSize="13" />
+            </StackPanel>
+            <StackPanel Width="160" Margin="0,0,0,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Administration.Context.Access]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding ManagementAccessText}" FontSize="13" Classes="accent" />
+            </StackPanel>
+          </WrapPanel>
 
-        <Border Classes="nut-card">
-          <StackPanel Spacing="12">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <PathIcon Data="{DynamicResource NutIconRuntime}" Classes="purple" Width="17" Height="17" />
-              <TextBlock Text="{Binding Strings[Diagnostics.Group.Polling]}" Classes="nut-card-title" VerticalAlignment="Center" />
-            </StackPanel>
-            <Border Classes="nut-divider" />
-            <WrapPanel>
-              <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Settings.PollingInterval]}" Classes="nut-metadata" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding PollingIntervalText}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Settings.ConnectionTimeout]}" Classes="nut-metadata" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding ConnectionTimeoutText}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Overview.Freshness]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding DataFreshnessText}" FontSize="13"
-                           Classes.healthy="{Binding IsDataFresh}" Classes.warning="{Binding IsDataStale}" />
-              </StackPanel>
-              <StackPanel Width="200" Margin="0,0,0,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Overview.LastReading]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding LastSuccessfulUpdateText}" FontSize="13" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-            </WrapPanel>
-            <Border Classes="nut-divider" />
-            <StackPanel Orientation="Horizontal" Spacing="9">
-              <PathIcon Data="{DynamicResource NutIconWarning}" Classes="warning" Width="15" Height="15" VerticalAlignment="Top" IsVisible="{Binding HasLastError}" />
-              <PathIcon Data="{DynamicResource NutIconSuccess}" Classes="healthy" Width="15" Height="15" VerticalAlignment="Top" IsVisible="{Binding !HasLastError}" />
-              <TextBlock Text="{Binding LastErrorText}" Classes="nut-body" FontSize="13" TextWrapping="Wrap" />
-            </StackPanel>
+          <Border Classes="nut-divider" Margin="0,6,0,0" />
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <PathIcon Data="{DynamicResource NutIconRuntime}" Classes="purple" Width="17" Height="17" />
+            <TextBlock Text="{Binding Strings[Diagnostics.Group.Polling]}" Classes="nut-card-title" VerticalAlignment="Center" />
           </StackPanel>
-        </Border>
-      </StackPanel>
-
-      <!-- ==================== Environment ==================== -->
-      <StackPanel Spacing="14">
-        <StackPanel Spacing="8">
+          <Border Classes="nut-divider" />
+          <WrapPanel>
+            <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Settings.PollingInterval]}" Classes="nut-metadata" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding PollingIntervalText}" FontSize="13" />
+            </StackPanel>
+            <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Settings.ConnectionTimeout]}" Classes="nut-metadata" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding ConnectionTimeoutText}" FontSize="13" />
+            </StackPanel>
+            <StackPanel Width="170" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Overview.Freshness]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding DataFreshnessText}" FontSize="13"
+                         Classes.healthy="{Binding IsDataFresh}" Classes.warning="{Binding IsDataStale}" />
+            </StackPanel>
+            <StackPanel Width="200" Margin="0,0,0,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Overview.LastReading]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding LastSuccessfulUpdateText}" FontSize="13" TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+          </WrapPanel>
+          <Border Classes="nut-divider" />
           <StackPanel Orientation="Horizontal" Spacing="9">
-            <PathIcon Data="{DynamicResource NutIconInfo}" Classes="accent" Width="17" Height="17" />
-            <TextBlock Text="{Binding Strings[Diagnostics.Group.Environment]}" Classes="nut-section-title" />
+            <PathIcon Data="{DynamicResource NutIconWarning}" Classes="warning" Width="15" Height="15" VerticalAlignment="Top" IsVisible="{Binding HasLastError}" />
+            <PathIcon Data="{DynamicResource NutIconSuccess}" Classes="healthy" Width="15" Height="15" VerticalAlignment="Top" IsVisible="{Binding !HasLastError}" />
+            <TextBlock Text="{Binding LastErrorText}" Classes="nut-body" FontSize="13" TextWrapping="Wrap" />
           </StackPanel>
-          <Border Classes="nut-divider" />
         </StackPanel>
-        <Border Classes="nut-card">
-          <StackPanel Spacing="12">
-            <StackPanel Orientation="Horizontal" Spacing="10">
-              <PathIcon Data="{DynamicResource NutIconInfo}" Classes="accent" Width="17" Height="17" />
-              <TextBlock Text="{Binding Strings[Diagnostics.Application]}" Classes="nut-card-title" VerticalAlignment="Center" />
+      </Border>
+
+      <!-- ==================== Local NUT installation ==================== -->
+      <!--
+        What used to sit under an "application and environment" heading beside a card repeating the
+        product version. Version, runtime and platform now live on the About page, which is where
+        someone goes looking for them; what stays here is the part that is genuinely a diagnostic -
+        whether a local NUT installation was found, and where.
+      -->
+      <Border Classes="nut-card" IsVisible="{Binding IsLocalManagementProfile}">
+        <StackPanel Spacing="12">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+            <PathIcon Data="{DynamicResource NutIconService}" Classes="purple" Width="17" Height="17" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" Spacing="1">
+              <TextBlock Text="{Binding Strings[Diagnostics.Group.Technical]}" Classes="nut-card-title" />
+              <TextBlock Text="{Binding LocalInstallationStatusText}"
+                         Classes="nut-metadata"
+                         Classes.healthy="{Binding IsLocalInstallationDetected}"
+                         TextWrapping="Wrap" />
             </StackPanel>
-            <Border Classes="nut-divider" />
-            <WrapPanel>
-              <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.Application]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ApplicationName}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="300" Margin="0,0,36,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.Version]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ApplicationVersion}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="220" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.Runtime]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding Runtime}" FontSize="13" TextWrapping="Wrap" />
-              </StackPanel>
-              <StackPanel Width="140" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.Architecture]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding Architecture}" FontSize="13" />
-              </StackPanel>
-              <StackPanel Width="300" Margin="0,0,0,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.Group.Environment]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding OperatingSystem}" FontSize="13" TextWrapping="Wrap" />
-              </StackPanel>
+            <WrapPanel Grid.Column="2">
+              <Button Content="{Binding Strings[Common.RefreshDetection]}" Command="{Binding DetectLocalInstallationCommand}" IsEnabled="{Binding CanInspectLocalInstallation}" Margin="0,0,8,0" />
+              <Button Content="{Binding Strings[Common.SelectFolder]}" Click="SelectDirectoryButton_OnClick" IsEnabled="{Binding CanInspectLocalInstallation}" />
             </WrapPanel>
-          </StackPanel>
-        </Border>
+          </Grid>
+          <Border Classes="nut-divider" />
+          <WrapPanel>
+            <StackPanel Width="290" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Common.InstallationDirectory]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding InstallationDirectoryText}" FontSize="13" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Width="290" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Common.ConfigurationDirectory]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding ConfigurationDirectoryText}" FontSize="13" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Common.Version]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding LocalInstallationVersionText}" FontSize="13" />
+              <TextBlock Text="{Binding LocalVersionSourceText}" Classes="nut-metadata" />
+            </StackPanel>
+            <StackPanel Width="220" Margin="0,0,0,10" Spacing="2">
+              <TextBlock Text="{Binding Strings[Diagnostics.DetectionSource]}" Classes="nut-metadata" />
+              <TextBlock Text="{Binding DetectionSourceText}" FontSize="13" TextWrapping="Wrap" />
+            </StackPanel>
+          </WrapPanel>
 
-        <Border Classes="nut-card" IsVisible="{Binding IsLocalManagementProfile}">
-          <StackPanel Spacing="12">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-              <PathIcon Data="{DynamicResource NutIconService}" Classes="purple" Width="17" Height="17" VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1" Spacing="1">
-                <TextBlock Text="{Binding Strings[Diagnostics.Group.Technical]}" Classes="nut-card-title" />
-                <TextBlock Text="{Binding LocalInstallationStatusText}"
-                           Classes="nut-metadata"
-                           Classes.healthy="{Binding IsLocalInstallationDetected}"
-                           TextWrapping="Wrap" />
-              </StackPanel>
-              <WrapPanel Grid.Column="2">
-                <Button Content="{Binding Strings[Common.RefreshDetection]}" Command="{Binding DetectLocalInstallationCommand}" IsEnabled="{Binding CanInspectLocalInstallation}" Margin="0,0,8,0" />
-                <Button Content="{Binding Strings[Common.SelectFolder]}" Click="SelectDirectoryButton_OnClick" IsEnabled="{Binding CanInspectLocalInstallation}" />
-              </WrapPanel>
-            </Grid>
-            <Border Classes="nut-divider" />
-            <WrapPanel>
-              <StackPanel Width="290" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.InstallationDirectory]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding InstallationDirectoryText}" FontSize="13" TextWrapping="Wrap" />
-              </StackPanel>
-              <StackPanel Width="290" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.ConfigurationDirectory]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding ConfigurationDirectoryText}" FontSize="13" TextWrapping="Wrap" />
-              </StackPanel>
-              <StackPanel Width="160" Margin="0,0,16,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Common.Version]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding LocalInstallationVersionText}" FontSize="13" />
-                <TextBlock Text="{Binding LocalVersionSourceText}" Classes="nut-metadata" />
-              </StackPanel>
-              <StackPanel Width="220" Margin="0,0,0,10" Spacing="2">
-                <TextBlock Text="{Binding Strings[Diagnostics.DetectionSource]}" Classes="nut-metadata" />
-                <TextBlock Text="{Binding DetectionSourceText}" FontSize="13" TextWrapping="Wrap" />
-              </StackPanel>
-            </WrapPanel>
+          <Expander Header="{Binding Strings[Diagnostics.Executables]}" IsExpanded="False">
+            <Border Classes="nut-inset" Margin="0,8,0,0">
+              <TextBlock Text="{Binding ExecutablesText}" Classes="nut-mono" TextWrapping="Wrap" />
+            </Border>
+          </Expander>
+          <Expander Header="{Binding Strings[Diagnostics.ConfigurationFiles]}" IsExpanded="False">
+            <Border Classes="nut-inset" Margin="0,8,0,0">
+              <TextBlock Text="{Binding ConfigurationFilesText}" Classes="nut-mono" TextWrapping="Wrap" />
+            </Border>
+          </Expander>
 
-            <Expander Header="{Binding Strings[Diagnostics.Executables]}" IsExpanded="False">
-              <Border Classes="nut-inset" Margin="0,8,0,0">
-                <TextBlock Text="{Binding ExecutablesText}" Classes="nut-mono" TextWrapping="Wrap" />
-              </Border>
-            </Expander>
-            <Expander Header="{Binding Strings[Diagnostics.ConfigurationFiles]}" IsExpanded="False">
-              <Border Classes="nut-inset" Margin="0,8,0,0">
-                <TextBlock Text="{Binding ConfigurationFilesText}" Classes="nut-mono" TextWrapping="Wrap" />
-              </Border>
-            </Expander>
-
-            <TextBlock Text="{Binding LocalInstallationError}"
-                       IsVisible="{Binding HasLocalInstallationError}"
-                       Classes="critical"
-                       FontSize="12.5"
-                       TextWrapping="Wrap" />
-          </StackPanel>
-        </Border>
-      </StackPanel>
+          <TextBlock Text="{Binding LocalInstallationError}"
+                     IsVisible="{Binding HasLocalInstallationError}"
+                     Classes="critical"
+                     FontSize="12.5"
+                     TextWrapping="Wrap" />
+        </StackPanel>
+      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

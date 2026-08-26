@@ -9,10 +9,9 @@ public static class ExternalResourceCatalog
     public static Uri? GetUri(ExternalResource resource) => resource switch
     {
         ExternalResource.ProjectRepository => new("https://github.com/Marcelo-PX/NutManager"),
-        ExternalResource.DeveloperProfile => new("https://github.com/Marcelo-PX"),
+        ExternalResource.DeveloperProfile => new("https://github.com/marcelodotnet"),
         ExternalResource.OperatorManual => new("https://marcelodotnet.notion.site/NutManager-T39-Installer-Packaging-Documentation-3c657ac07709810bb8d8ec798f82a942"),
         ExternalResource.TechnicalDocumentation => new("https://github.com/Marcelo-PX/NutManager/tree/main/docs"),
-        ExternalResource.License => new("https://github.com/Marcelo-PX/NutManager/blob/main/LICENSE"),
         _ => null
     };
 }

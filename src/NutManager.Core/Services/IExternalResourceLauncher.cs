@@ -6,8 +6,7 @@ public enum ExternalResource
     ProjectRepository,
     DeveloperProfile,
     OperatorManual,
-    TechnicalDocumentation,
-    License
+    TechnicalDocumentation
 }
 
 public enum ExternalResourceOpenResult

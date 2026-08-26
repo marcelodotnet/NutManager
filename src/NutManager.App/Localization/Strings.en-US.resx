@@ -368,13 +368,11 @@
   <data name="Diagnostics.Group.Connection" xml:space="preserve"><value>Connection</value></data>
   <data name="Diagnostics.Group.Polling" xml:space="preserve"><value>Polling</value></data>
   <data name="Diagnostics.Group.Discovery" xml:space="preserve"><value>Discovery</value></data>
-  <data name="Diagnostics.Group.Environment" xml:space="preserve"><value>Application and environment</value></data>
   <data name="Diagnostics.Group.Technical" xml:space="preserve"><value>Technical</value></data>
   <data name="Diagnostics.Copy" xml:space="preserve"><value>Copy diagnostics</value></data>
   <data name="Diagnostics.Copied" xml:space="preserve"><value>Diagnostics copied.</value></data>
   <data name="Diagnostics.CopyFailed" xml:space="preserve"><value>Diagnostics could not be copied.</value></data>
   <data name="Diagnostics.SelectInstallation" xml:space="preserve"><value>Select local NUT installation</value></data>
-  <data name="Diagnostics.Runtime" xml:space="preserve"><value>Runtime</value></data>
   <data name="Diagnostics.Snapshot" xml:space="preserve"><value>Snapshot</value></data>
   <data name="Diagnostics.LiveServer" xml:space="preserve"><value>Live NUT server</value></data>
   <data name="Diagnostics.CurrentLocalProfile" xml:space="preserve"><value>Current local profile</value></data>
@@ -394,8 +392,6 @@
   <data name="Diagnostics.DetectionUnavailable" xml:space="preserve"><value>Local detection is unavailable.</value></data>
   <data name="Diagnostics.RemoteNoLocalInspection" xml:space="preserve"><value>The active profile uses remote management; local installation will not be inspected.</value></data>
   <data name="Diagnostics.InspectionFailed" xml:space="preserve"><value>The local NUT installation could not be inspected.</value></data>
-  <data name="Diagnostics.Application" xml:space="preserve"><value>Application</value></data>
-  <data name="Diagnostics.Architecture" xml:space="preserve"><value>Architecture</value></data>
   <data name="Diagnostics.Profile" xml:space="preserve"><value>Managed profile</value></data>
   <data name="Diagnostics.Source" xml:space="preserve"><value>Data source</value></data>
   <data name="Diagnostics.DiscoveredUps" xml:space="preserve"><value>Discovered UPS devices</value></data>
@@ -1090,19 +1086,14 @@
   <data name="About.Description" xml:space="preserve"><value>Application information, support details, and official resources.</value></data>
   <data name="About.ProductDescription" xml:space="preserve"><value>Secure monitoring and administration for Network UPS Tools environments on Windows.</value></data>
   <data name="About.Developer.Title" xml:space="preserve"><value>Developer</value></data>
-  <data name="About.Developer.Role" xml:space="preserve"><value>NUT Manager developer</value></data>
-  <data name="About.Developer.Description" xml:space="preserve"><value>Project created and maintained by Marcelo Pacheco.</value></data>
+  <data name="About.Developer.MaintainedBy" xml:space="preserve"><value>Project developed and maintained by</value></data>
   <data name="About.Resources.Title" xml:space="preserve"><value>Official resources</value></data>
   <data name="About.Resource.ProjectGitHub" xml:space="preserve"><value>Project on GitHub</value></data>
   <data name="About.Resource.ProjectGitHub.Description" xml:space="preserve"><value>Source code, history, and project information.</value></data>
-  <data name="About.Resource.DeveloperGitHub" xml:space="preserve"><value>Developer GitHub</value></data>
-  <data name="About.Resource.DeveloperGitHub.Description" xml:space="preserve"><value>Marcelo Pacheco's official GitHub profile.</value></data>
   <data name="About.Resource.OperatorManual" xml:space="preserve"><value>Operator manual</value></data>
   <data name="About.Resource.OperatorManual.Description" xml:space="preserve"><value>Installation, operation, and troubleshooting in the published manual.</value></data>
   <data name="About.Resource.TechnicalDocumentation" xml:space="preserve"><value>Technical documentation</value></data>
   <data name="About.Resource.TechnicalDocumentation.Description" xml:space="preserve"><value>Versioned architecture, specifications, and technical documentation.</value></data>
-  <data name="About.Resource.License" xml:space="preserve"><value>License</value></data>
-  <data name="About.Resource.License.Description" xml:space="preserve"><value>GNU General Public License v2.0, as recorded in the project's LICENSE file.</value></data>
   <data name="About.Resource.Open" xml:space="preserve"><value>Open</value></data>
   <data name="About.Resource.Pending" xml:space="preserve"><value>Publication pending</value></data>
   <data name="About.Resource.OpenFailed" xml:space="preserve"><value>The resource could not be opened in the default browser.</value></data>
@@ -1116,6 +1107,4 @@
   <data name="About.CopyInformation" xml:space="preserve"><value>Copy support information</value></data>
   <data name="About.CopySucceeded" xml:space="preserve"><value>Support information copied.</value></data>
   <data name="About.CopyFailed" xml:space="preserve"><value>The support information could not be copied.</value></data>
-  <data name="About.Technologies.Title" xml:space="preserve"><value>Technologies</value></data>
-  <data name="About.LicenseNotice" xml:space="preserve"><value>Licensed under the GNU General Public License v2.0.</value></data>
 </root>

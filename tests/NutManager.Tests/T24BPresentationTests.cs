@@ -155,7 +155,8 @@ public sealed class T24BPresentationTests
             polling,
             language: UiLanguagePreference.EnUs);
 
-        Assert.Equal(6, viewModel.DiagnosticGroups.Count);
+        // Five, not six: the application-and-environment group was removed with its card.
+        Assert.Equal(5, viewModel.DiagnosticGroups.Count);
         var first = viewModel.CreateDiagnosticReport();
         var second = viewModel.CreateDiagnosticReport();
         Assert.Equal(first, second);

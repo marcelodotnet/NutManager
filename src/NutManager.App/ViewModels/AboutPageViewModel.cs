@@ -25,12 +25,32 @@ public sealed partial class AboutPageViewModel : PageViewModel
         _runtimeInfo = runtimeInfo;
         Strings = new NutManagerLocalizer(language);
         Resources = CreateResources(externalResourceLauncher);
+
+        // The credit line is a link to one reviewed destination, not a link to a stored address.
+        // Routing it through the same launcher as the resource cards is what keeps the UI from
+        // ever holding a URL of its own.
+        OpenDeveloperProfileCommand = new RelayCommand(
+            () => OpenResource(externalResourceLauncher, ExternalResource.DeveloperProfile),
+            () => externalResourceLauncher.IsAvailable(ExternalResource.DeveloperProfile));
     }
 
     public NutManagerLocalizer Strings { get; }
     public string ProductName => Strings.Get("App.Name");
     public string ProductDescription => Strings.Get("About.ProductDescription");
     public string DeveloperName => "Marcelo Pacheco";
+
+    /// <summary>
+    /// A handle is an identifier, not prose: it reads the same in both cultures and is not
+    /// localized, for the same reason a driver name or a status token is not.
+    /// </summary>
+    public string DeveloperHandle => "@marcelodotnet";
+
+    public string DeveloperCreditPrefix => Strings.Get("About.Developer.MaintainedBy");
+
+    /// <summary>The whole sentence, for assistive technology and for tests.</summary>
+    public string DeveloperCreditText => $"{DeveloperCreditPrefix} {DeveloperHandle}";
+
+    public ICommand OpenDeveloperProfileCommand { get; }
     public string DisplayVersion => _runtimeInfo.DisplayVersion;
     public string BuildIdentifier => _runtimeInfo.BuildIdentifier;
     public string Platform => _runtimeInfo.OperatingSystem;
@@ -67,10 +87,8 @@ public sealed partial class AboutPageViewModel : PageViewModel
     private IReadOnlyList<AboutResourceViewModel> CreateResources(IExternalResourceLauncher launcher) =>
     [
         CreateResource(ExternalResource.ProjectRepository, "ProjectGitHub", launcher),
-        CreateResource(ExternalResource.DeveloperProfile, "DeveloperGitHub", launcher),
         CreateResource(ExternalResource.OperatorManual, "OperatorManual", launcher),
-        CreateResource(ExternalResource.TechnicalDocumentation, "TechnicalDocumentation", launcher),
-        CreateResource(ExternalResource.License, "License", launcher)
+        CreateResource(ExternalResource.TechnicalDocumentation, "TechnicalDocumentation", launcher)
     ];
 
     private AboutResourceViewModel CreateResource(
@@ -85,17 +103,16 @@ public sealed partial class AboutPageViewModel : PageViewModel
             Strings.Get($"About.Resource.{localizationSuffix}.Description"),
             Strings.Get(available ? "About.Resource.Open" : "About.Resource.Pending"),
             available,
-            () =>
-            {
-                var result = launcher.Open(resource);
-                ResourceStatusMessage = result switch
-                {
-                    ExternalResourceOpenResult.Failed => Strings.Get("About.Resource.OpenFailed"),
-                    ExternalResourceOpenResult.Unavailable => Strings.Get("About.Resource.PendingMessage"),
-                    _ => null
-                };
-            });
+            () => OpenResource(launcher, resource));
     }
+
+    private void OpenResource(IExternalResourceLauncher launcher, ExternalResource resource) =>
+        ResourceStatusMessage = launcher.Open(resource) switch
+        {
+            ExternalResourceOpenResult.Failed => Strings.Get("About.Resource.OpenFailed"),
+            ExternalResourceOpenResult.Unavailable => Strings.Get("About.Resource.PendingMessage"),
+            _ => null
+        };
 }
 
 public sealed class AboutResourceViewModel

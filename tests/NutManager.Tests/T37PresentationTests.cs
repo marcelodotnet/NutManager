@@ -346,18 +346,25 @@ public sealed class T37PresentationTests
         Assert.Contains("width >= 1120 ? 4 : width >= 650 ? 2 : 1", behavior, StringComparison.Ordinal);
         Assert.Contains("Diagnostics.Group.Overview", view, StringComparison.Ordinal);
         Assert.Contains("Diagnostics.Group.Connection", view, StringComparison.Ordinal);
-        Assert.Contains("Diagnostics.Group.Environment", view, StringComparison.Ordinal);
+
+        // The application-and-environment group left with the card it held. Its absence is the
+        // assertion now: version, runtime and platform belong to the About page.
+        Assert.DoesNotContain("Diagnostics.Group.Environment", view, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DiagnosticsLeavesRoomBetweenVersionAndRuntime()
+    public void DiagnosticsNoLongerRestatesTheProductVersionOrRuntime()
     {
+        // This replaces a test that measured the gap between the version and runtime fields. There
+        // is no gap to measure because there are no fields: the whole application card moved to the
+        // About page, so the check is that nothing here reports product identity any more.
         var view = Read("src", "NutManager.App", "Views", "DiagnosticsPageView.axaml");
 
-        var version = view.IndexOf("ApplicationVersion", StringComparison.Ordinal);
-        var runtime = view.IndexOf("Diagnostics.Runtime", version, StringComparison.Ordinal);
-        Assert.True(version >= 0 && runtime > version);
-        Assert.Contains("Width=\"300\" Margin=\"0,0,36,10\"", view[(version - 220)..runtime], StringComparison.Ordinal);
+        Assert.DoesNotContain("{Binding ApplicationVersion}", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("{Binding ApplicationName}", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("{Binding OperatingSystem}", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Diagnostics.Runtime", view, StringComparison.Ordinal);
+        Assert.DoesNotContain("Diagnostics.Architecture", view, StringComparison.Ordinal);
     }
 
     [Fact]

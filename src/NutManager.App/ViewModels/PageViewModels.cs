@@ -624,13 +624,17 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     public bool IsLocalInstallationDetected => _localInstallation.IsDetected;
     public bool HasDevicesDiscovered => DiscoveredUpsCount > 0;
 
+    /// <summary>
+    /// The vocabulary of what this page groups. "Application and environment" left it along with the
+    /// card that carried it: version, runtime and platform are product identity, not a diagnostic,
+    /// and they are shown on the About page now.
+    /// </summary>
     public IReadOnlyList<string> DiagnosticGroups =>
     [
         Strings.Get("Diagnostics.Group.Overview"),
         Strings.Get("Diagnostics.Group.Connection"),
         Strings.Get("Diagnostics.Group.Polling"),
         Strings.Get("Diagnostics.Group.Discovery"),
-        Strings.Get("Diagnostics.Group.Environment"),
         Strings.Get("Diagnostics.Group.Technical")
     ];
 
