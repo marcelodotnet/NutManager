@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Threading;
@@ -23,6 +23,22 @@ public abstract class PageViewModel : ObservableObject
     public string Title { get; }
 
     public string Description { get; }
+
+    /// <summary>
+    /// Called as the shell navigates away from this page.
+    ///
+    /// For discarding presentation state that belongs to the visit rather than to the product: an
+    /// unanswered confirmation, a success banner for something already finished. Both survive
+    /// navigation otherwise and reappear later out of context — a destructive confirmation that comes
+    /// back is worse than a wasted click, because the operator is being asked again about something
+    /// they walked away from.
+    ///
+    /// It must not cancel work already in progress, close a session, or discard anything the user
+    /// would have to redo. Unsaved drafts are not presentation state and stay exactly where they are.
+    /// </summary>
+    public virtual void OnDeactivated()
+    {
+    }
 }
 public sealed partial class OverviewPageViewModel : PageViewModel
 {
@@ -549,14 +565,14 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     private readonly DevicesPageViewModel? _devices;
     private readonly ILocalNutInstallationDetector? _installationDetector;
     private readonly ILocalNutVersionResolver? _versionResolver;
-    private readonly ManagedNutServerRuntimeContext? _profileContext;
+    private ManagedNutServerRuntimeContext? _profileContext;
     private PollingState _pollingState;
     private NutInstallationInfo _localInstallation = NutInstallationInfo.NotDetected();
     private NutVersionSource _localVersionSource = NutVersionSource.Unavailable;
     private string? _diagnosticCopyStatusMessage;
 
     public DiagnosticsPageViewModel()
-        : this(new ApplicationSettings(), new ApplicationRuntimeInfo("-", "-", "-", "-"))
+        : this(new ApplicationSettings(), new ApplicationRuntimeInfo("-", "-", "-", "-", "-"))
     {
     }
 
@@ -633,7 +649,15 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     public bool HasDiagnosticCopyStatusMessage => !string.IsNullOrWhiteSpace(DiagnosticCopyStatusMessage);
 
     public string ApplicationName => "NUT Manager";
-    public string ApplicationVersion => _runtimeInfo.Version;
+    /// <summary>
+    /// What the card shows: "v1.0.0". The technical version, with its build metadata, goes into the
+    /// copied report instead — see <see cref="CreateDiagnosticReport"/>. Separating them is the whole
+    /// point: support needs the exact build, and nobody reading a version field needs a commit hash.
+    /// </summary>
+    public string ApplicationVersion => _runtimeInfo.DisplayVersion;
+
+    /// <summary>The full informational version, kept for the report and for support.</summary>
+    public string ApplicationBuildVersion => _runtimeInfo.Version;
     public string Runtime => _runtimeInfo.Runtime;
     public string OperatingSystem => _runtimeInfo.OperatingSystem;
     public string Architecture => _runtimeInfo.Architecture;
@@ -647,6 +671,28 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
     public string ManagedProfileName => _profileContext?.Profile.Name ?? Strings.Get("Diagnostics.CurrentLocalProfile");
     public string ManagementModeText => _profileContext?.Profile.Management.Mode == NutManagementMode.Remote ? Strings.Get("Management.Remote") : Strings.Get("Management.Local");
     public string ManagementAccessText => _profileContext?.Profile.AccessMode == ManagedNutServerAccessMode.ReadOnly ? Strings.Get("Access.ReadOnly") : Strings.Get("Diagnostics.AccessManage");
+
+    /// <summary>
+    /// Keeps the diagnostic report honest about the access mode after it is changed and saved.
+    ///
+    /// The report is copied and pasted into support conversations, so a stale access mode there is
+    /// worse than a stale one on screen: it travels, and nobody reading it knows it is old.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_profileContext is not { } context || context.Profile.AccessMode == accessMode) return;
+
+        var profile = new ManagedNutServerProfile(
+            context.Profile.Id, context.Profile.Name, context.Profile.Monitoring, context.Profile.Management, accessMode);
+
+        _profileContext = context with
+        {
+            Profile = profile,
+            Capabilities = ManagedServerCapabilities.FromProfile(profile)
+        };
+
+        OnPropertyChanged(nameof(ManagementAccessText));
+    }
     public bool IsLocalManagementProfile => _profileContext?.Profile.Management.Mode != NutManagementMode.Remote;
 
     public int DiscoveredUpsCount => _devices?.Devices.Count ?? 0;
@@ -670,9 +716,24 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
         : NutTimestampPresentation.Local(_pollingState.Snapshot.LastSuccessfulUpdate, "g");
     public string LastErrorText => string.IsNullOrWhiteSpace(_pollingState.LastError) ? Strings.Get("Diagnostics.NoError") : _pollingState.LastError;
 
-    public string LocalInstallationStatusText => _localInstallation.IsDetected
-        ? Strings.Get("Diagnostics.InstallationFound")
-        : Strings.Get("Diagnostics.InstallationNotFound");
+    /// <summary>
+    /// Whether a NUT installation was found **on this machine**.
+    ///
+    /// For a remote profile that question has no bearing on anything the operator is looking at, and
+    /// answering it with "no installation found" invites exactly the wrong reading: that the server
+    /// being managed has no NUT. The station running the desktop application usually has none, and
+    /// that says nothing at all about GANDALF.
+    ///
+    /// So a remote profile gets a state of its own rather than a local answer dressed up as a remote
+    /// one. Nothing here probes the server: no agent operation, no new endpoint, no inferred remote
+    /// detection. It reports that the local question does not apply, which is the only honest thing it
+    /// knows.
+    /// </summary>
+    public string LocalInstallationStatusText => IsLocalManagementProfile
+        ? (_localInstallation.IsDetected
+            ? Strings.Get("Diagnostics.InstallationFound")
+            : Strings.Get("Diagnostics.InstallationNotFound"))
+        : Strings.Get("Diagnostics.LocalTechnicalNotApplicable");
     public string InstallationDirectoryText => _localInstallation.InstallationDirectory ?? Strings.Get("Status.Unavailable");
     public string ConfigurationDirectoryText => _localInstallation.ConfigurationDirectory ?? Strings.Get("Status.Unavailable");
     public string LocalInstallationVersionText => _localInstallation.Version ?? Strings.Get("Status.Unavailable");
@@ -696,7 +757,7 @@ public sealed partial class DiagnosticsPageViewModel : PageViewModel, IDisposabl
         var lines = new[]
         {
             Strings.Get("Diagnostics.Report.Title"),
-            ReportLine("Diagnostics.Report.ApplicationVersion", ApplicationVersion),
+            ReportLine("Diagnostics.Report.ApplicationVersion", ApplicationBuildVersion),
             ReportLine("Diagnostics.Report.Runtime", Runtime),
             ReportLine("Diagnostics.Report.OperatingSystem", OperatingSystem),
             ReportLine("Diagnostics.Report.Architecture", Architecture),

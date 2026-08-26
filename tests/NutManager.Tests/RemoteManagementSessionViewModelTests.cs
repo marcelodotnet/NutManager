@@ -415,6 +415,39 @@ public sealed class RemoteManagementSessionViewModelTests
     }
 
     [Fact]
+    public async Task ReadOnlySmbSessionAcceptsAnExplicitProbeAfterAccessChangesToManage()
+    {
+        var profile = new ManagedNutServerProfile(
+            Guid.NewGuid(),
+            "SMB",
+            new NutMonitoringProfile("monitor.example"),
+            new NutManagementProfile(
+                NutManagementMode.Remote,
+                configurationTransport: RemoteConfigurationTransportKind.Smb,
+                smbSharePath: @"\\server\share"),
+            ManagedNutServerAccessMode.ReadOnly);
+        var session = new FakeSession(
+            RemoteNutPlatform.Unknown,
+            new SmbRemoteNutConfigurationPathPolicy(@"\\server\share"),
+            canWrite: false);
+        var viewModel = new RemoteManagementSessionViewModel(
+            profile,
+            new FakeSmbTransport(new RemoteNutConnectionResult(RemoteNutConnectionState.Connected, session)),
+            credentialStore: new FakeCredentialStore());
+        await viewModel.TryConnectAndValidateConfiguredSmbAsync();
+
+        Assert.False(viewModel.CanProbeWriteCapability);
+
+        viewModel.ApplyAccessMode(ManagedNutServerAccessMode.Manage);
+
+        Assert.True(viewModel.CanProbeWriteCapability);
+        Assert.Null(viewModel.WriteCapability);
+        await viewModel.ProbeWriteCapabilityAsync();
+        Assert.True(viewModel.IsWriteCapabilitySupported);
+        Assert.Equal(1, session.ProbeCalls);
+    }
+
+    [Fact]
     public async Task StartupNeverPromptsOrConnectsExplicitSmbWithoutAProtectedCredential()
     {
         var profile = new ManagedNutServerProfile(
@@ -551,12 +584,18 @@ public sealed class RemoteManagementSessionViewModelTests
         }
     }
 
-    private sealed class FakeSession : IRemoteNutManagementSession
+    private sealed class FakeSession : IRemoteNutManagementSession, IRemoteNutWriteIntentSession
     {
-        public FakeSession(RemoteNutPlatform platform, IRemoteNutConfigurationPathPolicy? pathPolicy = null)
+        private bool _canWrite;
+
+        public FakeSession(
+            RemoteNutPlatform platform,
+            IRemoteNutConfigurationPathPolicy? pathPolicy = null,
+            bool canWrite = true)
         {
             Platform = platform;
             PathPolicy = pathPolicy ?? SftpRemoteNutConfigurationPathPolicy.Instance;
+            _canWrite = canWrite;
         }
         public RemoteNutPlatform Platform { get; }
         public IRemoteNutConfigurationPathPolicy PathPolicy { get; }
@@ -575,8 +614,14 @@ public sealed class RemoteManagementSessionViewModelTests
         public Task<RemoteNutWriteCapabilityResult> ProbeSafeWriteCapabilityAsync(string directory, CancellationToken cancellationToken = default)
         {
             ProbeCalls++;
+            if (!_canWrite)
+            {
+                return Task.FromResult(new RemoteNutWriteCapabilityResult(false, Platform, message: "Read-only profile."));
+            }
+
             return Task.FromResult(ProbeResult ?? new RemoteNutWriteCapabilityResult(true, Platform));
         }
+        public void ApplyWriteIntent(bool canWrite) => _canWrite = canWrite;
         public void InvalidateSafeWriteCapability() { }
         public Task<RemoteNutFileReadResult> UploadCandidateAsync(RemoteNutCandidateUploadRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new RemoteNutFileReadResult(RemoteNutTransportStatus.Unsupported));
         public Task<RemoteNutTemporaryCleanupResult> DeleteGeneratedTemporaryFileAsync(string configurationDirectory, string temporaryFileName, CancellationToken cancellationToken = default) => Task.FromResult(new RemoteNutTemporaryCleanupResult(RemoteNutTransportStatus.NotFound));

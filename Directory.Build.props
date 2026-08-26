@@ -1,8 +1,43 @@
 <Project>
+  <!--
+    One version for the whole product.
+
+    The desktop application, the agent, every assembly they carry and both installers take their
+    version from here. Duplicating it is the failure this file exists to prevent: an installer whose
+    ProductVersion disagrees with the assembly it ships is an upgrade that either refuses to run or
+    silently does nothing, and the two are indistinguishable from the outside.
+
+    Set NutManagerVersion at build time to stamp a release, for example:
+
+      dotnet build -p:NutManagerVersion=1.2.0
+
+    The installers read this same property and must never be given one of their own.
+  -->
+  <PropertyGroup>
+    <NutManagerVersion Condition="'$(NutManagerVersion)' == ''">1.0.0</NutManagerVersion>
+    <NutManagerProduct>NutManager</NutManagerProduct>
+    <NutManagerPublisher>Marcelo Pacheco</NutManagerPublisher>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!--
+    Windows Installer compares only the first three fields of a version and ignores the fourth, so
+    the product version deliberately carries three. A release that differed only in the fourth field
+    would be indistinguishable from the installed one and the upgrade would silently do nothing.
+  -->
+  <PropertyGroup>
+    <Version>$(NutManagerVersion)</Version>
+    <AssemblyVersion>$(NutManagerVersion).0</AssemblyVersion>
+    <FileVersion>$(NutManagerVersion).0</FileVersion>
+    <InformationalVersion>$(NutManagerVersion)</InformationalVersion>
+    <Product>$(NutManagerProduct)</Product>
+    <Company>$(NutManagerPublisher)</Company>
+    <Copyright>Copyright (c) 2026 $(NutManagerPublisher)</Copyright>
   </PropertyGroup>
 </Project>

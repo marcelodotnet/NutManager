@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NutManager.App.Localization;
 using NutManager.Core.Agent;
@@ -21,7 +21,7 @@ namespace NutManager.App.ViewModels;
 public sealed partial class RemoteWindowsServiceControlViewModel : ObservableObject
 {
     private readonly RemoteWindowsServiceViewModel _monitor;
-    private readonly INutManagerAgentClient _client;
+    private INutManagerAgentClient _client;
     private readonly NutManagerLocalizer _strings;
 
     public RemoteWindowsServiceControlViewModel(
@@ -136,6 +136,26 @@ public sealed partial class RemoteWindowsServiceControlViewModel : ObservableObj
 
     [RelayCommand]
     public void CancelConfirmation() => PendingConfirmation = null;
+
+    /// <summary>
+    /// Points control operations at the same client the monitor was just rebound to.
+    ///
+    /// The two must never disagree. A monitor reporting over HTTPS while Stop still travels the named
+    /// pipe would show an operator one transport and use another, and the audit entry would name the
+    /// wrong one.
+    ///
+    /// Any confirmation waiting at the time is discarded rather than carried across. It was asked
+    /// about a connection that no longer exists, and answering it would send an operation somewhere
+    /// the operator never agreed to.
+    /// </summary>
+    public void Rebind(INutManagerAgentClient client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        if (ReferenceEquals(_client, client)) return;
+
+        _client = client;
+        PendingConfirmation = null;
+    }
 
     [RelayCommand]
     public async Task ConfirmAsync(CancellationToken cancellationToken = default)

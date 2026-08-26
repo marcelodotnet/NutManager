@@ -31,11 +31,16 @@ that it has no authority and refuses every control operation.
 ## Requirements
 
 - Windows x64, with NUT installed and registered as a Windows service.
-- The **ASP.NET Core Runtime 10** on the server, unless you publish self-contained. This is stricter
-  than it used to be: the agent's optional HTTPS transport is hosted on ASP.NET Core's HTTP.sys
-  server, so the published `runtimeconfig.json` requires both `Microsoft.NETCore.App` and
-  `Microsoft.AspNetCore.App`. Installing the ASP.NET Core runtime brings the .NET runtime with it, so
-  it is one download rather than two — but the plain .NET runtime alone is no longer enough, even
+- **No .NET runtime**, if you install from `NutManager-Agent-Setup-x.y.z.exe`. Since T39 the agent
+  ships self-contained and carries its own. The cost of that is worth knowing: a runtime security fix
+  now arrives as a NutManager release rather than through whatever patches the machine's runtimes.
+
+  Building the agent by hand with `--self-contained false` still requires the **ASP.NET Core Runtime
+  10** on the server, and that is stricter than the plain .NET runtime: the optional HTTPS transport
+  is hosted on ASP.NET Core's HTTP.sys server, so the published `runtimeconfig.json` requires both
+  `Microsoft.NETCore.App` and `Microsoft.AspNetCore.App`. Installing the ASP.NET Core runtime brings
+  the .NET runtime with it, so it is one download rather than two — but the plain .NET runtime alone
+  is not enough, even
   when HTTPS stays disabled.
 - Administrative rights on the server for the installation steps below. The agent itself never
   performs any of them.
@@ -72,6 +77,12 @@ net use \\GANDALF /user:SBRA\operator
 
 The agent does not accept a password over the wire, and it does not fall back to any weaker
 authentication if Windows refuses the caller.
+
+On the named pipe, impersonation exists only while the server reads the caller identity and checks
+membership of `NutManager Operators`. Any failure in that step is refused before dispatch. The
+listener then explicitly restores the Agent process identity before the shared dispatcher runs, so
+status, target revalidation and Start/Stop/Restart execute as the LocalSystem service rather than
+with the caller's independent SCM rights. The caller name still travels separately for audit.
 
 ## Publishing
 
@@ -186,6 +197,11 @@ are deliberately kept apart:
 - **Service** — the NUT service's identity, state, process and pid, as the agent reports them.
 - NUT's own protocol health, which is shown elsewhere in the shell and is never touched by any of the
   above.
+
+If the local SCM query itself fails, the status payload preserves a fixed failure category, the
+numeric Win32 error when Windows supplied one, and the safe exception type. It never sends the
+localized exception message. This distinguishes a missing service or access denial from an ordinary
+`Unknown` state without turning the UI into a stack trace.
 
 An agent that cannot be reached on a server whose upsd is answering normally is an administrative
 gap. NutManager says so, and does not fall back to any other route: there is no second path to the

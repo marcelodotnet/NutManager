@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
@@ -105,6 +105,20 @@ public partial class App : Application
         var remoteWindowsServiceControl = remoteWindowsService is null
             ? null
             : new RemoteWindowsServiceControlViewModel(remoteWindowsService, agentClient, settings.Language);
+
+        // Polling starts with the application rather than with the panel that used to own it.
+        //
+        // It began life bound to the Windows service view, on the reasoning that an unwatched panel
+        // should cost nothing. That was right while the panel was the only thing showing agent state.
+        // It is not any more: the Overview reports the agent as connected, and bound to that view the
+        // figure was whatever the first handshake produced and then never moved — an agent that had
+        // stopped hours ago still read as connected until the application was restarted, which is
+        // worse than not showing it at all.
+        //
+        // This is the same single instance the administration page and the shell already share, so
+        // there is one client, one timer and one state machine. The view still calls StartMonitoring
+        // when it appears; that call is idempotent and now finds the loop already running.
+        remoteWindowsService?.StartMonitoring();
         var installationDetector = isLocalManagement ? new WindowsNutInstallationDetector() : null;
         var diagnostics = new DiagnosticsPageViewModel(
             settings,
@@ -192,16 +206,53 @@ public partial class App : Application
         settingsPage.SidebarPreferenceChanged += preference => viewModel.SidebarPreference = preference;
         viewModel.SidebarPreferenceChanged += settingsPage.ApplySidebarPreference;
         settingsPage.BackgroundTransparencyChanged += viewModel.SetTransparencyPreference;
-        settingsPage.ProfilePersisted += profile =>
+        settingsPage.ProfilePersisted += async profile =>
         {
-            // The process keeps the endpoint, transport and credentials with which it started.
-            // Managed-file scope is presentation/write authorization for that same runtime profile,
-            // however, and can safely take effect immediately after its profile was persisted.
-            if (profile.Id == runtimeProfile.Profile.Id)
-            {
-                administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
-                viewModel.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
-            }
+            // The process keeps the monitoring endpoint, the configuration transport and their
+            // credentials with which it started. Two things are narrow enough to take effect at once.
+            if (profile.Id != runtimeProfile.Profile.Id) return;
+
+            // Managed-file scope is presentation and write authorization for the same runtime profile.
+            administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
+            viewModel.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
+
+            // The access mode, which used to need a restart. Every surface reporting it derives from a
+            // profile copy taken at startup, so the interface went on claiming Manage after the profile
+            // had been saved as read-only — a stale claim about authorization, which is the worst kind
+            // to leave standing.
+            //
+            // Widening to Manage still grants nothing by itself: writing remains gated on the safe-write
+            // probe, and the administration page reports the capability as unverified until it has run.
+            // The session goes first: it owns the write decision, and narrowing to read-only has to
+            // revoke before any surface has a chance to render the old answer.
+            remoteManagement?.ApplyAccessMode(profile.AccessMode);
+            administration.ApplyAccessMode(profile.AccessMode);
+            viewModel.ApplyAccessMode(profile.AccessMode);
+            diagnostics.ApplyAccessMode(profile.AccessMode);
+
+            // The agent's own settings, which used to need a restart for no good reason. Changing a
+            // profile from named pipe to HTTPS and then finding the administration screen still using
+            // the old transport is indistinguishable from the setting not having been saved.
+            //
+            // Rebuilt only when something about the agent actually changed. Saving an unrelated field
+            // must not tear down a working agent connection, and comparing the settings is what keeps
+            // this from becoming a hot reload of the whole profile.
+            if (remoteWindowsService is null) return;
+
+            var updated = profile.Management.Agent;
+            if (updated == agentSettings) return;
+
+            agentSettings = updated;
+
+            // A fresh client for the new settings, through the same factory used at startup, so the
+            // credential rules are the ones already reviewed: the agent's own stored secret, never the
+            // SMB or SSH one, and session credentials keeping their precedence.
+            var rebuilt = await NutAgentClientFactory.CreateAsync(
+                updated, profile.Id, credentialStore, CancellationToken.None, agentSessionCredentials);
+
+            remoteWindowsServiceControl?.Rebind(rebuilt);
+            await remoteWindowsService.RebindAsync(rebuilt, updated.Transport);
+            administration.RebindAgentClient(rebuilt);
         };
         viewModel.EffectiveThemeChanged += settingsPage.ApplyTransparencyAvailability;
         settingsPage.ApplyTransparencyAvailability(viewModel.IsEffectiveDark);

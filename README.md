@@ -85,7 +85,25 @@ dotnet test NutManager.sln --configuration Release --no-build
 
 ## Package
 
-The official package is `NutManager-win-x64.zip`, a self-contained Windows x64 archive. There is currently no installer, code signing, auto-update, or release automation. See [MVP package validation](docs/MVP-VALIDATION.md) for package acceptance guidance.
+Two installers, built with WiX and each carrying one product:
+
+```text
+NutManager-Setup-x.y.z.exe          the desktop application
+NutManager-Agent-Setup-x.y.z.exe    the agent service
+NutManager-win-x64.zip              portable desktop copy, installs nothing
+SHA256SUMS.txt
+```
+
+Install either alone or both. Both publish self-contained, so neither needs a .NET runtime on the
+machine. The agent installer registers the `NutManagerAgent` service and never touches NUT.
+
+Artifacts are currently **unsigned** — no code-signing certificate is available — and there is no
+auto-update. **No installer has yet been run on a real machine**, so nothing in the compatibility
+matrix is marked as validated.
+
+See [Packaging and release](docs/PACKAGING-AND-RELEASE.md) for how they are built and what remains
+unverified, and [Installer architecture](docs/INSTALLER-ARCHITECTURE.md) for why WiX. See
+[MVP package validation](docs/MVP-VALIDATION.md) for the historical package acceptance record.
 
 ## Project documentation
 
@@ -96,6 +114,8 @@ The official package is `NutManager-win-x64.zip`, a self-contained Windows x64 a
 - [Semantic configuration architecture](docs/SEMANTIC-CONFIGURATION-ARCHITECTURE.md)
 - [UI design system](docs/UI-DESIGN-SYSTEM.md)
 - [Windows Agent](docs/WINDOWS-AGENT.md)
+- [Installer architecture](docs/INSTALLER-ARCHITECTURE.md) and [Packaging and release](docs/PACKAGING-AND-RELEASE.md)
+- [Manual do operador](docs/operator-manual/MANUAL-DO-OPERADOR.md) — pt-BR, pronto para publicação
 - [Localization](docs/LOCALIZATION.md)
 - [Profile validation architecture](docs/PROFILE-VALIDATION-ARCHITECTURE.md)
 - [MVP package validation](docs/MVP-VALIDATION.md) and [live validation findings](docs/LIVE-VALIDATION-FINDINGS.md) — historical acceptance records

@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia;
 using NutManager.App.Localization;
@@ -15,9 +15,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly string? _activeEndpoint;
     private readonly string? _activeProfileName;
     private readonly NutManagementMode? _managementMode;
-    private readonly ManagedNutServerAccessMode? _accessMode;
+    private ManagedNutServerAccessMode? _accessMode;
     private readonly string? _preferredUpsName;
-    private readonly ManagedNutServerProfile? _activeProfile;
+    private ManagedNutServerProfile? _activeProfile;
     private readonly RemoteWindowsServiceViewModel? _remoteWindowsService;
     private ManagedNutConfigurationFiles _managedConfigurationFiles = ManagedNutConfigurationFiles.Create([]);
     private bool _isOverlayOpen;
@@ -99,6 +99,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
             {
                 OnPropertyChanged(nameof(ConnectionPresentation));
                 OnPropertyChanged(nameof(ConnectionStatusText));
+                OnPropertyChanged(nameof(FooterServerStatusText));
+                OnPropertyChanged(nameof(FooterServerAccessibleText));
                 OnPropertyChanged(nameof(ConnectionTooltip));
                 OnPropertyChanged(nameof(ConnectionSummaryText));
                 OnPropertyChanged(nameof(ActiveUpsName));
@@ -120,6 +122,28 @@ public sealed partial class MainWindowViewModel : ObservableObject
             };
         }
         UpdateNavigationSelection();
+        PublishDashboardContext();
+    }
+
+    /// <summary>
+    /// Carries a saved access mode into the shell's own copy of the active profile.
+    ///
+    /// The Overview reads access from here, and holding the value from startup meant the card kept
+    /// saying Manage after the profile had been saved as read-only — a claim about authorization,
+    /// which is the worst kind to leave stale.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_activeProfile is not { } profile || profile.AccessMode == accessMode) return;
+
+        _activeProfile = new ManagedNutServerProfile(
+            profile.Id, profile.Name, profile.Monitoring, profile.Management, accessMode);
+
+        // The sidebar card reads a separate field rather than the profile, so both have to move or the
+        // card goes on saying Manage next to a header that says read-only.
+        _accessMode = accessMode;
+        OnPropertyChanged(nameof(ActiveProfileModeText));
+
         PublishDashboardContext();
     }
 
@@ -320,6 +344,42 @@ public sealed partial class MainWindowViewModel : ObservableObject
     };
     public string ConnectionTooltip => ConnectionSummaryText;
     public string ConnectionSummaryText => $"{ConnectionStatusText} · {ConnectionDetailText}";
+
+    /// <summary>
+    /// The footer's reading of the active server: "GANDALF · Online".
+    ///
+    /// This is the **NUT TCP** connection and nothing else. The agent has its own state and its own
+    /// surfaces, and folding the two together here would let a stopped agent make a perfectly healthy
+    /// monitoring session look offline — or the reverse, which is worse.
+    ///
+    /// Three readings rather than two. Online and Offline are the ends, and the amber state in between
+    /// says Reconnecting — because "offline" while the client is actively retrying is wrong in the way
+    /// that matters: it tells an operator to go and investigate something that is already fixing
+    /// itself. A transient state named as a failure costs somebody a trip to the server room.
+    ///
+    /// Failed and unavailable both read as Offline. From the footer's distance the useful question is
+    /// whether readings are arriving, and the distinction between "tried and failed" and "never tried"
+    /// is not thrown away: the dot keeps its four colours and <see cref="ConnectionStatusText"/> still
+    /// names the exact state for the accessible label and the tooltip.
+    ///
+    /// The profile's own name is used rather than its host, because that is what the operator called
+    /// this server. A profile with no name falls back to whatever ActiveProfileName resolves to.
+    /// </summary>
+    public string FooterServerStatusText
+    {
+        get
+        {
+            var state =
+                IsConnectionHealthy ? Localizer.Get("Shell.ServerOnline") :
+                IsConnectionPending ? Localizer.Get("Status.Reconnecting") :
+                Localizer.Get("Shell.ServerOffline");
+
+            return $"{ActiveProfileName} · {state}";
+        }
+    }
+
+    /// <summary>Names the precise state for assistive technology, not just Online or Offline.</summary>
+    public string FooterServerAccessibleText => $"{ActiveProfileName} · {ConnectionStatusText}";
     public string ApplicationName => Localizer.Get("App.Name");
     public bool IsConnectionHealthy => ConnectionPresentation == ConnectionPresentationState.Healthy;
     public bool IsConnectionPending => ConnectionPresentation is ConnectionPresentationState.Pending or ConnectionPresentationState.Warning;
@@ -372,6 +432,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Navigate(AppPage page)
     {
+        // Told before it is replaced, so a page can drop the state that belonged to the visit. Also
+        // fires when navigating to the page already shown, which is harmless: there is nothing to
+        // discard that the user has not just seen.
+        CurrentPage?.OnDeactivated();
+
         SelectedPage = page;
         CurrentPage = _pages[page];
         UpdateNavigationSelection();

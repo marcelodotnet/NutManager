@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <?include ..\Common\Product.wxi ?>
+
+  <!--
+    The NutManager Agent installer, a product separate from the desktop application.
+
+    The bundle exists so the operator downloads and runs one .exe. It chains a single MSI and adds
+    nothing of its own: no prerequisite download, no runtime installer, no network access. Everything
+    the product needs is already inside the package it carries.
+  -->
+  <Bundle Name="$(AgentName)"
+          Manufacturer="$(Publisher)"
+          Version="$(Version)"
+          UpgradeCode="$(AgentBundleUpgradeCode)"
+          IconSourceFile="$(BrandingIcon)"
+          Compressed="yes">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense"
+                                              LicenseUrl="https://github.com/Marcelo-PX/NutManager/blob/main/LICENSE"
+                                              ShowVersion="yes"
+                                              SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <Chain>
+      <!--
+        ForcePerMachine matches the package's own perMachine scope. Leaving it to be inferred is how
+        a bundle ends up elevating for a package that then installs somewhere else.
+      -->
+      <MsiPackage SourceFile="$(PackagePath)" ForcePerMachine="yes" Visible="no" />
+    </Chain>
+  </Bundle>
+</Wix>

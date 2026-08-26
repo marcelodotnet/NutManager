@@ -54,8 +54,9 @@ The current product also implements:
 - T37 UI layout, interaction and visual polish, and the official application icon;
 - T38 passive remote COM and hardware inspection through the agent.
 
-T39, Windows installers, packaging and complete operator documentation, is the next planned task.
-T22, Linux compatibility, remains deferred.
+T39, Windows installers, packaging and complete operator documentation, is the task in progress. Both
+installers build and are covered by tests; no installer has yet been run on a machine, so no
+configuration is recorded as validated. T22, Linux compatibility, remains deferred.
 
 ## 4. Platform and quality requirements
 

@@ -1,4 +1,4 @@
-using NutManager.App.Localization;
+﻿using NutManager.App.Localization;
 using NutManager.App.Services;
 using NutManager.App.ViewModels;
 using NutManager.Core.Models;
@@ -151,7 +151,7 @@ public sealed class T24BPresentationTests
         polling.Publish(new PollingState(null, null, ConnectionState.ConnectionFailed, DataFreshness.Unavailable, "password=fictional-secret"));
         using var viewModel = new DiagnosticsPageViewModel(
             new ApplicationSettings(),
-            new ApplicationRuntimeInfo("1.2.3", ".NET", "Windows", "x64"),
+            new ApplicationRuntimeInfo("1.2.3", "v1.2.3", ".NET", "Windows", "x64"),
             polling,
             language: UiLanguagePreference.EnUs);
 

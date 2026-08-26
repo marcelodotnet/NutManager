@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NutManager.App.Localization;
 using NutManager.Core.Administration;
@@ -25,7 +25,7 @@ public sealed partial class RemoteWindowsServiceViewModel : ObservableObject, IA
     /// <summary>Conservative on purpose: this is a round trip to another machine, not a field read.</summary>
     public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(10);
 
-    private readonly INutManagerAgentClient _client;
+    private INutManagerAgentClient _client;
     private readonly NutManagerLocalizer _strings;
     private readonly TimeSpan _interval;
     private readonly TimeProvider _time;
@@ -94,7 +94,63 @@ public sealed partial class RemoteWindowsServiceViewModel : ObservableObject, IA
     public string HostText => string.IsNullOrEmpty(Host) ? _strings.Get("Common.Unavailable") : Host;
 
     /// <summary>Which transport this profile uses to reach the agent, for the panel to name.</summary>
-    public NutAgentTransportKind Transport { get; }
+    public NutAgentTransportKind Transport { get; private set; }
+
+    /// <summary>
+    /// Points this monitor at a differently configured agent, without restarting the application.
+    ///
+    /// Changing a profile's agent transport used to require a restart, because the client was built
+    /// once at startup and held for the process. Nothing about the client demands that: it carries a
+    /// transport and a credential, and both are answerable at any moment.
+    ///
+    /// The generation counter is what makes the swap safe. A probe already in flight against the old
+    /// client finishes against a generation that no longer matches, so its result is discarded rather
+    /// than published as though it described the new endpoint — which is the failure worth preventing,
+    /// since a stale success would show a working connection over a transport nobody is using.
+    ///
+    /// Deliberately narrow. Nothing here touches the NUT session, the configuration transport or the
+    /// polling that feeds them. Only the agent's own client is replaced.
+    /// </summary>
+    public async Task RebindAsync(
+        INutManagerAgentClient client,
+        NutAgentTransportKind transport,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+
+        INutManagerAgentClient previous;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            if (ReferenceEquals(_client, client) && Transport == transport) return;
+
+            // Anything still running belongs to the old client and must not publish.
+            Interlocked.Increment(ref _generation);
+
+            previous = _client;
+            _client = client;
+            Transport = transport;
+            _handshake = null;
+        }
+
+        OnPropertyChanged(nameof(Transport));
+        OnPropertyChanged(nameof(TransportText));
+
+        // The old client is released after the swap, so nothing in flight is reading a disposed one.
+        switch (previous)
+        {
+            case IAsyncDisposable asyncDisposable when !ReferenceEquals(previous, client):
+                await asyncDisposable.DisposeAsync().ConfigureAwait(true);
+                break;
+            case IDisposable disposable when !ReferenceEquals(previous, client):
+                disposable.Dispose();
+                break;
+        }
+
+        // The screen must not keep showing what the previous transport reported.
+        Observation = null;
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+    }
 
     public string TransportText => Transport == NutAgentTransportKind.Https
         ? _strings.Get("RemoteService.Transport.Https")

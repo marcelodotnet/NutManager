@@ -50,6 +50,12 @@ public sealed class RemoteSafeWriteCapabilityState
     }
 
     /// <summary>
+    /// Clears a completed probe after the profile's write intent changes, while keeping the
+    /// session eligible for a new explicit probe. A terminal invalidation remains terminal.
+    /// </summary>
+    public void ClearVerification() => _verifiedConfigurationDirectory = null;
+
+    /// <summary>
     /// Makes the session permanently ineligible for remote writes after an indeterminate
     /// commit or rollback outcome. Only a new transport session may establish a new capability.
     /// </summary>

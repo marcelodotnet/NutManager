@@ -118,6 +118,21 @@ public sealed record NutAgentHandshake(
 /// protocol, because the agent has no opinion about it — a stopped service and an unreachable upsd are
 /// different findings and the product keeps them apart.
 /// </summary>
+public enum NutAgentServiceQueryFailureKind
+{
+    AccessDenied,
+    ServiceDoesNotExist,
+    TimedOut,
+    WindowsFailure,
+    Unknown
+}
+
+public sealed record NutAgentServiceQueryFailure(
+    NutAgentServiceQueryFailureKind Kind,
+    int? Win32ErrorCode,
+    string ExceptionType,
+    string Detail);
+
 public sealed record NutAgentServiceStatus(
     string MachineName,
     string? ServiceName,
@@ -126,7 +141,8 @@ public sealed record NutAgentServiceStatus(
     int? ProcessId,
     string? ExecutableName,
     bool TargetValidated,
-    DateTimeOffset ObservedAt)
+    DateTimeOffset ObservedAt,
+    NutAgentServiceQueryFailure? QueryFailure = null)
 {
     public bool HasProcess => ProcessId is > 0;
 

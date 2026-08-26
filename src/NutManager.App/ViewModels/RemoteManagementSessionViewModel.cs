@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using NutManager.App.Localization;
 using NutManager.App.Services;
@@ -175,6 +175,54 @@ public sealed partial class RemoteManagementSessionViewModel : ObservableObject,
         WriteCapability is { IsSupported: true } && (IsSmb || Platform == RemoteNutPlatform.Windows);
 
     public bool IsWriteCapabilityUnverified => WriteCapability is null;
+
+    /// <summary>
+    /// Applies a saved access mode to the session's own copy of the profile.
+    ///
+    /// This is the one that actually decides whether configuration may be written: CanEditConfiguration
+    /// requires the profile to say Manage, and the copy held here was taken at startup. Saving a profile
+    /// as read-only therefore left write authorization standing until the application was restarted —
+    /// the header said read-only while the session went on reporting the write capability as granted.
+    ///
+    /// Narrowing revokes immediately, which is the direction that matters. Widening grants nothing on
+    /// its own: the session receives only the new write intent, while the previous safe-write result is
+    /// cleared so a new explicit probe is still required.
+    /// </summary>
+    public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
+    {
+        if (_profile.AccessMode == accessMode) return;
+
+        _profile = new ManagedNutServerProfile(
+            _profile.Id, _profile.Name, _profile.Monitoring, _profile.Management, accessMode);
+
+        if (_session is IRemoteNutWriteIntentSession writeIntentSession)
+        {
+            writeIntentSession.ApplyWriteIntent(accessMode == ManagedNutServerAccessMode.Manage);
+        }
+
+        WriteCapability = null;
+
+        OnPropertyChanged(nameof(CanEditConfiguration));
+        OnPropertyChanged(nameof(IsWriteCapabilitySupported));
+        OnPropertyChanged(nameof(WriteCapabilityText));
+        OnPropertyChanged(nameof(CanProbeWriteCapability));
+
+        // The stored status message is dropped rather than kept.
+        //
+        // It holds whatever the last directory validation reported, and that validation ran under the
+        // previous access mode — after switching to Manage the panel went on stating that the profile
+        // is configured read-only, beside a header already saying otherwise. A sentence that is simply
+        // untrue is worse than no sentence: the reader has no way to tell it is describing a past state.
+        //
+        // The cost is that an unrelated message — a host-key warning, a credential problem — is dropped
+        // with it, because a stored string cannot be told apart from one about the access mode. Losing
+        // a message the operator can regenerate by reconnecting is the cheaper mistake, and the panel
+        // falls back to its neutral prompt rather than to silence.
+        //
+        // Nothing is re-validated here. Reaching the remote host as a side effect of saving a settings
+        // form is not something a save should do.
+        StatusMessage = null;
+    }
 
     public bool IsWriteCapabilitySupported => CanEditConfiguration;
 

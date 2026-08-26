@@ -64,6 +64,39 @@ public sealed class WindowsNutAgentServiceController : INutServiceController
     }
 
     /// <summary>
+    /// Preserves a safe, locale-independent description of a failed status query. The wire payload
+    /// carries the numeric Windows code and a fixed category; exception messages are deliberately
+    /// excluded because they are localized and may contain environmental detail.
+    /// </summary>
+    public static NutAgentServiceQueryFailure MapStatusFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        var code = GetWin32ErrorCode(exception);
+        var kind = exception is System.ServiceProcess.TimeoutException or System.TimeoutException ||
+                   code == ErrorServiceRequestTimeout
+            ? NutAgentServiceQueryFailureKind.TimedOut
+            : code switch
+            {
+                ErrorAccessDenied => NutAgentServiceQueryFailureKind.AccessDenied,
+                ErrorServiceDoesNotExist => NutAgentServiceQueryFailureKind.ServiceDoesNotExist,
+                not null => NutAgentServiceQueryFailureKind.WindowsFailure,
+                _ => NutAgentServiceQueryFailureKind.Unknown
+            };
+
+        var detail = kind switch
+        {
+            NutAgentServiceQueryFailureKind.AccessDenied => "The SCM refused the status query.",
+            NutAgentServiceQueryFailureKind.ServiceDoesNotExist => "The pinned service no longer exists.",
+            NutAgentServiceQueryFailureKind.TimedOut => "The service status query timed out.",
+            NutAgentServiceQueryFailureKind.WindowsFailure => "The Windows service status query failed.",
+            _ => "The service status query failed."
+        };
+
+        return new NutAgentServiceQueryFailure(kind, code, exception.GetType().Name, detail);
+    }
+
+    /// <summary>
     /// Turns a failed control call into an outcome, by numeric code rather than by message: the
     /// message is localized on the server and the mapping must not depend on its language.
     ///
@@ -81,8 +114,7 @@ public sealed class WindowsNutAgentServiceController : INutServiceController
                 NutAgentResultCode.TimedOut, observed, null, "The service did not reach the expected state in time.");
         }
 
-        var win32 = exception as Win32Exception ?? exception.InnerException as Win32Exception;
-        var code = win32?.NativeErrorCode;
+        var code = GetWin32ErrorCode(exception);
 
         if (startRequested && code == ErrorServiceAlreadyRunning)
         {
@@ -106,6 +138,9 @@ public sealed class WindowsNutAgentServiceController : INutServiceController
 
         return new NutServiceControlOutcome(NutAgentResultCode.ServiceControlFailed, observed, code, detail);
     }
+
+    private static int? GetWin32ErrorCode(Exception exception) =>
+        (exception as Win32Exception ?? exception.InnerException as Win32Exception)?.NativeErrorCode;
 
     private static NutServiceControlOutcome Unsupported() => new(
         NutAgentResultCode.Failed, NutServiceState.Unknown, null, "The agent only runs on Windows.");
@@ -147,13 +182,15 @@ internal static class WindowsAgentServiceControl
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception exception)
         {
             // The pin is still valid — only this read failed — so the target is still reported as
-            // validated, with the state it could not be shown to have left as Unknown.
+            // validated, with the state it could not be shown to have left as Unknown. The safe
+            // failure category and numeric Win32 code survive on the wire for diagnosis.
             return new NutAgentServiceStatus(
                 machine, target.ServiceName, target.DisplayName, NutServiceState.Unknown, null,
-                WindowsRemoteNutServiceProbe.ExecutableNameOf(target.BinaryPath), true, time.GetUtcNow());
+                WindowsRemoteNutServiceProbe.ExecutableNameOf(target.BinaryPath), true, time.GetUtcNow(),
+                WindowsNutAgentServiceController.MapStatusFailure(exception));
         }
     }
 

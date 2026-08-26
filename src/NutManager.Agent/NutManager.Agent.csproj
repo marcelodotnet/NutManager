@@ -25,4 +25,9 @@
     <ProjectReference Include="..\NutManager.Core\NutManager.Core.csproj" />
     <ProjectReference Include="..\NutManager.Infrastructure\NutManager.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- The identity boundary is internal production code exercised directly by the regression tests. -->
+    <InternalsVisibleTo Include="NutManager.Tests" />
+  </ItemGroup>
 </Project>

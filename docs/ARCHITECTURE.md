@@ -68,6 +68,14 @@ The active profile is resolved during bootstrap into an immutable runtime contex
 
 ## 5. Persistence
 
+NutManager is distributed as two independent Windows installers, built with WiX v5: one for the
+desktop application and one for the agent service. Both products publish self-contained, so neither
+requires a .NET runtime on the machine, and a runtime security fix consequently arrives as a product
+release. The agent installer declares its Windows service rather than scripting it, and neither
+installer reads, writes, starts or stops anything belonging to NUT. See
+[Installer architecture](INSTALLER-ARCHITECTURE.md) and
+[Packaging and release](PACKAGING-AND-RELEASE.md).
+
 `settings.json` schema v5 is per-user UTF-8 JSON for polling, timeout, theme, mock-mode, language, sidebar, and background-transparency preferences. It uses temporary-file, atomic persistence and has no secrets. The persistence DTO can read legacy v1/v2 endpoint fields for one-time managed-profile bootstrap, but current serialization and runtime settings no longer mirror an endpoint.
 
 `managed-servers.json` is schema-versioned, per-user metadata for managed profiles and the active profile. The current version is **v6**, reached in steps that are each still readable on load: v3 added the SMB authentication mode, v4 the non-secret SSH authentication mode and optional private-key path, v5 the per-profile selection of managed NUT files, and v6 the agent block — transport, HTTPS endpoint, authentication mode and account name. A profile written by an older build is migrated on read rather than rejected. It uses temporary-file, atomic persistence and never contains passwords, passphrases, or private-key material. Those values are session-only by default and, only after an explicit successful connection, may be saved in app-owned `CRED_TYPE_GENERIC` Windows Credential Manager entries with local-machine persistence.
@@ -181,6 +189,15 @@ Since T38 the same passive COM source also backs the agent's read-only hardware 
 ## 9. Local and remote management boundary
 
 Local Windows management is implemented through T17. A Remote profile explicitly selects SSH/SFTP or SMB for configuration files; neither transport accesses a remote NutManager instance. SSH/SFTP uses strict pinned-host-key verification. SMB uses only a manually supplied UNC share and either the current Windows identity or a session-scoped isolated Windows outbound identity created with `LOGON_NEW_CREDENTIALS`; it owns no global WNet connection and never maps a drive, disconnects a redirector connection, or discovers shares. Explicit SMB passwords are converted only for the native logon boundary and the resulting token is disposed when the session ends. A user may opt in after successful authentication to remember SSH or explicit-SMB secrets in Windows Credential Manager; the Core contract exposes only profile ID, fixed credential kind, and disposable secret buffers. A successful connection or browse automatically performs the read-only validation of the configured directory. Writes remain read-only by default and require a separate explicit probe plus the profile's Manage policy: Windows/OpenSSH safe replacement for SSH/SFTP, or verified UNC `File.Replace` semantics for SMB. The transport-neutral remote pipeline preserves T14-style fingerprints, candidate verification, reserved generated backups, post-write verification, rollback, and recovery paths.
+
+The Windows Agent's named-pipe listener impersonates the connected Windows caller only for identity
+and SID-based operators-group authorization. A denied or indeterminate caller is refused before the
+shared dispatcher. Authorized dispatch is explicitly run under the Agent process identity, keeping
+caller identity for audit while LocalSystem remains the sole authority used for SCM status,
+revalidation and mutation. HTTPS reaches the same dispatcher after HTTP.sys authentication and the
+same group check. Neither transport falls back to the other. A failed SCM status read remains a
+validated target with `Unknown` state plus a safe query-failure category and numeric Win32 code when
+available; localized Windows exception messages never cross the wire.
 
 ### Windows-native SMB credentials (T30)
 

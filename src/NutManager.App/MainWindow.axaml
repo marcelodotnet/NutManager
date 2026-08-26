@@ -555,12 +555,26 @@
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
                    IsVisible="{Binding IsFooterAuthorshipVisible}" />
-        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="7" VerticalAlignment="Center">
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutHealthyBrush}" IsVisible="{Binding IsConnectionHealthy}" />
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutWarningBrush}" IsVisible="{Binding IsConnectionPending}" />
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutCriticalBrush}" IsVisible="{Binding IsConnectionCritical}" />
-          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutUnavailableBrush}" IsVisible="{Binding IsConnectionUnavailable}" />
-          <TextBlock Text="{Binding ConnectionStatusText}" Classes="nut-metadata" />
+        <!--
+          The active server and whether its NUT connection is up: "GANDALF · Online".
+
+          The dot follows the text rather than leading it, so the line reads as a sentence and ends on
+          the signal. Four colours remain because the underlying state has four meanings — connecting
+          is not the same as failed — while the words stay Online or Offline, which is the question
+          worth answering from here. The state is never carried by colour alone, and the exact one is
+          in the accessible name.
+        -->
+        <StackPanel HorizontalAlignment="Right"
+                    Orientation="Horizontal"
+                    Spacing="7"
+                    VerticalAlignment="Center"
+                    ToolTip.Tip="{Binding FooterServerAccessibleText}"
+                    AutomationProperties.Name="{Binding FooterServerAccessibleText}">
+          <TextBlock Text="{Binding FooterServerStatusText}" Classes="nut-metadata" VerticalAlignment="Center" />
+          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutHealthyBrush}" IsVisible="{Binding IsConnectionHealthy}" VerticalAlignment="Center" />
+          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutWarningBrush}" IsVisible="{Binding IsConnectionPending}" VerticalAlignment="Center" />
+          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutCriticalBrush}" IsVisible="{Binding IsConnectionCritical}" VerticalAlignment="Center" />
+          <Ellipse Width="7" Height="7" Fill="{DynamicResource NutUnavailableBrush}" IsVisible="{Binding IsConnectionUnavailable}" VerticalAlignment="Center" />
         </StackPanel>
       </Grid>
     </Border>

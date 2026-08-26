@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Runtime.Versioning;
 using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 using NutManager.Core.Agent;
 using NutManager.Infrastructure.Agent;
 
@@ -37,15 +38,30 @@ internal sealed class NutAgentNamedPipeServer
 
     private readonly NutAgentRequestDispatcher _dispatcher;
     private readonly SecurityIdentifier _operatorsGroup;
+    private readonly INutAgentProcessIdentityScope _processIdentity;
+    private readonly string _pipeName;
     private readonly SemaphoreSlim _connections = new(MaxConcurrentConnections, MaxConcurrentConnections);
 
     internal NutAgentNamedPipeServer(NutAgentRequestDispatcher dispatcher, SecurityIdentifier operatorsGroup)
+        : this(dispatcher, operatorsGroup, WindowsNutAgentProcessIdentityScope.Instance, NutAgentNamedPipe.PipeName)
+    {
+    }
+
+    internal NutAgentNamedPipeServer(
+        NutAgentRequestDispatcher dispatcher,
+        SecurityIdentifier operatorsGroup,
+        INutAgentProcessIdentityScope processIdentity,
+        string pipeName)
     {
         ArgumentNullException.ThrowIfNull(dispatcher);
         ArgumentNullException.ThrowIfNull(operatorsGroup);
+        ArgumentNullException.ThrowIfNull(processIdentity);
+        ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
 
         _dispatcher = dispatcher;
         _operatorsGroup = operatorsGroup;
+        _processIdentity = processIdentity;
+        _pipeName = pipeName;
     }
 
     /// <summary>
@@ -100,7 +116,7 @@ internal sealed class NutAgentNamedPipeServer
     }
 
     private NamedPipeServerStream CreateServer() => NamedPipeServerStreamAcl.Create(
-        NutAgentNamedPipe.PipeName,
+        _pipeName,
         PipeDirection.InOut,
         NamedPipeServerStream.MaxAllowedServerInstances,
         PipeTransmissionMode.Byte,
@@ -135,8 +151,31 @@ internal sealed class NutAgentNamedPipeServer
         }
 
         var caller = ResolveCaller(server);
-        var response = await _dispatcher.DispatchAsync(request!, caller, cancellationToken).ConfigureAwait(false);
+        var response = await DispatchAuthorizedAsync(request!, caller, cancellationToken).ConfigureAwait(false);
         await RespondAsync(server, response, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal Task<NutAgentResponse> DispatchAuthorizedAsync(
+        NutAgentRequest request,
+        NutAgentCallerContext caller,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(caller);
+
+        // HTTPS refuses an unauthorized Windows principal before dispatch. The pipe must have the
+        // same boundary: an identity/reversion failure cannot be converted into a denied context and
+        // then allowed to reach read operations that assume the transport already authorized it.
+        if (!caller.IsAuthorized)
+        {
+            return Task.FromResult(NutAgentResponse.Refused(NutAgentResultCode.Unauthorized));
+        }
+
+        // RunAsClient is used only to identify and authorize the peer. Dispatch is explicitly put
+        // back on the process token so every read, revalidation and mutation uses the LocalSystem
+        // authority verified when the Agent service started, never the remote caller's SCM rights.
+        return _processIdentity.RunAsync(
+            () => _dispatcher.DispatchAsync(request, caller, cancellationToken));
     }
 
     /// <summary>
@@ -175,5 +214,31 @@ internal sealed class NutAgentNamedPipeServer
 
         var payload = NutAgentWireCodec.Serialize(response);
         await NutAgentFraming.WriteFrameAsync(server, payload, NutAgentFraming.MaxResponseBytes, write.Token).ConfigureAwait(false);
+    }
+}
+
+internal interface INutAgentProcessIdentityScope
+{
+    Task<T> RunAsync<T>(Func<Task<T>> operation);
+}
+
+[SupportedOSPlatform("windows")]
+internal sealed class WindowsNutAgentProcessIdentityScope : INutAgentProcessIdentityScope
+{
+    internal static WindowsNutAgentProcessIdentityScope Instance { get; } = new();
+
+    private WindowsNutAgentProcessIdentityScope()
+    {
+    }
+
+    public async Task<T> RunAsync<T>(Func<Task<T>> operation)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        // An invalid token is the documented WindowsIdentity representation used to revert an
+        // impersonated thread to its process identity. The async overload carries that identity
+        // across continuations and restores the previous thread context when the operation ends.
+        using var processIdentity = SafeAccessTokenHandle.InvalidHandle;
+        return await WindowsIdentity.RunImpersonatedAsync(processIdentity, operation).ConfigureAwait(false);
     }
 }

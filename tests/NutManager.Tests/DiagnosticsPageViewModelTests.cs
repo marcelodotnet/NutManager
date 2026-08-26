@@ -1,4 +1,4 @@
-using NutManager.App.Services;
+﻿using NutManager.App.Services;
 using NutManager.App.ViewModels;
 using NutManager.Core.Models;
 using NutManager.Core.Services;
@@ -8,7 +8,7 @@ namespace NutManager.Tests;
 
 public sealed class DiagnosticsPageViewModelTests
 {
-    private static readonly ApplicationRuntimeInfo RuntimeInfo = new("10.2.3-test", ".NET test runtime", "Test OS", "TestArchitecture");
+    private static readonly ApplicationRuntimeInfo RuntimeInfo = new("10.2.3-test+abcdef0", "v10.2.3-test", ".NET test runtime", "Test OS", "TestArchitecture");
 
     [Fact]
     public void ShowsDeterministicApplicationInformationAndIgnoresLegacyMockPreference()
@@ -20,7 +20,10 @@ public sealed class DiagnosticsPageViewModelTests
             profileContext: CreateProfileContext(NutManagementMode.Local, ManagedNutServerAccessMode.Manage));
 
         Assert.Equal("NUT Manager", viewModel.ApplicationName);
-        Assert.Equal("10.2.3-test", viewModel.ApplicationVersion);
+        // The card shows the readable version; the build metadata is cut for display and kept for the
+        // report, where identifying the exact build is the point.
+        Assert.Equal("v10.2.3-test", viewModel.ApplicationVersion);
+        Assert.Equal("10.2.3-test+abcdef0", viewModel.ApplicationBuildVersion);
         Assert.Equal(".NET test runtime", viewModel.Runtime);
         Assert.Equal("Test OS", viewModel.OperatingSystem);
         Assert.Equal("TestArchitecture", viewModel.Architecture);

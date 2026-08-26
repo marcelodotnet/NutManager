@@ -87,7 +87,8 @@
                             Classes="muted"
                             Width="18"
                             Height="18"
-                            IsVisible="{Binding RemoteManagement.IsWriteCapabilityUnverified}" />
+                            IsVisible="{Binding RemoteManagement.IsWriteCapabilityUnverified}"
+                            ToolTip.Tip="{Binding RemoteWriteAuthorizationTooltip}" />
                   <PathIcon Data="{DynamicResource NutIconCheck}"
                             Classes="healthy"
                             Width="18"

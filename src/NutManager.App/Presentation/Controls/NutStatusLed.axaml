@@ -1,4 +1,4 @@
-<UserControl xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="NutManager.App.Presentation.Controls.NutStatusLed"
              x:Name="Root"
@@ -12,7 +12,8 @@
 
     A shadow colour cannot come from a brush binding, so each state carries its own class. The halo
     is a bare border with no fill - only its strongly blurred shadow is ever visible. The wave uses
-    a small spread so its leading edge remains luminous while opacity falls during expansion. Both
+    no spread at all: a spread draws a solid band before the blur begins, and once the wave expands
+    that band reads as a drawn ring rather than as light. Blur alone has no edge to find. Both
     scale and opacity run on the render thread through the Composition API, with no UI timer.
 
     Sizes are even numbers inside an even cell so every layer centres on a whole pixel. A
@@ -31,19 +32,50 @@
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="CornerRadius" Value="999" />
     </Style>
+
+    <!--
+      The travelling ring. Its outline is what moves, so a scale animation carries it outwards through
+      the ambient glow instead of inflating a blob — a filled shadow grows with the element and reads as
+      the glow swelling, which is a different gesture entirely.
+
+      Blurred, so the outline never reads as a drawn circle. The stroke does thicken as it expands,
+      because a scale transform scales everything, and that is fine: a wave spreading out is expected to
+      soften rather than stay a hairline.
+    -->
+    <Style Selector="Border.nut-led-ring">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="BorderThickness" Value="1.4" />
+      <Setter Property="Effect" Value="blur(2.5)" />
+    </Style>
+    <Style Selector="Border.nut-led-ring.healthy">
+      <Setter Property="BorderBrush" Value="#FF3BEF88" />
+    </Style>
+    <Style Selector="Border.nut-led-ring.pending">
+      <Setter Property="BorderBrush" Value="#FFFBBF24" />
+    </Style>
+    <Style Selector="Border.nut-led-ring.critical">
+      <Setter Property="BorderBrush" Value="#FFF87171" />
+    </Style>
     <Style Selector="Border.nut-led-halo.healthy">
       <!-- Matches NutLedHealthyBrush; a shadow colour cannot be bound to a resource. -->
-      <Setter Property="BoxShadow" Value="0 0 12 1 #F23BEF88" />
+      <Setter Property="BoxShadow" Value="0 0 18 0 #FF3BEF88" />
     </Style>
     <Style Selector="Border.nut-led-halo.pending">
-      <Setter Property="BoxShadow" Value="0 0 12 1 #F2FBBF24" />
+      <Setter Property="BoxShadow" Value="0 0 18 0 #FFFBBF24" />
     </Style>
     <Style Selector="Border.nut-led-halo.critical">
-      <Setter Property="BoxShadow" Value="0 0 15 2 #F2F87171" />
+      <Setter Property="BoxShadow" Value="0 0 21 0 #FFF87171" />
     </Style>
   </UserControl.Styles>
 
   <Grid Width="32" Height="32" Background="Transparent" ClipToBounds="False">
+    <!--
+      The ambient layer dips and returns when the state changes. That fade is doing two jobs: it is the
+      transition in its own right, and it covers the one thing that cannot be tweened — the halo's
+      shadow colour lives in a style class and swaps instantly, so it swaps while the layer carrying it
+      is at its dimmest.
+    -->
     <Border x:Name="AmbientHalo"
             Classes="nut-led-halo"
             Width="6"
@@ -51,20 +83,40 @@
             Opacity="0.76"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
-            IsHitTestVisible="False" />
+            IsHitTestVisible="False">
+      <Border.Transitions>
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.42" Easing="SineEaseInOut" />
+        </Transitions>
+      </Border.Transitions>
+    </Border>
     <Border x:Name="Halo"
-            Classes="nut-led-halo"
-            Width="6"
-            Height="6"
+            Classes="nut-led-ring"
+            Width="11"
+            Height="11"
             Opacity="0"
             HorizontalAlignment="Center"
             VerticalAlignment="Center"
             IsHitTestVisible="False" />
+    <!--
+      The core crossfades between states instead of cutting. Green to red is the change an operator is
+      most likely to catch out of the corner of their eye, and a hard cut there reads as a glitch —
+      something redrew — where a fade reads as the thing itself changing.
+
+      BrushTransition interpolates between solid brushes and switches outright between anything else,
+      which is why every state brush here is a solid colour.
+    -->
     <Ellipse x:Name="Core"
              Width="8"
              Height="8"
              Fill="{Binding StateBrush, ElementName=Root}"
              HorizontalAlignment="Center"
-             VerticalAlignment="Center" />
+             VerticalAlignment="Center">
+      <Ellipse.Transitions>
+        <Transitions>
+          <BrushTransition Property="Fill" Duration="0:0:0.42" />
+        </Transitions>
+      </Ellipse.Transitions>
+    </Ellipse>
   </Grid>
 </UserControl>

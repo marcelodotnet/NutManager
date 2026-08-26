@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -582,7 +582,19 @@ public sealed partial class SettingsPageViewModel : PageViewModel
 
     public bool CanSaveProfile => CanPersistProfiles && IsProfileDraftDirty && !_profileValidation.HasErrors;
 
+    /// <summary>
+    /// Save is offered only when there is something to save.
+    ///
+    /// It used to be enabled whenever nothing was being written, so pressing it on an untouched page
+    /// rewrote the settings file with its own contents and reported success. Harmless, and still wrong:
+    /// an enabled button is a claim that pressing it does something, and a success message for a change
+    /// nobody made teaches an operator to distrust the one that follows a real edit.
+    ///
+    /// The second clause is unchanged and does different work — a dirty profile must also be valid.
+    /// Dirty general settings have nothing to validate, which is why they only appear in the first.
+    /// </summary>
     public bool CanSaveAll => !IsSaving && !IsSavingProfile &&
+        (IsProfileDraftDirty || AreGeneralSettingsDirty) &&
         (!IsProfileDraftDirty || CanSaveProfile);
 
     public bool CanDiscardAll => IsProfileDraftDirty || AreGeneralSettingsDirty;
@@ -602,6 +614,36 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     public bool HasProfileLoadError => !string.IsNullOrWhiteSpace(ProfileLoadError);
 
     public bool HasProfileStatusMessage => !string.IsNullOrWhiteSpace(ProfileStatusMessage);
+
+    /// <summary>
+    /// Drops the "saved" banner on the way out.
+    ///
+    /// It is feedback for an action, not a property of the page, and an action that finished two
+    /// screens ago has nothing left to report. Coming back to Settings and being told the settings
+    /// were saved is confusing precisely because it is true — the user cannot tell whether it refers
+    /// to what they just did or to something from ten minutes ago.
+    ///
+    /// Only the success messages are cleared, and only by matching the exact strings this page emits
+    /// for them. Anything else in that field is a failure or a warning that has not been dealt with,
+    /// and clearing it would hide a problem instead of tidying a banner.
+    /// </summary>
+    public override void OnDeactivated()
+    {
+        // The general-settings banner is a separate flag from the profile message, and clearing only
+        // the second left "Configurações salvas." on screen for the next visit — which was the whole
+        // complaint. Both are feedback for an action that has finished.
+        IsSaved = false;
+        ManagedFilesDetectionMessage = null;
+
+        if (ProfileStatusMessage is not { } message) return;
+
+        var transient =
+            string.Equals(message, Localizer.Get("Profiles.SaveSuccess"), StringComparison.Ordinal) ||
+            string.Equals(message, Localizer.Get("Profiles.DeleteSuccess"), StringComparison.Ordinal) ||
+            string.Equals(message, Localizer.Get("Profiles.ActivateSuccess"), StringComparison.Ordinal);
+
+        if (transient) ProfileStatusMessage = null;
+    }
 
     public bool HasProfileSaveError => !string.IsNullOrWhiteSpace(ProfileSaveError);
 
@@ -677,6 +719,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
             _canPersistThemeAutomatically = true;
             IsSaved = true;
             OnPropertyChanged(nameof(CanDiscardAll));
+            OnPropertyChanged(nameof(CanSaveAll));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -728,6 +771,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         ProfileSaveError = null;
         ProfileStatusMessage = null;
         OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
     }
 
     [RelayCommand]
@@ -1591,6 +1635,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         OnPropertyChanged(nameof(CanSaveProfile));
         OnPropertyChanged(nameof(CanSaveAll));
         OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
         OnPropertyChanged(nameof(CanTestConnection));
     }
 
@@ -1609,6 +1654,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         OnPropertyChanged(nameof(CanSaveProfile));
         OnPropertyChanged(nameof(CanSaveAll));
         OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
         OnPropertyChanged(nameof(IsSelectedProfileActive));
         OnPropertyChanged(nameof(ActiveProfileName));
         OnPropertyChanged(nameof(RuntimeProfileName));
@@ -1623,6 +1669,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         IsSaved = false;
         OnPropertyChanged(nameof(PollingIntervalSecondsValue));
         OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
     }
 
     partial void OnConnectionTimeoutSecondsChanged(string value)
@@ -1630,6 +1677,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         IsSaved = false;
         OnPropertyChanged(nameof(ConnectionTimeoutSecondsValue));
         OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
     }
 
     private static decimal? ParseNumericPresentationValue(string value) =>

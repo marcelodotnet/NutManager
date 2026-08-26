@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Shared authoring for both products.
+
+  Version, publisher and the upgrade codes live here so the two installers cannot drift apart on the
+  values that decide whether an upgrade is recognised. Version is supplied by the build with -d and
+  comes from NutManagerVersion in Directory.Build.props; there is no default, because an installer
+  that quietly stamps itself 0.0.0 is worse than one that refuses to build.
+
+  The upgrade codes are fixed forever. Changing one turns every future release into a parallel
+  installation instead of an upgrade, leaving two copies registered at once.
+-->
+<Include>
+  <?define Publisher = "Marcelo Pacheco" ?>
+
+  <?define DesktopName = "NutManager" ?>
+  <?define DesktopUpgradeCode = "{8E1D4C2A-5F73-4B96-A1D8-2C7E9B04F351}" ?>
+
+  <?define AgentName = "NutManager Agent" ?>
+  <?define AgentUpgradeCode = "{C4A97F60-1E38-42D5-8B27-6D0F5A3E9C84}" ?>
+  <?define AgentServiceName = "NutManagerAgent" ?>
+
+  <!--
+    A bundle carries its own upgrade code, distinct from the package it chains. Sharing one makes the
+    bundle and the MSI look like the same product to the engine, and the uninstall of either starts
+    removing the other.
+  -->
+  <?define DesktopBundleUpgradeCode = "{3A7F91C5-6E42-4D08-B57A-9C1E4B026F83}" ?>
+  <?define AgentBundleUpgradeCode = "{95E2B738-4A1C-4F69-8D03-7E56C0A9142B}" ?>
+</Include>

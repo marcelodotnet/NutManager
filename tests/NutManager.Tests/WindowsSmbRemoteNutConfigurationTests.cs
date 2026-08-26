@@ -617,6 +617,21 @@ public sealed class WindowsSmbRemoteNutConfigurationTests
     }
 
     [Fact]
+    public async Task ReadOnlySessionCanProbeOnlyAfterPersistedWriteIntentIsApplied()
+    {
+        var fileSystem = new FakeSmbFileSystem();
+        var session = new WindowsSmbRemoteNutConfigurationSession(Share, false, fileSystem, new FakeIdentity(false));
+        await session.ValidateConfigurationDirectoryAsync(ConfigurationDirectory);
+
+        Assert.False((await session.ProbeSafeWriteCapabilityAsync(ConfigurationDirectory)).IsSupported);
+
+        session.ApplyWriteIntent(true);
+
+        Assert.False(session.IsSafeWriteCapabilityValidFor(ConfigurationDirectory));
+        Assert.True((await session.ProbeSafeWriteCapabilityAsync(ConfigurationDirectory)).IsSupported);
+    }
+
+    [Fact]
     public async Task DisposeWaitsForTheSessionMutationBeforeDisposingItsIdentity()
     {
         var fileSystem = new FakeSmbFileSystem();

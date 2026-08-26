@@ -524,6 +524,16 @@ public interface IRemoteNutConfigurationSession : IAsyncDisposable
     Task<RemoteNutCommitResult> RollbackConfigurationAsync(RemoteNutConfigurationRollbackRequest request, CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Receives the persisted profile's current write intent without performing remote I/O or
+/// authorizing writes. Implementations must clear any previously verified safe-write capability;
+/// enabling write intent only permits a new explicit capability probe.
+/// </summary>
+public interface IRemoteNutWriteIntentSession
+{
+    void ApplyWriteIntent(bool canWrite);
+}
+
 public interface IRemoteNutManagementSession : IRemoteNutConfigurationSession
 {
 }

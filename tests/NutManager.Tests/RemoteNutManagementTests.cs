@@ -212,6 +212,20 @@ public sealed class RemoteNutManagementTests
     }
 
     [Fact]
+    public void WriteIntentChangeClearsVerificationWithoutMakingTheSessionTerminal()
+    {
+        var capability = new RemoteSafeWriteCapabilityState();
+        Assert.True(capability.TryBeginProbe());
+        Assert.True(capability.TryCompleteProbe("/etc/nut"));
+
+        capability.ClearVerification();
+
+        Assert.False(capability.IsValidFor("/etc/nut"));
+        Assert.True(capability.TryBeginProbe());
+        Assert.True(capability.TryCompleteProbe("/etc/nut"));
+    }
+
+    [Fact]
     public void OutcomeUnknownPermanentlyInvalidatesOnlyTheCurrentSession()
     {
         var capability = new RemoteSafeWriteCapabilityState();
