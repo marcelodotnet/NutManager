@@ -15,7 +15,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly OverviewPageViewModel _overviewPage;
     private readonly SettingsPageViewModel _settingsPage;
     private readonly string? _activeEndpoint;
-    private readonly string? _activeProfileName;
+    private string? _activeProfileName;
     private readonly NutManagementMode? _managementMode;
     private ManagedNutServerAccessMode? _accessMode;
     private readonly string? _preferredUpsName;
@@ -130,6 +130,44 @@ public sealed partial class MainWindowViewModel : ObservableObject
             };
         }
         UpdateNavigationSelection();
+        PublishDashboardContext();
+    }
+
+    /// <summary>
+    /// Carries a saved rename into the shell's own copy of the active profile.
+    ///
+    /// The name was captured once at startup and held in a readonly field, so renaming the server the
+    /// session was already using left the sidebar, the footer and the Overview all announcing a name
+    /// the operator had just replaced. The file on disk was correct; only the running window was
+    /// wrong, which is the version the operator can see.
+    ///
+    /// Identity and nothing else. The new profile's name is taken; its monitoring endpoint, transport,
+    /// management block and access mode are deliberately *not* — the copy is rebuilt from the fields
+    /// this shell already holds. Monitoring host, port, preferred UPS, configuration transport and
+    /// credentials still require a restart, and a rename must not become the doorway through which
+    /// they change underneath a live session.
+    ///
+    /// Only for this session's own profile: renaming some other saved server leaves the running one
+    /// alone, which is why the identifier is compared before anything moves.
+    /// </summary>
+    public void ApplyActiveProfileIdentity(ManagedNutServerProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        if (_activeProfile is not { } active || active.Id != profile.Id) return;
+        if (string.Equals(active.Name, profile.Name, StringComparison.Ordinal)) return;
+
+        _activeProfile = new ManagedNutServerProfile(
+            active.Id, profile.Name, active.Monitoring, active.Management, active.AccessMode);
+        _activeProfileName = string.IsNullOrWhiteSpace(profile.Name) ? null : profile.Name;
+
+        // Everything that spells the server's name out loud. The footer keeps two readings - the
+        // short one and the accessible one - and updating only the visible half would leave a screen
+        // reader announcing the old name.
+        OnPropertyChanged(nameof(ActiveProfileName));
+        OnPropertyChanged(nameof(FooterServerStatusText));
+        OnPropertyChanged(nameof(FooterServerAccessibleText));
+
         PublishDashboardContext();
     }
 

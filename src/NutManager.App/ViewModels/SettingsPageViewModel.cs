@@ -616,16 +616,30 @@ public sealed partial class SettingsPageViewModel : PageViewModel
     public bool HasProfileStatusMessage => !string.IsNullOrWhiteSpace(ProfileStatusMessage);
 
     /// <summary>
-    /// Drops the "saved" banner on the way out.
+    /// Withdraws everything the page was still holding on the operator's behalf.
     ///
-    /// It is feedback for an action, not a property of the page, and an action that finished two
-    /// screens ago has nothing left to report. Coming back to Settings and being told the settings
-    /// were saved is confusing precisely because it is true — the user cannot tell whether it refers
-    /// to what they just did or to something from ten minutes ago.
+    /// Two kinds of state leave together here, for the same reason.
     ///
-    /// Only the success messages are cleared, and only by matching the exact strings this page emits
-    /// for them. Anything else in that field is a failure or a warning that has not been dealt with,
-    /// and clearing it would hide a problem instead of tidying a banner.
+    /// The first is feedback for an action, not a property of the page, and an action that finished
+    /// two screens ago has nothing left to report. Coming back to Settings and being told the settings
+    /// were saved is confusing precisely because it is true — the operator cannot tell whether it
+    /// refers to what they just did or to something from ten minutes ago.
+    ///
+    /// The second is the unsaved draft. Navigating away is an answer to "do you want this?", and the
+    /// answer is no: an edit that was never saved is an intention the operator abandoned, and holding
+    /// it means a later visit shows fields that disagree with the file on disk and with every other
+    /// screen. It is also the only reading that makes leaving free — a modal asking to confirm the
+    /// abandonment would turn walking away into a decision, which is the thing it is not.
+    ///
+    /// What is deliberately *not* discarded: theme, language, sidebar and transparency, which are
+    /// persisted the moment they change and were never waiting on Save; the persisted profiles
+    /// themselves; stored credentials; a trusted host key. And load errors stay — those describe the
+    /// state of the world rather than of a draft, and tidying one away on navigation hides a problem
+    /// instead of a banner.
+    ///
+    /// The dirty-draft question inside Settings is untouched by this. Choosing another profile, or
+    /// creating or deleting one, still stops and asks, because those actions destroy the draft while
+    /// the operator is looking at it and could plausibly be a slip.
     /// </summary>
     public override void OnDeactivated()
     {
@@ -633,11 +647,55 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         // the second left "Configurações salvas." on screen for the next visit — which was the whole
         // complaint. Both are feedback for an action that has finished.
         IsSaved = false;
+        IsProfileSaved = false;
         ManagedFilesDetectionMessage = null;
 
+        // Covers the half-finished new server too: IsProfileDraftDirty is true the moment creation
+        // starts, and the discard falls back to the confirmed active profile when the draft has no
+        // saved source to return to. Nothing is written on this path — the abandoned server simply
+        // never existed.
+        var draftDiscarded = IsProfileDraftDirty;
+        if (draftDiscarded)
+        {
+            DiscardProfileDraftCore();
+        }
+
+        // The question belonged to an action that is no longer going to happen. Left standing, it
+        // reappears on the next visit asking about a draft that has already been discarded.
+        ClearPendingProfileAction();
+
+        // The two general settings that wait for Save. Read back from the confirmed copy, which the
+        // presentation preferences also write to as they persist — so restoring these cannot walk a
+        // theme or a language change backwards.
+        PollingIntervalSeconds = _confirmedSettings.PollingInterval.TotalSeconds.ToString("0.##", CultureInfo.InvariantCulture);
+        ConnectionTimeoutSeconds = _confirmedSettings.ConnectionTimeout.TotalSeconds.ToString("0.##", CultureInfo.InvariantCulture);
+
+        // A test result describes the host that was in the draft. Once the draft is gone the result
+        // is a verdict about an endpoint no longer on screen, which is worse than no verdict at all.
+        ConnectionTestResultText = null;
+        ConnectionTestStatus = null;
+        ConnectionTestTone = ProfileOperationTone.Neutral;
+
+        ClearTransientProfileStatusMessage(draftDiscarded);
+
+        OnPropertyChanged(nameof(CanDiscardAll));
+        OnPropertyChanged(nameof(CanSaveAll));
+    }
+
+    /// <summary>
+    /// Clears the profile banner when it can no longer be about anything the operator still sees.
+    ///
+    /// Success messages are matched by their exact strings rather than by a flag, so that anything
+    /// else in that field — a credential that could not be stored, a warning nobody has dealt with —
+    /// survives. A discarded draft clears it regardless, because every message this page puts there
+    /// describes the draft that has just been thrown away, the "new server" hint included.
+    /// </summary>
+    private void ClearTransientProfileStatusMessage(bool draftDiscarded)
+    {
         if (ProfileStatusMessage is not { } message) return;
 
         var transient =
+            draftDiscarded ||
             string.Equals(message, Localizer.Get("Profiles.SaveSuccess"), StringComparison.Ordinal) ||
             string.Equals(message, Localizer.Get("Profiles.DeleteSuccess"), StringComparison.Ordinal) ||
             string.Equals(message, Localizer.Get("Profiles.ActivateSuccess"), StringComparison.Ordinal);

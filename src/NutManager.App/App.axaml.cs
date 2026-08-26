@@ -222,6 +222,12 @@ public partial class App : Application
             administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
             viewModel.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
 
+            // The name, which is presentation and nothing more. The shell captured it at startup, so
+            // renaming the server the session was already using left every surface announcing the old
+            // one until a restart. Only the name crosses over here: the endpoint, transport and
+            // credentials this session connected with are untouched by design.
+            viewModel.ApplyActiveProfileIdentity(profile);
+
             // The access mode, which used to need a restart. Every surface reporting it derives from a
             // profile copy taken at startup, so the interface went on claiming Manage after the profile
             // had been saved as read-only — a stale claim about authorization, which is the worst kind
