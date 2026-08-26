@@ -125,7 +125,7 @@ public sealed class SshNetRemoteNutManagementTransport : IRemoteNutManagementTra
     }
 }
 
-public sealed class SshNetRemoteNutManagementSession : IRemoteNutManagementSession
+public sealed class SshNetRemoteNutManagementSession : IRemoteNutManagementSession, IRemoteNutWriteIntentSession
 {
     private static readonly TimeSpan SftpTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CommitTimeout = TimeSpan.FromSeconds(30);
@@ -154,6 +154,8 @@ public sealed class SshNetRemoteNutManagementSession : IRemoteNutManagementSessi
     public string HomeDirectory { get; }
 
     public IRemoteNutConfigurationPathPolicy PathPolicy => SftpRemoteNutConfigurationPathPolicy.Instance;
+
+    public void ApplyWriteIntent(bool canWrite) => _safeWriteCapability.ClearVerification();
 
     public async Task<RemoteNutDirectoryListing> BrowseDirectoryAsync(string directory, CancellationToken cancellationToken = default)
     {

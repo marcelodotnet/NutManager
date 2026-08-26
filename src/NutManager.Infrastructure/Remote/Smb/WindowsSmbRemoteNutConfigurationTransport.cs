@@ -99,10 +99,10 @@ public sealed class WindowsSmbRemoteNutConfigurationTransport : IRemoteNutConfig
     private static bool IsCredentialConflict(IOException exception) => ((uint)exception.HResult & 0xFFFF) == 1219;
 }
 
-public sealed class WindowsSmbRemoteNutConfigurationSession : IRemoteNutConfigurationSession
+public sealed class WindowsSmbRemoteNutConfigurationSession : IRemoteNutConfigurationSession, IRemoteNutWriteIntentSession
 {
     private readonly string _shareRoot;
-    private readonly bool _canWrite;
+    private bool _canWrite;
     private readonly ISmbFileSystem _fileSystem;
     private readonly IWindowsSmbSessionIdentity _identity;
     private readonly SmbRemoteNutConfigurationPathPolicy _pathPolicy;
@@ -130,6 +130,12 @@ public sealed class WindowsSmbRemoteNutConfigurationSession : IRemoteNutConfigur
     public string HomeDirectory => _shareRoot;
 
     public IRemoteNutConfigurationPathPolicy PathPolicy => _pathPolicy;
+
+    public void ApplyWriteIntent(bool canWrite)
+    {
+        _canWrite = canWrite;
+        _safeWriteCapability.ClearVerification();
+    }
 
     public bool IsSafeWriteCapabilityValidFor(string configurationDirectory) =>
         _canWrite &&

@@ -185,8 +185,8 @@ public sealed partial class RemoteManagementSessionViewModel : ObservableObject,
     /// the header said read-only while the session went on reporting the write capability as granted.
     ///
     /// Narrowing revokes immediately, which is the direction that matters. Widening grants nothing on
-    /// its own: WriteCapability is the safe-write probe's result, it is untouched here, and a profile
-    /// that has not been probed still reports the capability as unverified.
+    /// its own: the session receives only the new write intent, while the previous safe-write result is
+    /// cleared so a new explicit probe is still required.
     /// </summary>
     public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)
     {
@@ -194,6 +194,13 @@ public sealed partial class RemoteManagementSessionViewModel : ObservableObject,
 
         _profile = new ManagedNutServerProfile(
             _profile.Id, _profile.Name, _profile.Monitoring, _profile.Management, accessMode);
+
+        if (_session is IRemoteNutWriteIntentSession writeIntentSession)
+        {
+            writeIntentSession.ApplyWriteIntent(accessMode == ManagedNutServerAccessMode.Manage);
+        }
+
+        WriteCapability = null;
 
         OnPropertyChanged(nameof(CanEditConfiguration));
         OnPropertyChanged(nameof(IsWriteCapabilitySupported));

@@ -93,7 +93,7 @@ public sealed class T39PresentationLifecycleTests
     // ---------------------------------------------------------------- transient settings feedback
 
     [Fact]
-    public void LeavingSettingsClearsBothSuccessBannersButNotAFailure()
+    public void LeavingSettingsClearsTransientFeedbackButNotAFailure()
     {
         // Two separate channels, and clearing only one is how "Configurações salvas." survived a visit:
         // the general-settings banner is a flag, the profile banner is a message, and they are rendered
@@ -102,11 +102,13 @@ public sealed class T39PresentationLifecycleTests
 
         settings.IsSaved = true;
         settings.ProfileStatusMessage = settings.Localizer.Get("Profiles.SaveSuccess");
+        settings.ManagedFilesDetectionMessage = "5 arquivo(s) encontrado(s).";
 
         settings.OnDeactivated();
 
         Assert.False(settings.IsSaved);
         Assert.False(settings.HasProfileStatusMessage);
+        Assert.False(settings.HasManagedFilesDetectionMessage);
 
         // A failure is not feedback for a finished action; it is a problem nobody has dealt with, and
         // tidying it away on navigation would hide it.
@@ -391,7 +393,7 @@ public sealed class T39PresentationLifecycleTests
     }
 
     [Fact]
-    public void ReadOnlyWriteAuthorizationExplainsWhyTheProbeIsUnavailable()
+    public void WriteAuthorizationIconExplainsBothAccessModes()
     {
         var page = new AdministrationPageViewModel(
             null, null, null, null, RemoteContext(ManagedNutServerAccessMode.ReadOnly),
@@ -399,16 +401,32 @@ public sealed class T39PresentationLifecycleTests
 
         Assert.Equal(
             "A escrita não está disponível enquanto este perfil estiver em modo Somente leitura. Altere o acesso para Gerenciar nas Configurações para habilitar a verificação de escrita.",
-            page.RemoteWriteAuthorizationUnavailableTooltip);
+            page.RemoteWriteAuthorizationTooltip);
 
         page.ApplyAccessMode(ManagedNutServerAccessMode.Manage);
 
-        Assert.Null(page.RemoteWriteAuthorizationUnavailableTooltip);
+        Assert.Equal(
+            page.Strings.Get("Administration.Remote.SafeWrite.Help"),
+            page.RemoteWriteAuthorizationTooltip);
         var view = Source("src", "NutManager.App", "Views", "RemoteAccessAdministrationView.axaml");
         Assert.Contains(
-            "ToolTip.Tip=\"{Binding RemoteWriteAuthorizationUnavailableTooltip}\"",
+            "ToolTip.Tip=\"{Binding RemoteWriteAuthorizationTooltip}\"",
             view,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManagedFileDetectionFeedbackIsBesideTheButton()
+    {
+        var view = Source("src", "NutManager.App", "Views", "SettingsPageView.axaml");
+        var button = view.IndexOf("Command=\"{Binding DetectManagedFilesCommand}\"", StringComparison.Ordinal);
+        var message = view.IndexOf("Grid.Column=\"1\"", button, StringComparison.Ordinal);
+        var binding = view.IndexOf("Text=\"{Binding ManagedFilesDetectionMessage}\"", message, StringComparison.Ordinal);
+
+        Assert.True(button > 0);
+        Assert.True(message > button);
+        Assert.True(binding > message);
+        Assert.True(binding - button < 900, "The detection message is no longer in the button's two-column row.");
     }
 
     [Fact]
@@ -503,10 +521,11 @@ public sealed class T39PresentationLifecycleTests
         Assert.Contains("public void ApplyAccessMode(ManagedNutServerAccessMode accessMode)", session, StringComparison.Ordinal);
         Assert.Contains("OnPropertyChanged(nameof(CanEditConfiguration));", session, StringComparison.Ordinal);
 
-        // The probe's result is not touched, so widening still grants nothing on its own.
+        // The probe's result is cleared, so widening still grants nothing on its own.
         var apply = session.IndexOf("public void ApplyAccessMode", StringComparison.Ordinal);
-        var body = session[apply..(apply + 700)];
-        Assert.DoesNotContain("WriteCapability =", body, StringComparison.Ordinal);
+        var body = session[apply..(apply + 1000)];
+        Assert.Contains("WriteCapability = null;", body, StringComparison.Ordinal);
+        Assert.Contains("writeIntentSession.ApplyWriteIntent", body, StringComparison.Ordinal);
     }
 
     [Fact]

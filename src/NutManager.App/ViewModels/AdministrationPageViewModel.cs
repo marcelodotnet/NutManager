@@ -443,10 +443,10 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
 
     public bool CanProbeRemoteWriteCapability => CanChangeRemoteSessionContext && _remoteManagement?.CanProbeWriteCapability == true;
 
-    public string? RemoteWriteAuthorizationUnavailableTooltip =>
+    public string RemoteWriteAuthorizationTooltip =>
         _profileContext?.Profile.AccessMode == ManagedNutServerAccessMode.ReadOnly
             ? Strings.Get("Administration.Remote.SafeWrite.ReadOnlyTooltip")
-            : null;
+            : Strings.Get("Administration.Remote.SafeWrite.Help");
 
     public bool RequiresRemoteWriteAuthorization =>
         HasLoadedFile &&
@@ -2441,7 +2441,7 @@ public sealed partial class AdministrationPageViewModel : PageViewModel
             ?? AdministrationSections[0];
 
         OnPropertyChanged(nameof(AccessModeDisplayText));
-        OnPropertyChanged(nameof(RemoteWriteAuthorizationUnavailableTooltip));
+        OnPropertyChanged(nameof(RemoteWriteAuthorizationTooltip));
         OnPropertyChanged(nameof(RequiresRemoteWriteAuthorization));
         NotifyWorkflowPropertiesChanged();
     }

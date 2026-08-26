@@ -633,6 +633,7 @@ public sealed partial class SettingsPageViewModel : PageViewModel
         // the second left "Configurações salvas." on screen for the next visit — which was the whole
         // complaint. Both are feedback for an action that has finished.
         IsSaved = false;
+        ManagedFilesDetectionMessage = null;
 
         if (ProfileStatusMessage is not { } message) return;
 
