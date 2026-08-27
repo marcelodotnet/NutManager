@@ -47,8 +47,8 @@ authoring under `installer/`, where the Windows Installer engine owns it.
 
 ```text
 artifacts/
-  NutManager-Setup-1.0.0.exe          desktop application, ~77 MB
-  NutManager-Agent-Setup-1.0.0.exe    agent service, ~10 MB
+  NutManager-Setup-1.0.1.exe          desktop application, ~77 MB
+  NutManager-Agent-Setup-1.0.1.exe    agent service, ~10 MB
   NutManager-win-x64.zip              portable desktop copy, ~87 MB
   SHA256SUMS.txt
 ```
@@ -70,7 +70,7 @@ step that could still rewrite the files.
 Verifying on Windows:
 
 ```powershell
-Get-FileHash .\NutManager-Setup-1.0.0.exe -Algorithm SHA256
+Get-FileHash .\NutManager-Setup-1.0.1.exe -Algorithm SHA256
 ```
 
 Compare the `Hash` value against the line for that filename, case-insensitively.
@@ -191,10 +191,9 @@ section 3 that they do not replace, restrict or modify GPL rights. The installer
 separately: the acceptance checkbox names only the Terms, and a line beneath it names the GPL. One
 checkbox covering both would imply the GPL is a condition of installing, which inverts what the GPL is.
 
-> **Pending for v1.0.1.** T41 will add an informational GitHub release check. That makes section 10's
-> sentence about external links being reached only on explicit user action untrue as written. The Terms
-> must be re-synchronised after T41 and before v1.0.1 is tagged. The current text is the current
-> version, not the final one.
+> **v1.0.1 — first public release.** No automatic update check is included. External resources
+> continue to open only after explicit user action, so the current canonical Terms remain accurate
+> and do not require regeneration.
 
 ## Installer appearance
 
@@ -243,16 +242,16 @@ in this repository, and a test asserts the installer sources carry none.
 Burn bundles accept:
 
 ```text
-NutManager-Setup-1.0.0.exe /quiet
-NutManager-Setup-1.0.0.exe /passive
-NutManager-Setup-1.0.0.exe /uninstall /quiet
-NutManager-Setup-1.0.0.exe /log <path>
+NutManager-Setup-1.0.1.exe /quiet
+NutManager-Setup-1.0.1.exe /passive
+NutManager-Setup-1.0.1.exe /uninstall /quiet
+NutManager-Setup-1.0.1.exe /log <path>
 ```
 
 The agent installer takes the same switches, plus one Burn variable of its own:
 
 ```text
-NutManager-Agent-Setup-1.0.0.exe /quiet InstallAspNetRuntime=0
+NutManager-Agent-Setup-1.0.1.exe /quiet InstallAspNetRuntime=0
 ```
 
 `InstallAspNetRuntime` defaults to `1`, so an unattended install on a bare server installs the official

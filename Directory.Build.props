@@ -14,7 +14,7 @@
     The installers read this same property and must never be given one of their own.
   -->
   <PropertyGroup>
-    <NutManagerVersion Condition="'$(NutManagerVersion)' == ''">1.0.0</NutManagerVersion>
+    <NutManagerVersion Condition="'$(NutManagerVersion)' == ''">1.0.1</NutManagerVersion>
     <NutManagerProduct>NutManager</NutManagerProduct>
     <NutManagerPublisher>Marcelo Pacheco</NutManagerPublisher>
   </PropertyGroup>
