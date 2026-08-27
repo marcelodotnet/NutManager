@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
-     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <?include ..\Common\Product.wxi ?>
 
   <!--
@@ -79,6 +80,60 @@
     -->
     <Variable Name="InstallDotNetRuntime" Type="numeric" Value="1" bal:Overridable="yes" />
     <Variable Name="InstallAspNetRuntime" Type="numeric" Value="1" bal:Overridable="yes" />
+
+    <!--
+      Whether the progress page's details area is expanded. Not overridable and not an installation
+      option: it exists because thmutil has no action that sets a variable, so a checkbox bound to
+      this name is the only supported way for a click on that page to change what is shown. Starts
+      collapsed.
+    -->
+    <Variable Name="ShowProgressDetails" Type="numeric" Value="0" />
+
+    <!--
+      Whether a NUT service is registered on this machine, for the summary on the success page.
+
+      The four names are the ones the product itself recognises - the Windows packaging registers
+      "Network UPS Tools" as both the service and the display name, and the compact spellings cover
+      other packagings. A test keeps this list identical to WindowsNutServiceAssociation's, so the
+      installer and the application cannot drift into recognising different things.
+
+      This asks the service registry, not the file system. A directory called NUT proves nothing; a
+      registered service is a service. It is still the weaker of the two checks the product can make
+      - the application additionally verifies that the service's binary lives inside the detected
+      installation, which is the rule that rejects a service merely borrowing the name - and that
+      fuller association is reported by NutManager Agent Config rather than guessed at here.
+
+      Detect runs before Apply, but nothing in this bundle installs, removes or renames a NUT
+      service, so the answer found then is still the answer when the summary is read.
+    -->
+    <Variable Name="NutServiceDetected" Type="numeric" Value="0" />
+
+    <util:RegistrySearch Id="SearchNutServiceCanonical"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\Network UPS Tools"
+                         Result="exists"
+                         Variable="NutServiceDetected" />
+    <util:RegistrySearch Id="SearchNutServiceCompact"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\NetworkUpsTools"
+                         Result="exists"
+                         Variable="NutServiceDetected"
+                         After="SearchNutServiceCanonical"
+                         Condition="NOT NutServiceDetected" />
+    <util:RegistrySearch Id="SearchNutServiceCompactUpper"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\NetworkUPSTools"
+                         Result="exists"
+                         Variable="NutServiceDetected"
+                         After="SearchNutServiceCompact"
+                         Condition="NOT NutServiceDetected" />
+    <util:RegistrySearch Id="SearchNutServiceShort"
+                         Root="HKLM"
+                         Key="SYSTEM\CurrentControlSet\Services\NUT"
+                         Result="exists"
+                         Variable="NutServiceDetected"
+                         After="SearchNutServiceCompactUpper"
+                         Condition="NOT NutServiceDetected" />
 
     <Chain>
       <!--

@@ -62,10 +62,38 @@ internal sealed class NutAgentWindowsService : ServiceBase
             return;
         }
 
-        var server = new NutAgentNamedPipeServer(composition.Dispatcher, operatorsGroup);
-        _listener = Task.Run(() => server.RunAsync(_stopping.Token), CancellationToken.None);
+        var options = NutAgentHttpsOptions.Load(path: null, out var loadFailure);
+        if (loadFailure is not null)
+        {
+            // Recorded, not fatal. The fallback is the named pipe alone, which is the narrowest thing
+            // the agent can offer; but an administrator who edited the file needs to know it was not
+            // the file that took effect.
+            WriteStartupFailure(composition, loadFailure);
+        }
 
-        StartHttpsIfConfigured(composition, operatorsGroup);
+        var namedPipeEnabled = NutAgentHttpsOptions.IsNamedPipeEnabled(options);
+
+        // Fail closed. A file hand-edited into having no transport at all would otherwise produce a
+        // service that reports itself Running while nothing can reach it, which is the hardest state
+        // to diagnose from the outside. Refusing to start puts the reason in the Event Log and in the
+        // SCM's own record instead.
+        if (!namedPipeEnabled && !options.HttpsEnabled)
+        {
+            WriteStartupFailure(
+                composition,
+                $"Both transports are disabled in {NutAgentHttpsOptions.FileName}; the agent has nothing to listen on. " +
+                "Enable the named pipe or HTTPS with NutManager Agent Config.");
+            FailToStart();
+            return;
+        }
+
+        if (namedPipeEnabled)
+        {
+            var server = new NutAgentNamedPipeServer(composition.Dispatcher, operatorsGroup);
+            _listener = Task.Run(() => server.RunAsync(_stopping.Token), CancellationToken.None);
+        }
+
+        StartHttpsIfConfigured(composition, operatorsGroup, options);
     }
 
     /// <summary>
@@ -74,12 +102,16 @@ internal sealed class NutAgentWindowsService : ServiceBase
     /// Off is the default: an installation that does nothing gets a named pipe and no open port.
     /// When it is on and something is wrong — no prefix, a plain-text prefix, a wildcard host, a
     /// certificate that is absent or has no private key — the listener does not start at all. It
-    /// never degrades into something weaker, and the named pipe keeps working, so a mistake in the
-    /// HTTPS configuration cannot take away the transport that was already secure.
+    /// never degrades into something weaker, and the named pipe keeps working when it is enabled, so
+    /// a mistake in the HTTPS configuration cannot take away a transport that was already secure.
+    ///
+    /// The options arrive from the caller rather than being re-read here: one read per start means
+    /// the transport the agent reports and the transport it opened cannot come from two different
+    /// versions of the file.
     /// </summary>
-    private void StartHttpsIfConfigured(NutAgentComposition composition, SecurityIdentifier operatorsGroup)
+    private void StartHttpsIfConfigured(
+        NutAgentComposition composition, SecurityIdentifier operatorsGroup, NutAgentHttpsOptions options)
     {
-        var options = NutAgentHttpsOptions.Load();
         if (!options.HttpsEnabled) return;
 
         if (!NutAgentHttpsOptions.Validate(options, out var failure))

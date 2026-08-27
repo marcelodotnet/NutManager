@@ -45,9 +45,19 @@
   <String Id="OptionsOkButton" Value="&amp;OK" />
   <String Id="OptionsCancelButton" Value="&amp;Cancelar" />
 
+  <!--
+    Cada fase tem o seu próprio verbo. "Processando" não dizia se o instalador estava baixando dezenas
+    de megabytes da Microsoft ou gravando arquivos, que é exatamente a diferença entre esperar e
+    desconfiar que travou.
+  -->
   <String Id="ProgressHeader" Value="Instalando NutManager Agent..." />
-  <String Id="ProgressLabel" Value="Processando:" />
+  <String Id="ProgressDownloadLabel" Value="Baixando:" />
+  <String Id="ProgressInstallLabel" Value="Instalando:" />
   <String Id="OverallProgressPackageText" Value="Iniciando..." />
+  <String Id="ProgressDetailsToggle" Value="Mostrar &amp;detalhes" />
+  <String Id="ProgressComponentLabel" Value="Progresso:" />
+  <String Id="ProgressActionLabel" Value="Ação:" />
+  <String Id="ProgressOverallLabel" Value="Total:" />
   <String Id="ProgressCancelButton" Value="&amp;Cancelar" />
 
   <String Id="ModifyHeader" Value="Manutenção do NutManager Agent" />
@@ -63,6 +73,25 @@
   <String Id="SuccessModifyHeader" Value="Alteração concluída com sucesso." />
   <String Id="SuccessCacheHeader" Value="Download concluído com sucesso." />
   <String Id="SuccessLayoutHeader" Value="Cópia local criada com sucesso." />
+  <!--
+    Resumo da instalação. Só aparece o que este instalador realmente comprovou.
+
+    O grupo NutManager Operators não é afirmado: o Burn não sabe consultar grupos locais, então a
+    linha aponta para onde a resposta existe de verdade em vez de exibir um "✓" que ninguém verificou.
+    O serviço fica registrado e parado de propósito, e isso é dito no bloco de ação — não como um
+    "Estado: Parado" que parece falha da instalação.
+  -->
+  <String Id="SummaryHeader" Value="Resumo da instalação" />
+  <String Id="SummaryDotNet" Value="✓ Microsoft .NET Runtime 10 x64" />
+  <String Id="SummaryAspNetCore" Value="✓ Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="SummaryService" Value="✓ Serviço NutManagerAgent registrado (inicialização automática)" />
+  <String Id="SummaryEventLog" Value="✓ Origem do log de eventos configurada" />
+  <String Id="SummaryNutDetected" Value="✓ Serviço NUT detectado neste servidor" />
+  <String Id="SummaryNutMissing" Value="! Nenhum serviço NUT detectado neste servidor" />
+  <String Id="SummaryOperators" Value="○ NutManager Operators — verifique no NutManager Agent Config" />
+  <String Id="SummaryActionHeader" Value="⚠ Configuração necessária" />
+  <String Id="SummaryActionText" Value="O NutManagerAgent foi registrado e ainda não foi iniciado. Abra o NutManager Agent Config no menu Iniciar para criar o grupo NutManager Operators, conferir os transportes e iniciar o serviço." />
+
   <String Id="SuccessLaunchButton" Value="&amp;Abrir" />
   <String Id="SuccessRestartText" Value="É necessário reiniciar o computador antes de usar o software." />
   <String Id="SuccessUninstallRestartText" Value="É necessário reiniciar o computador para concluir a remoção do software." />

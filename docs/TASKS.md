@@ -1613,9 +1613,8 @@ screenshots are still pending, because taking them means running the installers.
 covering desktop installation, agent installation, upgrade and uninstall, release notes and the Terms
 of Use need re-publishing to match this refinement.
 
-> **Terms re-sync before v1.0.1.** T41 will add an informational GitHub release check, which makes
-> section 10 of the current Terms untrue as written. The Terms must be regenerated and re-published
-> after T41 and before v1.0.1 is tagged.
+> **v1.0.1 Terms status.** T41 does not add update checking or any automatic GitHub access. Section 10
+> of the canonical Terms therefore remains accurate and no Terms regeneration is caused by T41.
 
 See [Packaging and release](PACKAGING-AND-RELEASE.md) for the full record of what is and is not
 verified, and [Manual do operador](operator-manual/MANUAL-DO-OPERADOR.md) for the unpublished operator
@@ -1664,6 +1663,44 @@ External opening accepts only a typed resource enum. The Windows implementation 
 fixed project-owned destinations for the project repository, developer profile, published operator
 manual, technical documentation and license. UI, profiles and configuration cannot provide a URI,
 and no browser, HTTP client, telemetry or update capability was added.
+
+## T41 — Agent configuration utility and installer setup experience
+
+**Status:** IMPLEMENTED — MANUAL WINDOWS SANDBOX ACCEPTANCE PENDING
+
+### Objective
+
+Ship `NutManager Agent Config` with the Agent installer as an elevated local administrative GUI for
+the fixed NutManager-owned resources: `NutManager Operators`, `NutManagerAgent`, `agent.json`, and the
+HTTP.sys/Firewall resources used by the optional HTTPS transport. Improve the supported WixStdBA
+progress and completion experience without a custom bootstrapper application.
+
+### Implemented boundaries
+
+- Agent and Agent Config remain framework-dependent; the bundle independently provisions compatible
+  `Microsoft.NETCore.App 10.x` and `Microsoft.AspNetCore.App 10.x` runtimes. Agent Config adds no
+  Windows Desktop shared-framework prerequisite.
+- The MSI registers `NutManagerAgent` as Automatic but does not start it. Agent Config provides the
+  only explicit local Start/Stop/Restart controls and never touches the NUT service.
+- Named Pipe and HTTPS are independent. At least one remains enabled, legacy configuration keeps
+  Named Pipe on, and both the GUI and service use the shared validation rule.
+- Group membership is SID-backed. Workstations/member servers and domain controllers are distinguished;
+  directory-affecting creation requires separate confirmation.
+- HTTPS resources use documented Windows APIs and fixed NutManager ownership markers. Foreign or
+  unknown resources are never deleted, cleanup is explicit, and certificates are read-only and never
+  removed.
+- `agent.json` uses validate/temp/flush/ACL/readback/atomic-replacement safe-write semantics. System
+  resources are configured before the file is committed, and saving never silently starts or restarts
+  the Agent.
+- WixStdBA shows real cache/execute/action/overall progress. The supported checkbox/Burn-variable
+  details fallback is retained because WixStdBA 5.0.2 cannot provide a dynamic show/hide link without
+  a custom BA. Completion delegates live Operators/configuration diagnostics to Agent Config.
+- No update checker, automatic GitHub Release behavior, NUT payload or new security fallback was added.
+
+### Remaining acceptance
+
+The source, automated tests and release packaging are gated. A clean Windows Sandbox install/upgrade/
+uninstall run remains pending and must not be reported as completed before it is actually observed.
 
 ## Task execution template
 

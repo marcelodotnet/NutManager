@@ -1,0 +1,51 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fluent="clr-namespace:Avalonia.Themes.Fluent;assembly=Avalonia.Themes.Fluent"
+             x:Class="NutManager.Agent.Config.App"
+             RequestedThemeVariant="Default">
+  <!--
+    NutManager's design system, as the desktop application defines it.
+
+    Every dictionary and style sheet below is a link to the file NutManager.App itself uses, so the
+    palette, the radii, the type scale and the control styles are not a second implementation of the
+    product's look — they are the same one. Two windows open side by side cannot disagree about what
+    a card, a pill or a danger button is.
+
+    NutShellStyles is deliberately not here. That is the sidebar, the navigation rail and the chrome
+    of a full application; this utility is one screen and does not have them.
+
+    RequestedThemeVariant is Default, so the utility follows Windows the way the desktop does rather
+    than pinning a theme of its own. NutColors carries both Dark and Light through
+    ResourceDictionary.ThemeDictionaries, so switching is already handled.
+  -->
+  <Application.Styles>
+    <fluent:FluentTheme />
+    <StyleInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutTypography.axaml" />
+    <StyleInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutControlStyles.axaml" />
+
+    <!--
+      One local class, and it is nut-metadata with wrapping turned on.
+
+      Explanatory copy in this window sits in narrow cards beside a checkbox, so it has to wrap or it
+      gets clipped; the desktop's own metadata style leaves wrapping to the call site because most of
+      its uses are single-line values. Same size, same brush, same token — this only saves repeating
+      TextWrapping on two dozen elements.
+    -->
+    <Style Selector="TextBlock.hint">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="{DynamicResource NutTextMutedBrush}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+  </Application.Styles>
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutColors.axaml" />
+        <ResourceInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutMetrics.axaml" />
+        <ResourceInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutMotion.axaml" />
+        <ResourceInclude Source="avares://NutManager.Agent.Config/Presentation/Themes/NutIcons.axaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+</Application>

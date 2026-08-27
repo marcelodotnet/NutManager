@@ -45,9 +45,19 @@
   <String Id="OptionsOkButton" Value="&amp;OK" />
   <String Id="OptionsCancelButton" Value="&amp;Cancel" />
 
+  <!--
+    Each phase gets its own verb. "Processing" did not say whether the installer was pulling tens of
+    megabytes from Microsoft or writing files, which is exactly the difference between waiting and
+    suspecting it has hung.
+  -->
   <String Id="ProgressHeader" Value="Installing NutManager Agent..." />
-  <String Id="ProgressLabel" Value="Processing:" />
+  <String Id="ProgressDownloadLabel" Value="Downloading:" />
+  <String Id="ProgressInstallLabel" Value="Installing:" />
   <String Id="OverallProgressPackageText" Value="Initializing..." />
+  <String Id="ProgressDetailsToggle" Value="Show &amp;details" />
+  <String Id="ProgressComponentLabel" Value="Progress:" />
+  <String Id="ProgressActionLabel" Value="Action:" />
+  <String Id="ProgressOverallLabel" Value="Overall:" />
   <String Id="ProgressCancelButton" Value="&amp;Cancel" />
 
   <String Id="ModifyHeader" Value="NutManager Agent maintenance" />
@@ -63,6 +73,25 @@
   <String Id="SuccessModifyHeader" Value="The change completed successfully." />
   <String Id="SuccessCacheHeader" Value="The download completed successfully." />
   <String Id="SuccessLayoutHeader" Value="The local copy was created successfully." />
+  <!--
+    The installation summary. Only what this installer actually established appears here.
+
+    NutManager Operators is not claimed: Burn cannot search local groups, so the line points at where
+    the answer genuinely exists rather than showing a tick nothing checked. The service is registered
+    and left stopped on purpose, and the action block says so - rather than a "State: Stopped" line
+    that reads like a failed installation.
+  -->
+  <String Id="SummaryHeader" Value="Installation summary" />
+  <String Id="SummaryDotNet" Value="✓ Microsoft .NET Runtime 10 x64" />
+  <String Id="SummaryAspNetCore" Value="✓ Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="SummaryService" Value="✓ NutManagerAgent service registered (Automatic start)" />
+  <String Id="SummaryEventLog" Value="✓ Event Log source configured" />
+  <String Id="SummaryNutDetected" Value="✓ NUT service detected on this server" />
+  <String Id="SummaryNutMissing" Value="! No NUT service detected on this server" />
+  <String Id="SummaryOperators" Value="○ NutManager Operators — check in NutManager Agent Config" />
+  <String Id="SummaryActionHeader" Value="⚠ Configuration required" />
+  <String Id="SummaryActionText" Value="NutManagerAgent has been registered and has not been started yet. Open NutManager Agent Config from the Start menu to create the NutManager Operators group, review the transports and start the service." />
+
   <String Id="SuccessLaunchButton" Value="&amp;Launch" />
   <String Id="SuccessRestartText" Value="You must restart your computer before you can use the software." />
   <String Id="SuccessUninstallRestartText" Value="You must restart your computer to complete the removal of the software." />

@@ -21,6 +21,13 @@
   <?define AgentServiceName = "NutManagerAgent" ?>
 
   <!--
+    The local administrative utility installed alongside the agent. A name, not a second product: it
+    has no upgrade code and registers no service, because it is an executable in the agent's own
+    directory that an administrator opens when they need it and closes when they are done.
+  -->
+  <?define AgentConfigName = "NutManager Agent Config" ?>
+
+  <!--
     A bundle carries its own upgrade code, distinct from the package it chains. Sharing one makes the
     bundle and the MSI look like the same product to the engine, and the uninstall of either starts
     removing the other.

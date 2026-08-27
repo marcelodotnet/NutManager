@@ -125,16 +125,82 @@
       </Button>
     </Page>
 
+    <!--
+      Progress, split by the phase it is actually in.
+
+      There used to be one bar and the word "Processando", which is what made a long runtime download
+      look like a frozen installer: the bar showed the bundle's overall progress, so it barely moved
+      while tens of megabytes came down, and the label never said what was happening.
+
+      WixStdBA maintains several independent progress sources, and this page uses each for the one
+      thing it knows:
+
+        CacheProgressPackageText / CacheProgressbar     - the package being downloaded, and its
+                                                          download progress
+        ExecuteProgressPackageText / ExecuteProgressbar - the package being installed, and its
+                                                          installation progress
+        ExecuteProgressText                             - that package's own percentage
+        ExecuteProgressActionDataText                   - what the Windows Installer is doing right
+                                                          now, in its own words
+        OverallCalculatedProgressbar                    - the whole bundle
+
+      Nothing on this page is computed by the theme. There is no invented percentage, no estimated
+      time, no transfer rate and no file count; every value shown is one Burn or the MSI engine
+      supplied. Where a phase has no meaningful progress the bar stays where it is rather than being
+      animated to look busy.
+
+      The download row appears only when this run will actually download something - a runtime is
+      missing *and* the operator left its box ticked. On a server that already has both runtimes
+      there is nothing to fetch, and an empty bar labelled "Baixando" would be a lie that looks like
+      a hang. The condition is the one the Install page gates its button on, so the two screens
+      cannot disagree about what is going to happen.
+    -->
     <Page Name="Progress">
       <Label X="20" Y="130" Width="-20" Height="30" FontId="2" DisablePrefix="yes">#(loc.ProgressHeader)</Label>
-      <Label X="20" Y="176" Width="90" Height="17" FontId="3" DisablePrefix="yes">#(loc.ProgressLabel)</Label>
+
+      <Label X="20" Y="176" Width="96" Height="17" FontId="3" DisablePrefix="yes"
+             VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)">#(loc.ProgressDownloadLabel)</Label>
+      <Label Name="CacheProgressPackageText" X="120" Y="176" Width="-20" Height="17" FontId="4" DisablePrefix="yes"
+             VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)" />
+      <Progressbar Name="CacheProgressbar" X="20" Y="198" Width="-20" Height="14"
+                   VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)" />
+
+      <Label X="20" Y="234" Width="96" Height="17" FontId="3" DisablePrefix="yes">#(loc.ProgressInstallLabel)</Label>
+      <Label Name="ExecuteProgressPackageText" X="120" Y="234" Width="-20" Height="17" FontId="4" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Label>
+      <Progressbar Name="ExecuteProgressbar" X="20" Y="256" Width="-20" Height="14" />
+
       <!--
-        Burn names the package it is currently executing, so when the prerequisite runs the operator
-        sees the Microsoft runtime named here rather than a bar that appears to stall on "NutManager
-        Agent" for a minute. No invented sub-steps: this is the only progress Burn actually knows.
+        The details area.
+
+        It is a checkbox rather than a "Mostrar detalhes" link because thmutil supports exactly three
+        actions - BrowseDirectoryAction, ChangePageAction and CloseWindowAction - and none of them
+        sets a variable. A checkbox is bound to its Burn variable by name, so ticking it is the only
+        supported way for a click on this page to change what another control's VisibleCondition
+        sees. Collapsed by default, which keeps an ordinary install to two labelled rows and a bar.
       -->
-      <Label Name="OverallProgressPackageText" X="114" Y="176" Width="-20" Height="17" FontId="3" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Label>
-      <Progressbar Name="OverallCalculatedProgressbar" X="20" Y="200" Width="-20" Height="16" />
+      <Checkbox Name="ShowProgressDetails" X="20" Y="292" Width="-20" Height="20" TabStop="yes" FontId="3">#(loc.ProgressDetailsToggle)</Checkbox>
+
+      <Label X="38" Y="322" Width="86" Height="17" FontId="5" DisablePrefix="yes"
+             VisibleCondition="ShowProgressDetails">#(loc.ProgressComponentLabel)</Label>
+      <Label Name="ExecuteProgressText" X="128" Y="322" Width="-20" Height="17" FontId="5" DisablePrefix="yes"
+             VisibleCondition="ShowProgressDetails" />
+
+      <Label X="38" Y="346" Width="86" Height="17" FontId="5" DisablePrefix="yes"
+             VisibleCondition="ShowProgressDetails">#(loc.ProgressActionLabel)</Label>
+      <!--
+        The Windows Installer's own ActionData for the step it is executing: the file being copied,
+        the service being written, the registry key being set. It is whatever MSI reports, and it is
+        not parsed, reformatted or interpreted here - reading structured state out of localized
+        installer text is how a progress display starts inventing stages that do not exist.
+      -->
+      <Label Name="ExecuteProgressActionDataText" X="128" Y="346" Width="-24" Height="32" FontId="5" DisablePrefix="yes"
+             VisibleCondition="ShowProgressDetails" />
+
+      <Label X="38" Y="386" Width="86" Height="17" FontId="5" DisablePrefix="yes"
+             VisibleCondition="ShowProgressDetails">#(loc.ProgressOverallLabel)</Label>
+      <Progressbar Name="OverallCalculatedProgressbar" X="128" Y="388" Width="-24" Height="12"
+                   VisibleCondition="ShowProgressDetails" />
+
       <Button Name="ProgressCancelButton" X="-20" Y="-20" Width="90" Height="26" TabStop="yes" FontId="0">#(loc.ProgressCancelButton)</Button>
     </Page>
 
@@ -159,6 +225,58 @@
         <Text Condition="WixBundleAction = 7">#(loc.SuccessModifyHeader)</Text>
         <Text Condition="WixBundleAction = 8">#(loc.SuccessRepairHeader)</Text>
       </Label>
+      <!--
+        The installation summary.
+
+        Every line is either proven by this bundle or it is not claimed. What Burn can actually
+        establish is: which runtimes are present or were just installed, that the MSI transaction
+        committed (the operator is reading this page, so it did), and whether a service registered
+        under one of NUT's known names exists on the machine.
+
+        Two things are deliberately absent, and their absence is the honest answer rather than a gap:
+
+        - NutManager Operators. Burn has no local-group search; a group lives in the SAM, not the
+          registry, and there is no supported WiX search for it. Rather than print a green tick that
+          nothing checked, this page names the group as something to verify and points at the one
+          place that can genuinely answer - NutManager Agent Config, which asks Windows through the
+          same SID-backed lookup the agent itself uses.
+        - The service's running state. It is registered and Automatic and deliberately not started,
+          which the action block explains. The old screen said "Estado: Parado" beside "HTTPS não
+          configurado", and both read as failures of the installation rather than as the next thing
+          for the administrator to do.
+
+        The runtime lines are conditioned on "present, or we installed it". A runtime installed a
+        moment ago does not change DotNetRuntimeVersion, because searches run during Detect and are
+        not re-run after Apply - so the detect-time value alone would report a freshly installed
+        runtime as missing. The packages are Vital, so had either install failed this would be the
+        Failure page instead, which is what makes the second half of that condition true rather than
+        hopeful.
+      -->
+      <Label X="20" Y="176" Width="-20" Height="16" FontId="4" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryHeader)</Label>
+
+      <Label X="24" Y="200" Width="-20" Height="16" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6 AND (DotNetRuntimeVersion &gt;= v10.0.0 OR InstallDotNetRuntime)">#(loc.SummaryDotNet)</Label>
+      <Label X="24" Y="220" Width="-20" Height="16" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6 AND (AspNetCoreRuntimeVersion &gt;= v10.0.0 OR InstallAspNetRuntime)">#(loc.SummaryAspNetCore)</Label>
+      <Label X="24" Y="240" Width="-20" Height="16" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryService)</Label>
+      <Label X="24" Y="260" Width="-20" Height="16" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryEventLog)</Label>
+
+      <Label X="24" Y="280" Width="-20" Height="16" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6 AND NutServiceDetected">#(loc.SummaryNutDetected)</Label>
+      <Label X="24" Y="280" Width="-20" Height="16" FontId="6" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6 AND NOT NutServiceDetected">#(loc.SummaryNutMissing)</Label>
+
+      <Label X="24" Y="300" Width="-20" Height="16" FontId="5" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryOperators)</Label>
+
+      <Label X="20" Y="332" Width="-20" Height="16" FontId="6" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryActionHeader)</Label>
+      <Label X="20" Y="352" Width="-20" Height="64" FontId="3" DisablePrefix="yes"
+             VisibleCondition="WixBundleAction = 6">#(loc.SummaryActionText)</Label>
+
       <Label X="20" Y="-72" Width="-20" Height="34" FontId="3" DisablePrefix="yes" VisibleCondition="WixStdBARestartRequired">
         <Text>#(loc.SuccessRestartText)</Text>
         <Text Condition="WixBundleAction = 3">#(loc.SuccessUninstallRestartText)</Text>

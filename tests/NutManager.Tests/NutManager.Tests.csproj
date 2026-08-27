@@ -18,6 +18,9 @@
     <!-- The agent's own configuration rules decide whether a privileged listener may open, so the
          test project references it directly rather than restating them. -->
     <ProjectReference Include="..\..\src\NutManager.Agent\NutManager.Agent.csproj" />
+    <!-- The configuration utility's view model carries the transport, group, certificate and service
+         rules, so the tests drive it directly against fakes rather than through a window. -->
+    <ProjectReference Include="..\..\src\NutManager.Agent.Config\NutManager.Agent.Config.csproj" />
     <ProjectReference Include="..\..\src\NutManager.App\NutManager.App.csproj" />
     <ProjectReference Include="..\..\src\NutManager.Core\NutManager.Core.csproj" />
     <ProjectReference Include="..\..\src\NutManager.Infrastructure\NutManager.Infrastructure.csproj" />

@@ -72,7 +72,10 @@ if (-not (Get-Command wix -ErrorAction SilentlyContinue))
 # Extensions are separate installs from the toolset and their absence surfaces late - the packages
 # build, then the bundle fails. Provisioning them here keeps a build agent and a workstation on the
 # same footing, and each version is pinned to the toolset's for the same reason the toolset is.
-foreach ($extension in @('WixToolset.BootstrapperApplications.wixext', 'WixToolset.Netfx.wixext'))
+foreach ($extension in @(
+    'WixToolset.BootstrapperApplications.wixext',
+    'WixToolset.Netfx.wixext',
+    'WixToolset.Util.wixext'))
 {
     if (-not (wix extension list --global 2>$null | Select-String -SimpleMatch $extension -Quiet))
     {
@@ -136,7 +139,9 @@ function Publish-Product
         --output $Output `
         -p:NutManagerVersion=$Version `
         -p:PublishTrimmed=false `
-        -p:PublishSingleFile=false
+        -p:PublishSingleFile=false `
+        -p:DebugType=None `
+        -p:DebugSymbols=false
     if ($LASTEXITCODE -ne 0) { throw "Publish failed for $Project." }
 }
 
@@ -156,9 +161,16 @@ Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.App\NutManag
 Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent\NutManager.Agent.csproj') `
                 -Output $agentPublish -SelfContained $false
 
+# Agent Config is part of the Agent product, not a separately deployed runtime island. Publishing it
+# framework-dependent into the same staging directory lets the MSI own both executables while their
+# shared Core/Infrastructure assemblies and the machine runtimes remain single copies.
+Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent.Config\NutManager.Agent.Config.csproj') `
+                -Output $agentPublish -SelfContained $false
+
 foreach ($expected in @(
     @{ Path = (Join-Path $desktopPublish 'NutManager.App.exe'); Name = 'desktop application' },
-    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.exe'); Name = 'agent service' }))
+    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.exe'); Name = 'agent service' },
+    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.Config.exe'); Name = 'agent configuration utility' }))
 {
     if (-not (Test-Path -LiteralPath $expected.Path))
     {
@@ -197,6 +209,57 @@ foreach ($requiredFramework in @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.
     }
 }
 Write-Host '  agent runtimeconfig requires Microsoft.NETCore.App and Microsoft.AspNetCore.App 10.x' -ForegroundColor Green
+
+# The configuration utility may use only frameworks already guaranteed by the Agent bundle. Avalonia
+# is packaged as ordinary application assemblies; introducing WindowsDesktop here would silently add
+# a third prerequisite that the installer neither detects nor installs.
+$configRuntimeConfigPath = Join-Path $agentPublish 'NutManager.Agent.Config.runtimeconfig.json'
+if (-not (Test-Path -LiteralPath $configRuntimeConfigPath))
+{
+    throw 'The Agent Config runtimeconfig is missing from the framework-dependent publish.'
+}
+
+$configRuntimeConfig = Get-Content -LiteralPath $configRuntimeConfigPath -Raw | ConvertFrom-Json
+$configFrameworks = @()
+$runtimeOptionNames = @($configRuntimeConfig.runtimeOptions.PSObject.Properties.Name)
+if ($runtimeOptionNames -contains 'framework')
+{
+    $configFrameworks += $configRuntimeConfig.runtimeOptions.framework
+}
+if ($runtimeOptionNames -contains 'frameworks')
+{
+    $configFrameworks += @($configRuntimeConfig.runtimeOptions.frameworks)
+}
+
+if ($configFrameworks.Count -eq 0)
+{
+    throw 'The Agent Config runtimeconfig declares no shared framework.'
+}
+
+$allowedAgentConfigFrameworks = @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.App')
+foreach ($framework in $configFrameworks)
+{
+    if ($allowedAgentConfigFrameworks -notcontains [string] $framework.name -or
+        -not ([string] $framework.version).StartsWith('10.', [StringComparison]::Ordinal))
+    {
+        throw "Agent Config introduced an unsupported shared framework: $($framework.name) $($framework.version)."
+    }
+}
+
+if (@($configFrameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' }).Count -ne 1)
+{
+    throw 'The Agent Config runtimeconfig must require exactly one Microsoft.NETCore.App 10.x framework.'
+}
+Write-Host '  Agent Config uses only the Agent bundle shared runtimes' -ForegroundColor Green
+
+# Some native Avalonia runtime packages carry vendor PDBs independently of the project's DebugType.
+# They are useful to a developer but are not part of the release payload; remove symbols only from
+# this generated staging tree, then assert the package inputs are clean.
+Get-ChildItem -LiteralPath $staging -Recurse -File -Filter '*.pdb' | Remove-Item -Force
+if (Get-ChildItem -LiteralPath $staging -Recurse -File -Filter '*.pdb')
+{
+    throw 'Release staging still contains debug symbols.'
+}
 
 # ---------------------------------------------------------------- installers
 
@@ -249,12 +312,16 @@ Build-Installer -Name 'NutManager' -Directory 'Desktop' -PublishDir $desktopPubl
                 -ThemeLocalization $themeLocalizationDesktop `
                 -Extensions @('WixToolset.BootstrapperApplications.wixext')
 
-# The Agent bundle additionally needs the Netfx extension, which is where DotNetCoreSearch lives.
+# The Agent bundle additionally needs Netfx for DotNetCoreSearch and Util for its supported registry
+# searches on the completion page. Both are build-time extensions only.
 Build-Installer -Name 'NutManager.Agent' -Directory 'Agent' -PublishDir $agentPublish `
                 -SetupName "NutManager-Agent-Setup-$Version.exe" `
                 -ThemeFile (Join-Path $repositoryRoot 'installer\Common\Theme\AgentTheme.xml') `
                 -ThemeLocalization $themeLocalizationAgent `
-                -Extensions @('WixToolset.BootstrapperApplications.wixext', 'WixToolset.Netfx.wixext')
+                -Extensions @(
+                    'WixToolset.BootstrapperApplications.wixext',
+                    'WixToolset.Netfx.wixext',
+                    'WixToolset.Util.wixext')
 
 # ---------------------------------------------------------------- portable archive
 
