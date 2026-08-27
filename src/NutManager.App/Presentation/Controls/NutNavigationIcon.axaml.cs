@@ -28,6 +28,7 @@ public partial class NutNavigationIcon : UserControl
     public bool IsAdministration => Kind == AppPage.Administration;
     public bool IsDiagnostics => Kind == AppPage.Diagnostics;
     public bool IsSettings => Kind == AppPage.Settings;
+    public bool IsAbout => Kind == AppPage.About;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
@@ -50,6 +51,7 @@ public partial class NutNavigationIcon : UserControl
         RaisePropertyChanged(IsAdministrationProperty, default, default);
         RaisePropertyChanged(IsDiagnosticsProperty, default, default);
         RaisePropertyChanged(IsSettingsProperty, default, default);
+        RaisePropertyChanged(IsAboutProperty, default, default);
         ApplyMotion();
     }
 
@@ -75,7 +77,7 @@ public partial class NutNavigationIcon : UserControl
     {
         if (!IsActive)
         {
-            foreach (var glyph in new Visual[] { OverviewGlyph, DevicesGlyph, AdministrationGlyph, DiagnosticsGlyph, SettingsGlyph })
+            foreach (var glyph in new Visual[] { OverviewGlyph, DevicesGlyph, AdministrationGlyph, DiagnosticsGlyph, SettingsGlyph, AboutGlyph })
             {
                 NutIconMotion.Reset(glyph, restingOpacity: 1);
             }
@@ -111,6 +113,10 @@ public partial class NutNavigationIcon : UserControl
             case AppPage.Settings:
                 NutIconMotion.Spin(SettingsGlyph, GlyphSize, TimeSpan.FromSeconds(7));
                 break;
+
+            case AppPage.About:
+                NutIconMotion.Breathe(AboutGlyph, GlyphSize, 1.08, TimeSpan.FromSeconds(1.9));
+                break;
         }
     }
 
@@ -124,4 +130,6 @@ public partial class NutNavigationIcon : UserControl
         AvaloniaProperty.RegisterDirect<NutNavigationIcon, bool>(nameof(IsDiagnostics), owner => owner.IsDiagnostics);
     private static readonly DirectProperty<NutNavigationIcon, bool> IsSettingsProperty =
         AvaloniaProperty.RegisterDirect<NutNavigationIcon, bool>(nameof(IsSettings), owner => owner.IsSettings);
+    private static readonly DirectProperty<NutNavigationIcon, bool> IsAboutProperty =
+        AvaloniaProperty.RegisterDirect<NutNavigationIcon, bool>(nameof(IsAbout), owner => owner.IsAbout);
 }

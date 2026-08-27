@@ -35,6 +35,9 @@ public sealed record ApplicationRuntimeInfo(
             RuntimeInformation.ProcessArchitecture.ToString());
     }
 
+    /// <summary>The build metadata already stamped into the informational version.</summary>
+    public string BuildIdentifier => FormatBuildIdentifier(Version);
+
     /// <summary>
     /// Turns a technical version into the one the interface shows.
     ///
@@ -59,5 +62,15 @@ public sealed record ApplicationRuntimeInfo(
         if (trimmed.Length == 0) return UnavailableText;
 
         return trimmed.StartsWith('v') ? trimmed : "v" + trimmed;
+    }
+
+    public static string FormatBuildIdentifier(string version)
+    {
+        if (string.IsNullOrWhiteSpace(version)) return UnavailableText;
+
+        var metadata = version.Trim().IndexOf('+');
+        if (metadata < 0 || metadata == version.Trim().Length - 1) return UnavailableText;
+
+        return version.Trim()[(metadata + 1)..];
     }
 }

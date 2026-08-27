@@ -120,9 +120,10 @@ public partial class App : Application
         // when it appears; that call is idempotent and now finds the loop already running.
         remoteWindowsService?.StartMonitoring();
         var installationDetector = isLocalManagement ? new WindowsNutInstallationDetector() : null;
+        var applicationRuntimeInfo = ApplicationRuntimeInfo.CreateCurrent();
         var diagnostics = new DiagnosticsPageViewModel(
             settings,
-            ApplicationRuntimeInfo.CreateCurrent(),
+            applicationRuntimeInfo,
             polling,
             devices,
             installationDetector,
@@ -177,6 +178,10 @@ public partial class App : Application
         };
         if (loadError is not null) settingsPage.SetLoadError(loadError);
         if (profileBootstrap.Warning is not null) settingsPage.SetProfileLoadError(profileBootstrap.Warning, profileBootstrap.IsProfileDocumentLoadFailure);
+        var about = new AboutPageViewModel(
+            applicationRuntimeInfo,
+            new WindowsExternalResourceLauncher(),
+            settings.Language);
         var viewModel = new MainWindowViewModel(
             settings.Theme,
             overview,
@@ -193,7 +198,8 @@ public partial class App : Application
             runtimeProfile.Profile.AccessMode,
             runtimeProfile.Profile.Monitoring.PreferredUpsName,
             runtimeProfile.Profile,
-            remoteWindowsService);
+            remoteWindowsService,
+            about);
         viewModel.SetTransparencyPreference(settings.BackgroundTransparency);
         administration.SemanticReviewChanged += viewModel.SetSemanticReview;
         viewModel.ThemeChanged += async preference =>
@@ -215,6 +221,12 @@ public partial class App : Application
             // Managed-file scope is presentation and write authorization for the same runtime profile.
             administration.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
             viewModel.UpdateManagedConfigurationFiles(profile.Management.ManagedFiles);
+
+            // The name, which is presentation and nothing more. The shell captured it at startup, so
+            // renaming the server the session was already using left every surface announcing the old
+            // one until a restart. Only the name crosses over here: the endpoint, transport and
+            // credentials this session connected with are untouched by design.
+            viewModel.ApplyActiveProfileIdentity(profile);
 
             // The access mode, which used to need a restart. Every surface reporting it derives from a
             // profile copy taken at startup, so the interface went on claiming Manage after the profile

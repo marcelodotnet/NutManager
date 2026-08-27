@@ -27,4 +27,32 @@
   -->
   <?define DesktopBundleUpgradeCode = "{3A7F91C5-6E42-4D08-B57A-9C1E4B026F83}" ?>
   <?define AgentBundleUpgradeCode = "{95E2B738-4A1C-4F69-8D03-7E56C0A9142B}" ?>
+
+  <!--
+    Official destinations. The account was renamed from Marcelo-PX to marcelodotnet; GitHub still
+    redirects the old name, but a redirect lasts only until someone else claims it, so nothing
+    installer-visible points at it any more.
+  -->
+  <?define ProjectUrl = "https://github.com/marcelodotnet/NutManager" ?>
+  <?define SourceLicenseUrl = "https://github.com/marcelodotnet/NutManager/blob/main/LICENSE" ?>
+
+  <!--
+    The Agent's runtime prerequisite.
+
+    Detection and installation are deliberately different questions. Detection asks whether any
+    serviced ASP.NET Core 10.x can run the agent, so a machine already on 10.0.7 is satisfied and
+    nothing is downloaded. Installation, when it is needed, uses one exact pinned build - a floating
+    "latest" URL would mean two machines running the same installer on different days get different
+    runtimes, and neither could be reproduced from the repository.
+
+    The hash and size below describe that exact file. They come from Microsoft's published checksum
+    list for 10.0.11 and from the download's own response headers, not from a local copy.
+  -->
+  <?define AspNetCoreMajorVersion = "10" ?>
+  <?define AspNetCoreRuntimeVersion = "10.0.11" ?>
+  <?define AspNetCoreRuntimeFileName = "aspnetcore-runtime-10.0.11-win-x64.exe" ?>
+  <?define AspNetCoreRuntimeDisplayName = "Microsoft ASP.NET Core Runtime 10 x64" ?>
+  <?define AspNetCoreRuntimeUrl = "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.11/aspnetcore-runtime-10.0.11-win-x64.exe" ?>
+  <?define AspNetCoreRuntimeSize = "11262944" ?>
+  <?define AspNetCoreRuntimeHash = "a03584ddf93937619500e9126c83d55afef5dc10ae1eb1d861b581dbaec3656a052fd11c9dd4763cc7a9c6dcfe9987f981d27fbf282afd466a568143d66d319f" ?>
 </Include>

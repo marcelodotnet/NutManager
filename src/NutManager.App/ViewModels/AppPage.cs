@@ -6,5 +6,6 @@ public enum AppPage
     Devices,
     Administration,
     Diagnostics,
-    Settings
+    Settings,
+    About
 }

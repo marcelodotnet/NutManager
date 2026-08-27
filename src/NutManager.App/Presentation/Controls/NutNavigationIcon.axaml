@@ -20,7 +20,7 @@
     property.
 
     Each glyph is normalised into a 20x20 box rather than drawn at its native coordinates. The
-    library's icons do not all occupy the 24 grid equally — measured, these five span 18 to 22 units
+    library's icons do not all occupy the 24 grid equally — their native dimensions vary noticeably
     on their longest side, a 22% spread — so drawing them unscaled made Administration and the cog
     read as oversized while the diagnostics trace, only 14 units tall, read as small. The cog also
     starts at x=2.27 where its neighbours start at x=3.00, which pushed it toward the selection bar.
@@ -72,6 +72,13 @@
     <Grid Classes="nut-icon-motion nut-icon-gear" IsVisible="{Binding IsSettings, ElementName=Root}">
       <Panel x:Name="SettingsGlyph" Classes="nut-nav-slot">
         <shapes:Path Classes="nut-nav-glyph" Data="{DynamicResource NutIconSettings}" />
+      </Panel>
+    </Grid>
+
+    <!-- About: the product information mark uses the same calm breathing cadence as overview. -->
+    <Grid Classes="nut-icon-motion nut-icon-lift" IsVisible="{Binding IsAbout, ElementName=Root}">
+      <Panel x:Name="AboutGlyph" Classes="nut-nav-slot">
+        <shapes:Path Classes="nut-nav-glyph" Data="{DynamicResource NutIconInfo}" />
       </Panel>
     </Grid>
   </Grid>

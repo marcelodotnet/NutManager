@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NutManager Agent installer strings.
+
+  Same Id set as the Desktop files, plus the dependency block only the Agent has. Parity with
+  Agent.pt-BR.wxl is enforced by test.
+
+  Not translated: NutManager Agent, NutManagerAgent, Microsoft ASP.NET Core Runtime 10 x64, paths and
+  versions. Translating a Windows service name would break searching for it.
+-->
+<WixLocalization Culture="en-US" Language="1033" xmlns="http://wixtoolset.org/schemas/v4/wxl">
+  <String Id="Caption" Value="[WixBundleName] Setup" />
+  <String Id="Title" Value="[WixBundleName]" />
+  <String Id="ProductTagline" Value="Secure service for remote NUT administration" />
+  <String Id="ProductKind" Value="Server component" />
+  <String Id="InstallVersion" Value="Version [WixBundleVersion]" />
+
+  <String Id="InstallIntro" Value="NutManager Agent will be installed as a Windows service." />
+  <String Id="ServiceLabel" Value="Service:" />
+  <String Id="ServiceValue" Value="NutManagerAgent" />
+  <String Id="StartupLabel" Value="Startup:" />
+  <String Id="StartupValue" Value="Automatic" />
+  <String Id="NutUntouched" Value="This installer does not install, configure or restart the NUT service." />
+
+  <String Id="DependenciesHeader" Value="Dependencies" />
+  <String Id="RuntimeName" Value="Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="RuntimeInstalled" Value="Installed" />
+  <String Id="RuntimeRequired" Value="Required" />
+  <String Id="RuntimeInstallCheckbox" Value="Install Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="RuntimeBlockedMessage" Value="NutManager Agent requires Microsoft ASP.NET Core Runtime 10 x64. Install the runtime manually, or tick the option above to continue." />
+
+  <String Id="LocationLabel" Value="Install location:" />
+  <String Id="LocationValue" Value="C:\Program Files\NutManager Agent" />
+  <String Id="TermsHeader" Value="NutManager Terms of Use" />
+  <String Id="InstallAcceptCheckbox" Value="I have read and &amp;accept the NutManager Terms of Use." />
+  <String Id="GplNotice" Value="Source code licensed under GNU GPL v2.0. The Terms of Use do not restrict GPL rights." />
+  <String Id="InstallInstallButton" Value="&amp;Install Agent" />
+  <String Id="InstallCancelButton" Value="&amp;Cancel" />
+  <String Id="InstallOptionsButton" Value="&amp;Options" />
+
+  <String Id="OptionsHeader" Value="Setup options" />
+  <String Id="OptionsLocationLabel" Value="Install location:" />
+  <String Id="OptionsBrowseButton" Value="&amp;Browse" />
+  <String Id="OptionsOkButton" Value="&amp;OK" />
+  <String Id="OptionsCancelButton" Value="&amp;Cancel" />
+
+  <String Id="ProgressHeader" Value="Installing NutManager Agent..." />
+  <String Id="ProgressLabel" Value="Processing:" />
+  <String Id="OverallProgressPackageText" Value="Initializing..." />
+  <String Id="ProgressCancelButton" Value="&amp;Cancel" />
+
+  <String Id="ModifyHeader" Value="NutManager Agent maintenance" />
+  <String Id="ModifyRepairButton" Value="&amp;Repair" />
+  <String Id="ModifyUninstallButton" Value="&amp;Uninstall" />
+  <String Id="ModifyCancelButton" Value="&amp;Close" />
+
+  <String Id="SuccessHeader" Value="Completed successfully." />
+  <String Id="SuccessInstallHeader" Value="NutManager Agent was installed successfully." />
+  <String Id="SuccessRepairHeader" Value="NutManager Agent was repaired successfully." />
+  <String Id="SuccessUninstallHeader" Value="NutManager Agent was removed successfully." />
+  <String Id="SuccessUnsafeUninstallHeader" Value="NutManager Agent was removed successfully." />
+  <String Id="SuccessModifyHeader" Value="The change completed successfully." />
+  <String Id="SuccessCacheHeader" Value="The download completed successfully." />
+  <String Id="SuccessLayoutHeader" Value="The local copy was created successfully." />
+  <String Id="SuccessLaunchButton" Value="&amp;Launch" />
+  <String Id="SuccessRestartText" Value="You must restart your computer before you can use the software." />
+  <String Id="SuccessUninstallRestartText" Value="You must restart your computer to complete the removal of the software." />
+  <String Id="SuccessRestartButton" Value="&amp;Restart" />
+  <String Id="SuccessCloseButton" Value="&amp;Close" />
+
+  <String Id="FailureHeader" Value="Setup failed." />
+  <String Id="FailureInstallHeader" Value="NutManager Agent could not be installed." />
+  <String Id="FailureRepairHeader" Value="NutManager Agent could not be repaired." />
+  <String Id="FailureUninstallHeader" Value="NutManager Agent could not be removed." />
+  <String Id="FailureUnsafeUninstallHeader" Value="NutManager Agent could not be removed." />
+  <String Id="FailureModifyHeader" Value="The change could not be completed." />
+  <!-- A download failure is named as a download failure. Calling it an Agent failure would send the
+       administrator to investigate the wrong machine. -->
+  <String Id="FailureCacheHeader" Value="A required package could not be downloaded. Check internet access and run setup again." />
+  <String Id="FailureLayoutHeader" Value="The local copy could not be created." />
+  <String Id="FailureHyperlinkLogText" Value="One or more issues stopped the installation. Fix them and run setup again. For details see the &lt;a href=&quot;#&quot;&gt;log file&lt;/a&gt;." />
+  <String Id="FailureRestartText" Value="You must restart your computer to complete the rollback of the software." />
+  <String Id="FailureRestartButton" Value="&amp;Restart" />
+  <String Id="FailureCloseButton" Value="&amp;Close" />
+
+  <!--
+    The help text documents unattended behaviour, including the variable that declines the
+    prerequisite. An administrator using /quiet needs to know the runtime is installed by default and
+    how to refuse that deliberately.
+  -->
+  <String Id="HelpHeader" Value="Setup help" />
+  <String Id="HelpText" Value="/install | /repair | /uninstall | /layout [directory] - installs, repairs, uninstalls or&#xA;   creates a complete local copy of the bundle in directory. Install is the default.&#xA;&#xA;/passive | /quiet -  displays minimal UI with no prompts or displays no UI and&#xA;   no prompts. By default UI and all prompts are displayed.&#xA;&#xA;/norestart   - suppress any attempts to restart.&#xA;/log log.txt - logs to a specific file. By default a log file is created in %TEMP%.&#xA;&#xA;InstallAspNetRuntime=0 - do not install Microsoft ASP.NET Core Runtime 10 x64.&#xA;   If the runtime is absent, setup fails before registering the service rather than&#xA;   leaving a NutManagerAgent that cannot start." />
+  <String Id="HelpCloseButton" Value="&amp;Close" />
+
+  <String Id="CheckingForUpdatesLabel" Value="Checking for updates" />
+  <String Id="UpdateButton" Value="&amp;Update to version [WixStdBAUpdateAvailable]" />
+  <String Id="ConfirmCancelMessage" Value="Are you sure you want to cancel?" />
+  <String Id="ExecuteUpgradeRelatedBundleMessage" Value="Previous version" />
+
+  <String Id="FilesInUseTitle" Value="Files In Use" />
+  <String Id="FilesInUseLabel" Value="The following applications are using files that need to be updated:" />
+  <String Id="FilesInUseNetfxCloseRadioButton" Value="Close the &amp;applications." />
+  <String Id="FilesInUseCloseRadioButton" Value="Close the &amp;applications and attempt to restart them." />
+  <String Id="FilesInUseDontCloseRadioButton" Value="&amp;Do not close applications. A reboot will be required." />
+  <String Id="FilesInUseRetryButton" Value="&amp;Retry" />
+  <String Id="FilesInUseIgnoreButton" Value="&amp;Ignore" />
+  <String Id="FilesInUseExitButton" Value="E&amp;xit" />
+</WixLocalization>

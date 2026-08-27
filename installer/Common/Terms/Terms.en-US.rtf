@@ -1,0 +1,185 @@
+{\rtf1\ansi\ansicpg1252\deff0{\fonttbl{\f0\fnil\fcharset0 Segoe UI;}}
+\viewkind4\uc1\pard\f0\fs20
+\pard\sa180\b\fs32 Terms of Use \u8212? NutManager\b0\fs20\par
+\pard\sa120 \b Last updated:\b0  27 August 2026\par
+\pard\sb180\sa90\b\fs24 1. About NutManager\b0\fs20\par
+\pard\sa120 \b NutManager\b0  is open-source software developed to make it easier to monitor, configure, diagnose and administer \b Network UPS Tools (NUT)\b0  installations on Windows systems.\par
+\pard\sa120 NutManager is an independent tool. It is not part of, affiliated with, or an official representative of the Network UPS Tools project.\par
+\pard\sb180\sa90\b\fs24 2. Acceptance\b0\fs20\par
+\pard\sa120 By installing, running or using NutManager, the user acknowledges the characteristics, limitations and risks inherent in administering power systems, UPS units, Windows services and NUT configuration files.\par
+\pard\sa120 A user who does not agree with these conditions may simply stop using the software.\par
+\pard\sb180\sa90\b\fs24 3. Free software and licence\b0\fs20\par
+\pard\sa120 NutManager's source code is made available under the \b GNU General Public License version 2.0 \u8212? GPL v2.0\b0 .\par
+\pard\sa120 These Terms of Use \b do not replace, restrict or modify the rights granted by GPL v2.0\b0  in respect of:\par
+\pard\fi-200\li480\sa40\bullet\tab use;\par
+\pard\fi-200\li480\sa40\bullet\tab study;\par
+\pard\fi-200\li480\sa40\bullet\tab copying;\par
+\pard\fi-200\li480\sa40\bullet\tab modification;\par
+\pard\fi-200\li480\sa40\bullet\tab redistribution;\par
+\pard\fi-200\li480\sa40\bullet\tab distribution of modified versions.\par
+\pard\sa120 Where these Terms conflict with the rights granted by GPL v2.0 over the licensed code, the applicable GPL licence terms prevail.\par
+\pard\sb180\sa90\b\fs24 4. Purpose\b0\fs20\par
+\pard\sa120 NutManager may be used, among other things, to:\par
+\pard\fi-200\li480\sa40\bullet\tab monitor NUT servers and UPS units;\par
+\pard\fi-200\li480\sa40\bullet\tab inspect state, load, battery and other information published by NUT;\par
+\pard\fi-200\li480\sa40\bullet\tab manage server profiles;\par
+\pard\fi-200\li480\sa40\bullet\tab edit NUT configuration through a graphical interface;\par
+\pard\fi-200\li480\sa40\bullet\tab generate previews before changes are applied;\par
+\pard\fi-200\li480\sa40\bullet\tab back up, validate, safely replace and roll back configuration;\par
+\pard\fi-200\li480\sa40\bullet\tab inspect and administer the Windows service associated with NUT;\par
+\pard\fi-200\li480\sa40\bullet\tab list available serial ports;\par
+\pard\fi-200\li480\sa40\bullet\tab use NutManager Agent for authorised remote administration;\par
+\pard\fi-200\li480\sa40\bullet\tab run diagnostics related to the NUT environment.\par
+\pard\sa120 The features actually available may vary with version, environment, permissions, hardware, operating system and NUT configuration.\par
+\pard\sb180\sa90\b\fs24 5. Administrator responsibility\b0\fs20\par
+\pard\sa120 NutManager is an administrative tool. Some operations can directly affect the availability of the power monitoring system.\par
+\pard\sa120 The user is responsible for:\par
+\pard\fi-200\li480\sa40\bullet\tab understanding changes before applying them;\par
+\pard\fi-200\li480\sa40\bullet\tab reviewing the preview the software presents;\par
+\pard\fi-200\li480\sa40\bullet\tab keeping adequate backups;\par
+\pard\fi-200\li480\sa40\bullet\tab ensuring they are authorised to administer the computers involved;\par
+\pard\fi-200\li480\sa40\bullet\tab keeping credentials, certificates and access keys protected;\par
+\pard\fi-200\li480\sa40\bullet\tab confirming that configuration is compatible with their hardware and their version of NUT;\par
+\pard\fi-200\li480\sa40\bullet\tab testing changes in a suitable environment when necessary;\par
+\pard\fi-200\li480\sa40\bullet\tab assessing the impact before stopping or restarting services.\par
+\pard\sa120 \b Interrupting the NUT service can interrupt UPS monitoring and the automatic shutdown mechanisms associated with power failures.\b0 \par
+\pard\sb180\sa90\b\fs24 6. Configuration changes\b0\fs20\par
+\pard\sa120 NutManager uses mechanisms intended to reduce the risk of file corruption, including:\par
+\pard\fi-200\li480\sa40\bullet\tab validation;\par
+\pard\fi-200\li480\sa40\bullet\tab a preview before writing;\par
+\pard\fi-200\li480\sa40\bullet\tab backup;\par
+\pard\fi-200\li480\sa40\bullet\tab temporary write;\par
+\pard\fi-200\li480\sa40\bullet\tab safe replacement;\par
+\pard\fi-200\li480\sa40\bullet\tab verification afterwards;\par
+\pard\fi-200\li480\sa40\bullet\tab rollback where applicable.\par
+\pard\sa120 These mechanisms reduce risk, but \b do not guarantee that every change will produce the intended behaviour in NUT or in the connected hardware\b0 .\par
+\pard\sa120 The user remains responsible for the content and the consequences of the configuration applied.\par
+\pard\sa120 NutManager deliberately \b does not automatically restart NUT after a configuration change\b0 . Where that is needed, the administrator must perform it separately.\par
+\pard\sb180\sa90\b\fs24 7. Service control\b0\fs20\par
+\pard\sa120 NutManager may allow operations such as:\par
+\pard\fi-200\li480\sa40\bullet\tab start;\par
+\pard\fi-200\li480\sa40\bullet\tab stop;\par
+\pard\fi-200\li480\sa40\bullet\tab restart;\par
+\pard\sa120 on the Windows service related to NUT.\par
+\pard\sa120 These operations can cause temporary or permanent loss of monitoring.\par
+\pard\sa120 The user should assess the impact before performing them.\par
+\pard\sb180\sa90\b\fs24 8. NutManager Agent\b0\fs20\par
+\pard\sa120 \b NutManager Agent\b0  is an optional component intended for administering remote Windows servers.\par
+\pard\sa120 The Agent:\par
+\pard\fi-200\li480\sa40\bullet\tab operates under the permissions configured on the server;\par
+\pard\fi-200\li480\sa40\bullet\tab uses Windows authentication mechanisms;\par
+\pard\fi-200\li480\sa40\bullet\tab restricts administrative operations to authorised users;\par
+\pard\fi-200\li480\sa40\bullet\tab does not act as a general-purpose remote execution mechanism;\par
+\pard\fi-200\li480\sa40\bullet\tab must not be treated as a substitute for the organisation's security policies.\par
+\pard\sa120 It is the administrator's responsibility to correctly configure:\par
+\pard\fi-200\li480\sa40\bullet\tab the NutManager Operators group;\par
+\pard\fi-200\li480\sa40\bullet\tab permissions;\par
+\pard\fi-200\li480\sa40\bullet\tab certificates;\par
+\pard\fi-200\li480\sa40\bullet\tab HTTPS, where used;\par
+\pard\fi-200\li480\sa40\bullet\tab the firewall;\par
+\pard\fi-200\li480\sa40\bullet\tab Windows policies;\par
+\pard\fi-200\li480\sa40\bullet\tab authorised credentials.\par
+\pard\sb180\sa90\b\fs24 9. Credentials and security\b0\fs20\par
+\pard\sa120 Certain features may use credentials for:\par
+\pard\fi-200\li480\sa40\bullet\tab SFTP;\par
+\pard\fi-200\li480\sa40\bullet\tab SMB;\par
+\pard\fi-200\li480\sa40\bullet\tab NutManager Agent;\par
+\pard\fi-200\li480\sa40\bullet\tab NUT authentication.\par
+\pard\sa120 Where supported, NutManager may use the \b Windows Credential Manager\b0  to store credentials.\par
+\pard\sa120 The user is responsible for:\par
+\pard\fi-200\li480\sa40\bullet\tab protecting their Windows account;\par
+\pard\fi-200\li480\sa40\bullet\tab limiting administrative access to the machine;\par
+\pard\fi-200\li480\sa40\bullet\tab protecting private keys;\par
+\pard\fi-200\li480\sa40\bullet\tab using valid certificates;\par
+\pard\fi-200\li480\sa40\bullet\tab controlling who belongs to the authorised groups;\par
+\pard\fi-200\li480\sa40\bullet\tab removing credentials once they are no longer needed.\par
+\pard\sa120 No credential storage mechanism should be considered absolute protection against the compromise of a machine already controlled by an attacker.\par
+\pard\sb180\sa90\b\fs24 10. Privacy and telemetry\b0\fs20\par
+\pard\sa120 The current version of NutManager \b has no telemetry system and performs no automatic collection of usage data by the developer\b0 .\par
+\pard\sa120 The information the application processes is used locally or transmitted directly to the servers the user has configured, according to the feature being used.\par
+\pard\sa120 That may include connections to:\par
+\pard\fi-200\li480\sa40\bullet\tab a NUT server;\par
+\pard\fi-200\li480\sa40\bullet\tab an SFTP server;\par
+\pard\fi-200\li480\sa40\bullet\tab an SMB share;\par
+\pard\fi-200\li480\sa40\bullet\tab NutManager Agent.\par
+\pard\sa120 External links, such as GitHub and documentation, are reached only on explicit user action.\par
+\pard\sb180\sa90\b\fs24 11. Third-party software and services\b0\fs20\par
+\pard\sa120 NutManager depends on or interacts with third-party technologies, including \b Network UPS Tools\b0  and Windows operating system components.\par
+\pard\sa120 Those projects have their own:\par
+\pard\fi-200\li480\sa40\bullet\tab terms;\par
+\pard\fi-200\li480\sa40\bullet\tab licences;\par
+\pard\fi-200\li480\sa40\bullet\tab policies;\par
+\pard\fi-200\li480\sa40\bullet\tab limitations;\par
+\pard\fi-200\li480\sa40\bullet\tab support requirements.\par
+\pard\sa120 NutManager's developer does not control changes made by those third parties.\par
+\pard\sb180\sa90\b\fs24 12. Compatibility\b0\fs20\par
+\pard\sa120 NutManager's official support may vary between versions.\par
+\pard\sa120 A given combination of:\par
+\pard\fi-200\li480\sa40\bullet\tab Windows;\par
+\pard\fi-200\li480\sa40\bullet\tab NUT;\par
+\pard\fi-200\li480\sa40\bullet\tab UPS;\par
+\pard\fi-200\li480\sa40\bullet\tab driver;\par
+\pard\fi-200\li480\sa40\bullet\tab USB/serial adapter;\par
+\pard\fi-200\li480\sa40\bullet\tab network configuration;\par
+\pard\fi-200\li480\sa40\bullet\tab Active Directory domain;\par
+\pard\fi-200\li480\sa40\bullet\tab SMB;\par
+\pard\fi-200\li480\sa40\bullet\tab SFTP;\par
+\pard\fi-200\li480\sa40\bullet\tab certificates;\par
+\pard\sa120 may behave differently from another environment.\par
+\pard\sa120 A statement of compatibility is not a guarantee of operation with every possible device or configuration.\par
+\pard\sb180\sa90\b\fs24 13. No warranty\b0\fs20\par
+\pard\sa120 NutManager is provided \b without warranty of uninterrupted operation, freedom from errors, or fitness for a particular purpose\b0 , subject to the terms of the applicable licence.\par
+\pard\sa120 There is no guarantee that:\par
+\pard\fi-200\li480\sa40\bullet\tab all hardware will be recognised;\par
+\pard\fi-200\li480\sa40\bullet\tab every NUT driver will work;\par
+\pard\fi-200\li480\sa40\bullet\tab every configuration will be valid for a given device;\par
+\pard\fi-200\li480\sa40\bullet\tab remote connections will always be available;\par
+\pard\fi-200\li480\sa40\bullet\tab changes made by the user will not cause unavailability.\par
+\pard\sb180\sa90\b\fs24 14. Limitation of liability\b0\fs20\par
+\pard\sa120 To the maximum extent permitted by applicable law, NutManager's developer and contributors will not be liable for damages arising from the use of, or inability to use, the software, including but not limited to:\par
+\pard\fi-200\li480\sa40\bullet\tab data loss;\par
+\pard\fi-200\li480\sa40\bullet\tab loss or corruption of configuration;\par
+\pard\fi-200\li480\sa40\bullet\tab service unavailability;\par
+\pard\fi-200\li480\sa40\bullet\tab monitoring failure;\par
+\pard\fi-200\li480\sa40\bullet\tab unexpected shutdowns;\par
+\pard\fi-200\li480\sa40\bullet\tab system interruption;\par
+\pard\fi-200\li480\sa40\bullet\tab loss of productivity;\par
+\pard\fi-200\li480\sa40\bullet\tab damage related to incorrect configuration;\par
+\pard\fi-200\li480\sa40\bullet\tab problems arising from hardware, drivers or third-party software.\par
+\pard\sa120 The user must maintain adequate backup, contingency and recovery procedures.\par
+\pard\sb180\sa90\b\fs24 15. Inappropriate use\b0\fs20\par
+\pard\sa120 NutManager was developed for the legitimate administration of systems under the user's responsibility or authorisation.\par
+\pard\sa120 The software must not be used to access, modify or administer systems without the authorisation of the party responsible for them.\par
+\pard\sa120 This provision describes the product's intended purpose and \b does not alter the rights granted by GPL v2.0 over the source code\b0 .\par
+\pard\sb180\sa90\b\fs24 16. Bugs and known limitations\b0\fs20\par
+\pard\sa120 Like any software, NutManager may contain defects, incompatibilities or behaviours not yet identified.\par
+\pard\sa120 Known problems may be documented in:\par
+\pard\fi-200\li480\sa40\bullet\tab the Operator Manual;\par
+\pard\fi-200\li480\sa40\bullet\tab the project's GitHub;\par
+\pard\fi-200\li480\sa40\bullet\tab the release notes.\par
+\pard\sa120 The user should consult the documentation for the installed version before making significant changes in production environments.\par
+\pard\sb180\sa90\b\fs24 17. Updates\b0\fs20\par
+\pard\sa120 NutManager does not guarantee automatic updates.\par
+\pard\sa120 It is the administrator's responsibility to check periodically for new versions, particularly where there are:\par
+\pard\fi-200\li480\sa40\bullet\tab security fixes;\par
+\pard\fi-200\li480\sa40\bullet\tab bug fixes;\par
+\pard\fi-200\li480\sa40\bullet\tab compatibility changes;\par
+\pard\fi-200\li480\sa40\bullet\tab updates to the runtime included with the software.\par
+\pard\sb180\sa90\b\fs24 18. Documentation\b0\fs20\par
+\pard\sa120 The documentation aims to describe the product's actual behaviour, but a temporary difference may exist between a recent version of the software and the published documentation.\par
+\pard\sa120 Where an operational question arises, check:\par
+\pard\fi-200\li480\sa40 1.\tab the installed version;\par
+\pard\fi-200\li480\sa40 2.\tab the release notes;\par
+\pard\fi-200\li480\sa40 3.\tab the corresponding documentation;\par
+\pard\fi-200\li480\sa40 4.\tab the official repository.\par
+\pard\sb180\sa90\b\fs24 19. Changes to these Terms\b0\fs20\par
+\pard\sa120 These Terms may be updated to reflect changes to NutManager, its distribution or its documentation.\par
+\pard\sa120 The current version must state its revision date.\par
+\pard\sb180\sa90\b\fs24 20. Project and developer\b0\fs20\par
+\pard\sa120 \b NutManager\b0 \par
+\pard\sa120 Project developed and maintained by \b Marcelo Pacheco \u8212? @marcelodotnet\b0 .\par
+\pard\sa120 Official repository:\par
+\pard\sa120 https://github.com/marcelodotnet/NutManager\par
+\pard\sa120 Source code licence:\par
+\pard\sa120 \b GNU General Public License v2.0\b0 \par
+}
