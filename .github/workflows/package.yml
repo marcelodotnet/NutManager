@@ -32,6 +32,14 @@ jobs:
       - name: Install WiX
         run: dotnet tool install --global wix --version 5.0.2
 
+      # Pinned to the toolset's own version. The build script provisions these too, so a workstation
+      # and an agent behave the same; doing it here as well keeps the failure early and legible
+      # rather than surfacing halfway through a release build.
+      - name: Install WiX extensions
+        run: |
+          wix extension add --global WixToolset.BootstrapperApplications.wixext/5.0.2
+          wix extension add --global WixToolset.Netfx.wixext/5.0.2
+
       - name: Build release artifacts
         shell: pwsh
         run: ./scripts/build-release.ps1

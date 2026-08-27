@@ -115,5 +115,29 @@ Recorded here because the absence is the design rather than an omission:
 - neither installer creates a domain group;
 - uninstall removes only what the installer itself created.
 
+One thing the agent installer now does, which is worth stating precisely because it is the single
+exception to the list above: it may install **Microsoft ASP.NET Core Runtime 10 x64**, from one fixed
+Microsoft address, verified by hash before it runs. That is a consequence of the agent publishing
+framework-dependent, and it is bounded deliberately — one package, no user-supplied URL, no mirror
+list, no generic prerequisite mechanism, and never removed when the agent is removed.
+
+The rule that governs it: an agent whose runtime is absent and whose prerequisite was declined is not
+installed at all. A registered service that cannot start is worse than a refusal, because the refusal
+is visible and the broken service is not.
+
+## The bootstrapper application
+
+WixStdBA with a custom theme, not a bespoke managed bootstrapper application.
+
+This was reconsidered when the branded screens were specified. WixStdBA turned out to support
+everything the design needed — `ThemeFile` for layout, `LocalizationFile` for strings, `LicenseFile`
+for the embedded RTF Terms, `LogoFile` for artwork, and named controls bound to Burn variables for the
+runtime checkbox — so the alternative would have meant writing and shipping an executable that runs
+inside an elevated install, in exchange for layout control.
+
+The constraint that comes with it: control and page names are contractual. WixStdBA finds
+`EulaRichedit`, `EulaAcceptCheckbox`, `InstallButton` and the rest by name, and all eight pages must
+exist even for a product that never reaches Modify. Renaming a control does not move it; it removes it.
+
 See [Windows Agent](WINDOWS-AGENT.md) for what the agent may and may not do at runtime, and
 [Packaging and release](PACKAGING-AND-RELEASE.md) for how the artifacts are built and verified.

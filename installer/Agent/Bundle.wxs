@@ -1,35 +1,136 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
-     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
   <?include ..\Common\Product.wxi ?>
 
   <!--
     The NutManager Agent installer, a product separate from the desktop application.
 
-    The bundle exists so the operator downloads and runs one .exe. It chains a single MSI and adds
-    nothing of its own: no prerequisite download, no runtime installer, no network access. Everything
-    the product needs is already inside the package it carries.
+    Unlike the desktop bundle this one has a real prerequisite. The Agent publishes
+    framework-dependent, so ASP.NET Core 10 x64 must already be on the machine or be installed here.
+    That trade was made on purpose: the Agent is a long-lived service on a server, and a private copy
+    of the runtime inside its own directory means a .NET security fix requires a NutManager release
+    before that server is patched. Sharing the machine's runtime puts servicing back where the
+    administrator already manages it.
+
+    The cost is this chain, and the rule that governs it: never install an Agent that cannot run.
   -->
   <Bundle Name="$(AgentName)"
           Manufacturer="$(Publisher)"
           Version="$(Version)"
           UpgradeCode="$(AgentBundleUpgradeCode)"
           IconSourceFile="$(BrandingIcon)"
+          AboutUrl="$(ProjectUrl)"
           Compressed="yes">
 
     <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense"
-                                              LicenseUrl="https://github.com/Marcelo-PX/NutManager/blob/main/LICENSE"
+      <bal:WixStandardBootstrapperApplication Theme="rtfLicense"
+                                              ThemeFile="$(ThemeFile)"
+                                              LocalizationFile="$(ThemeLocalization)"
+                                              LicenseFile="$(TermsFile)"
+                                              LogoFile="$(BrandingLogo)"
                                               ShowVersion="yes"
                                               SuppressOptionsUI="yes" />
     </BootstrapperApplication>
 
+    <!--
+      Asks the question that matters: can this machine run the Agent? DotNetCoreSearch queries the
+      installed shared frameworks through the officially supported mechanism rather than looking for
+      dotnet.exe on disk or shelling a runtime listing out to the CLI. A file existing is not a
+      runtime, and a runtime for the wrong architecture is not a usable one.
+
+      RuntimeType aspnet, not dotnet: the Agent takes a FrameworkReference on Microsoft.AspNetCore.App
+      for HTTP.sys, so the base .NET runtime alone would not be enough. Platform x64 because that is
+      the only architecture this product ships.
+
+      The variable holds the newest installed 10.x and is left unset when there is none, which is why
+      every condition below compares it rather than testing whether it exists.
+    -->
+    <netfx:DotNetCoreSearch Id="SearchAspNetCore"
+                            RuntimeType="aspnet"
+                            Platform="x64"
+                            MajorVersion="$(AspNetCoreMajorVersion)"
+                            Variable="AspNetCoreRuntimeVersion" />
+
+    <!--
+      The operator's answer to "shall I install it?", and nothing more.
+
+      Default 1, so the interactive checkbox starts ticked when the runtime is missing and an
+      unattended /quiet install on a bare server does the useful thing without an extra switch. It is
+      only ever consulted when the runtime is absent - when one is already present the package's
+      DetectCondition is satisfied and Burn plans nothing regardless of this value, which is what
+      keeps a working server from being handed a runtime it did not need.
+
+      bal:Overridable is what lets an administrator refuse deliberately:
+
+          NutManager-Agent-Setup-x.y.z.exe /quiet InstallAspNetRuntime=0
+
+      With the runtime absent and this set to 0, the install fails before the service is registered.
+      That is the intended outcome, not a defect: a NutManagerAgent that installs and then cannot
+      start is worse than one that refused, because it leaves something broken behind on a server.
+    -->
+    <Variable Name="InstallAspNetRuntime" Type="numeric" Value="1" bal:Overridable="yes" />
+
     <Chain>
       <!--
-        ForcePerMachine matches the package's own perMachine scope. Leaving it to be inferred is how
-        a bundle ends up elevating for a package that then installs somewhere else.
+        The Microsoft runtime, from Microsoft.
+
+        Declaring the payload with a DownloadUrl and no local SourceFile is what makes it remote: it
+        stays out of the NutManager download, so the Agent installer remains small and the runtime is
+        fetched only when it is actually needed. That URL is fixed at compile time and points at
+        Microsoft's own build service - there is no user-supplied URL, no mirror list, no redirect
+        through anything this project controls, and no address arriving from an API response.
+
+        Hash and Size are the published values for exactly that build. Burn refuses a payload that
+        does not match, so a substituted or corrupted download fails the install instead of silently
+        running an unverified executable with elevation.
+
+        Permanent="yes" is the ownership statement: this is a machine-shared Microsoft component and
+        removing NutManager Agent must not take it away from whatever else on the server depends on
+        it. Uninstall removes what this installer owns, and the runtime is not that.
+
+        Vital="yes", with no retry and no fallback mirror. If the download or the install fails, the
+        bundle fails and says so; it does not proceed to lay down an Agent that cannot start.
+
+        InstallCondition is the operator's choice; DetectCondition is the machine's state. Both must
+        want it before anything is downloaded.
       -->
-      <MsiPackage SourceFile="$(PackagePath)" ForcePerMachine="yes" Visible="no" />
+      <ExePackage Id="AspNetCoreRuntime"
+                  DisplayName="$(AspNetCoreRuntimeDisplayName)"
+                  Cache="remove"
+                  PerMachine="yes"
+                  Permanent="yes"
+                  Vital="yes"
+                  DetectCondition="AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0"
+                  InstallCondition="InstallAspNetRuntime = 1"
+                  InstallArguments="/install /quiet /norestart"
+                  RepairArguments="/repair /quiet /norestart"
+                  UninstallArguments="/uninstall /quiet /norestart">
+        <ExePackagePayload Name="$(AspNetCoreRuntimeFileName)"
+                           ProductName="$(AspNetCoreRuntimeDisplayName)"
+                           Description="$(AspNetCoreRuntimeDisplayName)"
+                           DownloadUrl="$(AspNetCoreRuntimeUrl)"
+                           Hash="$(AspNetCoreRuntimeHash)"
+                           Size="$(AspNetCoreRuntimeSize)"
+                           Version="$(AspNetCoreRuntimeVersion).0" />
+      </ExePackage>
+
+      <!--
+        The Agent itself, last.
+
+        Its InstallCondition repeats the precondition rather than trusting the disabled button: the
+        theme can stop a click, but /quiet has no buttons, and a chain that would register the
+        service anyway is one command line away from producing exactly the broken install this whole
+        arrangement exists to prevent. Burn evaluates conditions after the prerequisite has run, so a
+        runtime installed a moment ago satisfies this.
+
+        ForcePerMachine matches the package's own perMachine scope.
+      -->
+      <MsiPackage SourceFile="$(PackagePath)"
+                  ForcePerMachine="yes"
+                  Visible="no"
+                  InstallCondition="AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0 OR InstallAspNetRuntime = 1" />
     </Chain>
   </Bundle>
 </Wix>

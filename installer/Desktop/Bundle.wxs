@@ -7,19 +7,45 @@
     The NutManager desktop application installer.
 
     The bundle exists so the operator downloads and runs one .exe. It chains a single MSI and adds
-    nothing of its own: no prerequisite download, no runtime installer, no network access. Everything
-    the product needs is already inside the package it carries.
+    nothing of its own: no prerequisite, no runtime installer, no network access at install time.
+    Everything the product needs is already inside the package it carries, because the desktop
+    application publishes self-contained.
+
+    That is the deliberate difference from the Agent, and it is a product decision rather than an
+    oversight: a desktop user should download one file and run it, and a runtime prompt on a
+    workstation buys nothing that the payload has not already paid for.
   -->
   <Bundle Name="$(DesktopName)"
           Manufacturer="$(Publisher)"
           Version="$(Version)"
           UpgradeCode="$(DesktopBundleUpgradeCode)"
           IconSourceFile="$(BrandingIcon)"
+          AboutUrl="$(ProjectUrl)"
           Compressed="yes">
 
     <BootstrapperApplication>
-      <bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense"
-                                              LicenseUrl="https://github.com/Marcelo-PX/NutManager/blob/main/LICENSE"
+      <!--
+        WixStdBA with a custom theme, not a custom bootstrapper application. Everything the branded
+        screen needs - artwork, product description, an offline Terms pane, an acceptance checkbox
+        that gates Install - already exists here. A managed BA would add an executable to the
+        elevated install path in exchange for layout control we do not need.
+
+        LicenseFile carries the Terms as RTF, embedded in the bundle: acceptance never depends on a
+        network or on a published page staying up. rtfLicense is the theme whose behaviour that
+        matches; the appearance comes from ThemeFile and LocalizationFile.
+
+        LicenseUrl is deliberately absent. Supplying both makes WixStdBA prefer the URL, which would
+        put the operator back on a page they may not be able to reach.
+
+        LogoFile is the high-resolution product PNG. The .ico stays where an icon belongs -
+        IconSourceFile above, and ARPPRODUCTICON in the package - because scaling a 256px icon up to
+        fill the header is what made the previous installer look pixellated.
+      -->
+      <bal:WixStandardBootstrapperApplication Theme="rtfLicense"
+                                              ThemeFile="$(ThemeFile)"
+                                              LocalizationFile="$(ThemeLocalization)"
+                                              LicenseFile="$(TermsFile)"
+                                              LogoFile="$(BrandingLogo)"
                                               ShowVersion="yes"
                                               SuppressOptionsUI="yes" />
     </BootstrapperApplication>

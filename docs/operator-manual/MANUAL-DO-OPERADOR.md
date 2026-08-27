@@ -138,7 +138,35 @@ O Agent é instalado **no servidor**, não na sua estação.
 
 ### Requisitos
 
-Windows Server 2019 em diante, ou Windows 10/11 x64. Administrador local. Nenhum runtime .NET.
+Windows Server 2019 em diante, ou Windows 10/11 x64. Administrador local.
+
+**O Agent requer o Microsoft ASP.NET Core Runtime 10 x64.** Diferente do Desktop, que carrega o
+próprio runtime, o Agent usa o runtime compartilhado da máquina.
+
+Isso é deliberado. O Agent é um serviço que fica no ar por meses num servidor; um runtime privado
+dentro da pasta dele significaria que esse servidor só recebe correção de segurança do .NET quando sai
+uma versão do NutManager. Usando o runtime da máquina, a atualização volta para onde o administrador
+já cuida dela — e o instalador cai de cerca de 70 MB para 10 MB.
+
+**Você não precisa instalar o runtime à mão.** O instalador verifica se existe:
+
+| Situação | O que acontece |
+| --- | --- |
+| Runtime compatível já presente | Mostra **Instalado**. Nada é baixado. Funciona sem internet. |
+| Runtime ausente | Mostra **Necessário**, com a opção de instalar já marcada. |
+| Runtime ausente e você desmarca | **Instalar Agent fica desabilitado**, com a explicação na tela. |
+
+Qualquer versão de manutenção do 10.x serve. Um servidor já com 10.0.7 não baixa nada.
+
+Quando o runtime precisa ser instalado, ele vem do endereço oficial da Microsoft, e o instalador
+confere o hash antes de executar. Se o download falhar, a instalação falha dizendo que foi o download
+— e não deixa um Agent quebrado para trás.
+
+**Instalação sem internet:** funciona normalmente se o runtime já estiver na máquina. Se não estiver, é
+preciso acesso à internet para baixar o pacote da Microsoft, ou instalá-lo manualmente antes.
+
+**Desinstalar o Agent não remove o runtime.** Ele é um componente compartilhado do Windows, e outros
+programas do servidor podem depender dele.
 
 ### Passo 1 — crie o grupo de autorização
 
@@ -179,6 +207,26 @@ O instalador:
 
 O que ele **não** faz: não instala o NUT, não altera arquivo nenhum do NUT, não inicia nem para o
 serviço do NUT, não abre porta, não cria certificado, não mexe no firewall.
+
+Antes de tudo isso o instalador mostra os **Termos de Uso do NutManager**, que precisam ser aceitos.
+O texto vem dentro do instalador e é legível sem internet. Os Termos são separados da licença: o
+código-fonte continua sob **GNU GPL v2.0**, e os Termos não restringem os direitos dela.
+
+### Instalação desassistida
+
+```powershell
+NutManager-Agent-Setup-1.0.0.exe /quiet
+```
+
+Instala o runtime da Microsoft por padrão, se estiver faltando. Para recusar deliberadamente:
+
+```powershell
+NutManager-Agent-Setup-1.0.0.exe /quiet InstallAspNetRuntime=0
+```
+
+Com o runtime ausente e essa opção em `0`, a instalação **falha antes de registrar o serviço**. Isso é
+intencional: um `NutManagerAgent` registrado que não inicia é pior que uma recusa, porque a recusa
+aparece e o serviço quebrado não.
 
 ### Passo 3 — verifique
 

@@ -1577,14 +1577,45 @@ conversation with the UPS uninterrupted.
 
 ### Where it stands
 
+The distinction that matters here is between authoring validated, package generated, and actually
+installed. Only the first two have happened.
+
 Built and asserted: the technology decision, the single version source, both installers, the
-reproducible build path, checksums, CI, and fifteen tests over the installer authoring.
+reproducible build path, checksums, CI, and twenty-nine tests over the installer authoring.
+
+Refined before the first public release: a branded WixStdBA theme for each product using the
+high-resolution artwork; the NutManager Terms of Use embedded as RTF with an acceptance checkbox that
+gates Install, stated separately from GPL v2.0; pt-BR and en-US installer localization at exact string
+parity; the agent moved to framework-dependent deployment with ASP.NET Core 10 x64 detection and an
+optional official Microsoft prerequisite; and the retired `Marcelo-PX` account removed from every
+installer-visible destination.
 
 Not done: **no installer has been run on any machine.** Installing requires elevation and changes the
 machine, and the agent acceptance needs a real server. Until that happens the compatibility matrix has
 no validated row, and the difference between "builds correctly" and "installs correctly" is exactly
-what remains. The operator manual is written and published to Notion as fifteen pages under the T39
-hub; its screenshots are still pending, because taking them means running the installers.
+what remains.
+
+Specifically unverified, and not to be reported otherwise until each is actually exercised:
+
+- desktop install, upgrade, repair, uninstall;
+- agent install, upgrade, repair, uninstall on a real server;
+- **upgrade from an older self-contained agent to the framework-dependent one** — that the old private
+  runtime files leave with the old payload, that `agent.json` survives, that the service identity and
+  Event Log source stay correct, and that the runtime prerequisite is satisfied before the new service
+  starts;
+- ASP.NET Core runtime detection against a machine that lacks the runtime, and the prerequisite
+  download and install;
+- the declined-prerequisite refusal path, interactive and `/quiet InstallAspNetRuntime=0`;
+- any unattended installation.
+
+The operator manual is written and published to Notion as fifteen pages under the T39 hub; its
+screenshots are still pending, because taking them means running the installers. The Notion pages
+covering desktop installation, agent installation, upgrade and uninstall, release notes and the Terms
+of Use need re-publishing to match this refinement.
+
+> **Terms re-sync before v1.0.1.** T41 will add an informational GitHub release check, which makes
+> section 10 of the current Terms untrue as written. The Terms must be regenerated and re-published
+> after T41 and before v1.0.1 is tagged.
 
 See [Packaging and release](PACKAGING-AND-RELEASE.md) for the full record of what is and is not
 verified, and [Manual do operador](operator-manual/MANUAL-DO-OPERADOR.md) for the unpublished operator

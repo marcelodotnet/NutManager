@@ -16,10 +16,20 @@
 
     The zip is the portable copy: it needs no administrator and installs nothing, which is why it
     survives alongside the installers rather than being replaced by them.
+
+.PARAMETER Culture
+    Which installer UI language to build. A bundle's strings are baked in at build time, so this
+    selects one; both cultures are authored and either can be produced from the same tree.
+
+.EXAMPLE
+    pwsh ./scripts/build-release.ps1
+    pwsh ./scripts/build-release.ps1 -Culture en-US
 #>
 [CmdletBinding()]
 param(
     [string] $Version,
+    [ValidateSet('pt-BR', 'en-US')]
+    [string] $Culture = 'pt-BR',
     [switch] $SkipTests
 )
 
@@ -31,6 +41,11 @@ $solution = Join-Path $repositoryRoot 'NutManager.sln'
 $artifacts = Join-Path $repositoryRoot 'artifacts'
 $staging = Join-Path $artifacts 'staging'
 $branding = Join-Path $repositoryRoot 'src\NutManager.App\Assets\Branding\NutManager.ico'
+
+# The installer's artwork is the high-resolution PNG, not the icon. Scaling a 256px .ico frame up to
+# fill the header is what made the previous bundles look pixellated; the .ico keeps the jobs an icon
+# is actually for, which is the bundle executable and the Add/Remove Programs entry.
+$brandingLogo = Join-Path $repositoryRoot 'src\NutManager.App\Assets\Branding\NutManager.png'
 
 # The single version source. Reading it from Directory.Build.props rather than defaulting here is what
 # stops the installers and the assemblies from disagreeing about what they are.
@@ -47,22 +62,38 @@ if (-not $Version)
     }
 }
 
-Write-Host "Building NutManager $Version" -ForegroundColor Cyan
+Write-Host "Building NutManager $Version ($Culture)" -ForegroundColor Cyan
 
 if (-not (Get-Command wix -ErrorAction SilentlyContinue))
 {
     throw 'WiX was not found. Install it with: dotnet tool install --global wix --version 5.0.2'
 }
 
-# The bundle extension is a separate install from the toolset, and its absence surfaces late — the
-# packages build, then the bundle fails. Provisioning it here keeps a build agent and a workstation on
-# the same footing, and the version is pinned to the toolset's for the same reason the toolset is.
-$bundleExtension = 'WixToolset.BootstrapperApplications.wixext'
-if (-not (wix extension list --global 2>$null | Select-String -SimpleMatch $bundleExtension -Quiet))
+# Extensions are separate installs from the toolset and their absence surfaces late - the packages
+# build, then the bundle fails. Provisioning them here keeps a build agent and a workstation on the
+# same footing, and each version is pinned to the toolset's for the same reason the toolset is.
+foreach ($extension in @('WixToolset.BootstrapperApplications.wixext', 'WixToolset.Netfx.wixext'))
 {
-    Write-Host "Adding the $bundleExtension extension" -ForegroundColor Cyan
-    wix extension add --global "$bundleExtension/5.0.2"
-    if ($LASTEXITCODE -ne 0) { throw "Failed to add the $bundleExtension extension." }
+    if (-not (wix extension list --global 2>$null | Select-String -SimpleMatch $extension -Quiet))
+    {
+        Write-Host "Adding the $extension extension" -ForegroundColor Cyan
+        wix extension add --global "$extension/5.0.2"
+        if ($LASTEXITCODE -ne 0) { throw "Failed to add the $extension extension." }
+    }
+}
+
+# The Terms shown by the installer are generated from the canonical Markdown under docs/. Checking
+# rather than regenerating is deliberate: a release must ship the reviewed text that was committed,
+# not whatever a build machine happens to produce from an edit nobody looked at.
+& (Join-Path $PSScriptRoot 'build-terms-rtf.ps1') -Check
+
+$themeLocalizationDesktop = Join-Path $repositoryRoot "installer\Common\Theme\Desktop.$Culture.wxl"
+$themeLocalizationAgent = Join-Path $repositoryRoot "installer\Common\Theme\Agent.$Culture.wxl"
+$termsFile = Join-Path $repositoryRoot "installer\Common\Terms\Terms.$Culture.rtf"
+
+foreach ($required in @($brandingLogo, $themeLocalizationDesktop, $themeLocalizationAgent, $termsFile))
+{
+    if (-not (Test-Path -LiteralPath $required)) { throw "Missing installer input: $required" }
 }
 
 # A stale artifacts directory is how a release ends up shipping a file from the previous version.
@@ -87,16 +118,21 @@ if (-not $SkipTests)
 
 function Publish-Product
 {
-    param([string] $Project, [string] $Output)
+    param(
+        [Parameter(Mandatory)] [string] $Project,
+        [Parameter(Mandatory)] [string] $Output,
+        # No default. The two products deploy differently on purpose, and a default here is exactly
+        # how they would drift back into being the same - which is the failure this parameter exists
+        # to make impossible to reach by accident.
+        [Parameter(Mandatory)] [bool] $SelfContained
+    )
 
-    # Both products are self-contained: the desktop application so an operator installs one thing and
-    # no runtime, the agent so a server needs no ASP.NET Core runtime of its own. The cost is real and
-    # belongs in the record rather than a footnote — a runtime security fix now requires a NutManager
-    # release, because nothing else on the machine can patch a runtime the product carries privately.
+    $selfContainedArgument = if ($SelfContained) { 'true' } else { 'false' }
+
     dotnet publish $Project `
         --configuration Release `
         --runtime win-x64 `
-        --self-contained true `
+        --self-contained $selfContainedArgument `
         --output $Output `
         -p:NutManagerVersion=$Version `
         -p:PublishTrimmed=false `
@@ -107,8 +143,18 @@ function Publish-Product
 $desktopPublish = Join-Path $staging 'desktop'
 $agentPublish = Join-Path $staging 'agent'
 
-Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.App\NutManager.App.csproj') -Output $desktopPublish
-Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent\NutManager.Agent.csproj') -Output $agentPublish
+# Self-contained: an operator installs one thing and no runtime. The cost is real and belongs in the
+# record rather than a footnote - a runtime security fix now requires a NutManager release, because
+# nothing else on the machine can patch a runtime the product carries privately. For a desktop
+# application that trade is worth it; for the Agent, below, it is not.
+Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.App\NutManager.App.csproj') `
+                -Output $desktopPublish -SelfContained $true
+
+# Framework-dependent: the Agent is a long-lived service on a server, so it uses the machine's shared
+# ASP.NET Core runtime and inherits its servicing. The Agent bundle detects that runtime and offers
+# to install the official Microsoft package when it is missing.
+Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent\NutManager.Agent.csproj') `
+                -Output $agentPublish -SelfContained $false
 
 foreach ($expected in @(
     @{ Path = (Join-Path $desktopPublish 'NutManager.App.exe'); Name = 'desktop application' },
@@ -120,11 +166,30 @@ foreach ($expected in @(
     }
 }
 
+# Proof rather than inference. A framework-dependent publish must not carry the private runtime that
+# the self-contained one did, and file count or directory size would not tell you that reliably - the
+# named runtime files either are there or they are not.
+$privateRuntimeMarkers = @('hostpolicy.dll', 'coreclr.dll', 'System.Private.CoreLib.dll', 'Microsoft.AspNetCore.dll')
+$leaked = $privateRuntimeMarkers | Where-Object { Test-Path -LiteralPath (Join-Path $agentPublish $_) }
+if ($leaked)
+{
+    throw "The agent publish is carrying a private runtime payload: $($leaked -join ', ')"
+}
+Write-Host '  agent publish carries no private .NET shared framework' -ForegroundColor Green
+
 # ---------------------------------------------------------------- installers
 
 function Build-Installer
 {
-    param([string] $Name, [string] $Directory, [string] $PublishDir, [string] $SetupName)
+    param(
+        [string] $Name,
+        [string] $Directory,
+        [string] $PublishDir,
+        [string] $SetupName,
+        [string] $ThemeFile,
+        [string] $ThemeLocalization,
+        [string[]] $Extensions
+    )
 
     $source = Join-Path $repositoryRoot "installer\$Directory"
     $msi = Join-Path $staging "$Name.msi"
@@ -138,21 +203,37 @@ function Build-Installer
     if ($LASTEXITCODE -ne 0) { throw "The $Name package failed to build." }
 
     $setup = Join-Path $artifacts $SetupName
+    $extensionArguments = @()
+    foreach ($extension in $Extensions) { $extensionArguments += @('-ext', $extension) }
 
     wix build (Join-Path $source 'Bundle.wxs') `
         -arch x64 `
-        -ext WixToolset.BootstrapperApplications.wixext `
+        @extensionArguments `
         -d "Version=$Version" `
         -d "PackagePath=$msi" `
         -d "BrandingIcon=$branding" `
+        -d "BrandingLogo=$brandingLogo" `
+        -d "ThemeFile=$ThemeFile" `
+        -d "ThemeLocalization=$ThemeLocalization" `
+        -d "TermsFile=$termsFile" `
         -o $setup
     if ($LASTEXITCODE -ne 0) { throw "The $Name bundle failed to build." }
 
     Write-Host "  $SetupName" -ForegroundColor Green
 }
 
-Build-Installer -Name 'NutManager' -Directory 'Desktop' -PublishDir $desktopPublish -SetupName "NutManager-Setup-$Version.exe"
-Build-Installer -Name 'NutManager.Agent' -Directory 'Agent' -PublishDir $agentPublish -SetupName "NutManager-Agent-Setup-$Version.exe"
+Build-Installer -Name 'NutManager' -Directory 'Desktop' -PublishDir $desktopPublish `
+                -SetupName "NutManager-Setup-$Version.exe" `
+                -ThemeFile (Join-Path $repositoryRoot 'installer\Common\Theme\DesktopTheme.xml') `
+                -ThemeLocalization $themeLocalizationDesktop `
+                -Extensions @('WixToolset.BootstrapperApplications.wixext')
+
+# The Agent bundle additionally needs the Netfx extension, which is where DotNetCoreSearch lives.
+Build-Installer -Name 'NutManager.Agent' -Directory 'Agent' -PublishDir $agentPublish `
+                -SetupName "NutManager-Agent-Setup-$Version.exe" `
+                -ThemeFile (Join-Path $repositoryRoot 'installer\Common\Theme\AgentTheme.xml') `
+                -ThemeLocalization $themeLocalizationAgent `
+                -Extensions @('WixToolset.BootstrapperApplications.wixext', 'WixToolset.Netfx.wixext')
 
 # ---------------------------------------------------------------- portable archive
 
