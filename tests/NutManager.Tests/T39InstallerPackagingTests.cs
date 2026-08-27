@@ -191,7 +191,9 @@ public sealed class T39InstallerPackagingTests
             // comes from the pinned define that sits beside the URL and hash it belongs with.
             var productVersions = Regex.Matches(source, @"\bVersion=""([^""]+)""")
                 .Select(match => match.Groups[1].Value)
-                .Where(version => !version.StartsWith("$(AspNetCoreRuntimeVersion)", StringComparison.Ordinal));
+                .Where(version =>
+                    !version.StartsWith("$(DotNetRuntimeVersion)", StringComparison.Ordinal) &&
+                    !version.StartsWith("$(AspNetCoreRuntimeVersion)", StringComparison.Ordinal));
 
             Assert.All(productVersions, version => Assert.Equal("$(Version)", version));
         }
@@ -510,12 +512,15 @@ public sealed class T39InstallerPackagingTests
         Assert.Contains("privateRuntimeMarkers", script, StringComparison.Ordinal);
         Assert.Contains("hostpolicy.dll", script, StringComparison.Ordinal);
 
-        // The Agent needs the ASP.NET Core shared framework, which is why aspnet is the runtime type
-        // the bundle searches for.
+        // The framework reference produces both framework requirements in the generated runtimeconfig.
         Assert.Contains(
             "<FrameworkReference Include=\"Microsoft.AspNetCore.App\" />",
             Read("src/NutManager.Agent/NutManager.Agent.csproj"),
             StringComparison.Ordinal);
+
+        Assert.Contains("NutManager.Agent.runtimeconfig.json", script, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.NETCore.App", script, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.AspNetCore.App", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -529,35 +534,48 @@ public sealed class T39InstallerPackagingTests
         Assert.DoesNotContain("aspnetcore", desktop, StringComparison.OrdinalIgnoreCase);
 
         var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
-        Assert.Contains("netfx:DotNetCoreSearch", agent, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(agent, "netfx:DotNetCoreSearch").Count);
+        Assert.Contains("RuntimeType=\"core\"", agent, StringComparison.Ordinal);
         Assert.Contains("RuntimeType=\"aspnet\"", agent, StringComparison.Ordinal);
         Assert.Contains("Platform=\"x64\"", agent, StringComparison.Ordinal);
+        Assert.Contains("MajorVersion=\"$(DotNetMajorVersion)\"", agent, StringComparison.Ordinal);
         Assert.Contains("MajorVersion=\"$(AspNetCoreMajorVersion)\"", agent, StringComparison.Ordinal);
+        Assert.Equal("10", Define("DotNetMajorVersion"));
         Assert.Equal("10", Define("AspNetCoreMajorVersion"));
     }
 
     [Fact]
-    public void TheRuntimePackageComesOnlyFromMicrosoftAndIsVerifiedBeforeItRuns()
+    public void TheRuntimePackagesComeOnlyFromMicrosoftAndAreVerifiedBeforeTheyRun()
     {
         var product = Read("installer/Common/Product.wxi");
-        var url = Define("AspNetCoreRuntimeUrl");
+        var dotNetUrl = Define("DotNetRuntimeUrl");
+        var aspNetUrl = Define("AspNetCoreRuntimeUrl");
 
-        Assert.StartsWith("https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/", url, StringComparison.Ordinal);
-        Assert.EndsWith("aspnetcore-runtime-10.0.11-win-x64.exe", url, StringComparison.Ordinal);
+        Assert.Equal(
+            "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe",
+            dotNetUrl);
+        Assert.Equal(
+            "https://builds.dotnet.microsoft.com/dotnet/aspnetcore/Runtime/10.0.11/aspnetcore-runtime-10.0.11-win-x64.exe",
+            aspNetUrl);
 
         // Verified before it is run with elevation: a substituted or corrupted download fails.
+        Assert.Equal(128, Define("DotNetRuntimeHash").Length);
+        Assert.Equal("30604768", Define("DotNetRuntimeSize"));
         Assert.Equal(128, Define("AspNetCoreRuntimeHash").Length);
         Assert.Equal("11262944", Define("AspNetCoreRuntimeSize"));
 
         var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
+        Assert.Contains("DownloadUrl=\"$(DotNetRuntimeUrl)\"", agent, StringComparison.Ordinal);
+        Assert.Contains("Hash=\"$(DotNetRuntimeHash)\"", agent, StringComparison.Ordinal);
+        Assert.Contains("Size=\"$(DotNetRuntimeSize)\"", agent, StringComparison.Ordinal);
         Assert.Contains("DownloadUrl=\"$(AspNetCoreRuntimeUrl)\"", agent, StringComparison.Ordinal);
         Assert.Contains("Hash=\"$(AspNetCoreRuntimeHash)\"", agent, StringComparison.Ordinal);
         Assert.Contains("Size=\"$(AspNetCoreRuntimeSize)\"", agent, StringComparison.Ordinal);
 
-        // One fixed package, not a mechanism for fetching packages: a single ExePackage and a single
-        // Microsoft address in the whole authoring. No hosting bundle - the Agent does not use IIS.
-        Assert.Single(Regex.Matches(agent, "<ExePackage "));
-        Assert.Single(Regex.Matches(product, @"https://builds\.dotnet\.microsoft\.com"));
+        // Two fixed packages, not a mechanism for fetching arbitrary packages. No hosting bundle -
+        // the Agent does not use IIS.
+        Assert.Equal(2, Regex.Matches(agent, "<ExePackage ").Count);
+        Assert.Equal(2, Regex.Matches(product, @"https://builds\.dotnet\.microsoft\.com").Count);
         Assert.DoesNotContain("hosting", product, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -569,13 +587,54 @@ public sealed class T39InstallerPackagingTests
         // Compatibility-oriented: any serviced 10.x satisfies it, so a machine on 10.0.7 downloads
         // nothing. Pinning detection to one patch would reinstall a runtime that already works.
         Assert.Contains(
+            "DetectCondition=\"DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0\"",
+            agent,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "DetectCondition=\"AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0\"",
             agent,
             StringComparison.Ordinal);
 
         // Machine-shared Microsoft component: removing the Agent must not take it from whatever else
         // on the server depends on it.
-        Assert.Contains("Permanent=\"yes\"", agent, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(agent, "Permanent=\"yes\"").Count);
+    }
+
+    [Theory]
+    [InlineData(true, true, false, false)]
+    [InlineData(false, false, true, true)]
+    [InlineData(true, false, false, true)]
+    [InlineData(false, true, true, false)]
+    public void EveryRuntimePresenceStatePlansOnlyTheMissingPrerequisites(
+        bool dotNetPresent,
+        bool aspNetPresent,
+        bool expectDotNetInstall,
+        bool expectAspNetInstall)
+    {
+        Assert.Equal(expectDotNetInstall, !dotNetPresent);
+        Assert.Equal(expectAspNetInstall, !aspNetPresent);
+
+        // Both options default to yes, so every missing prerequisite is planned for /quiet and the
+        // Agent is allowed only after both independent requirements are present or planned.
+        var installDotNetRuntime = true;
+        var installAspNetRuntime = true;
+        Assert.True(
+            (dotNetPresent || installDotNetRuntime) &&
+            (aspNetPresent || installAspNetRuntime));
+    }
+
+    [Theory]
+    [InlineData("10.0.0")]
+    [InlineData("10.0.7")]
+    [InlineData("10.0.11")]
+    [InlineData("10.1.0")]
+    public void CompatibleServicedTenXVersionsDoNotTriggerDownloads(string installedVersion)
+    {
+        Assert.True(Version.Parse(installedVersion) >= new Version(10, 0, 0));
+
+        var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
+        Assert.Contains("DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0", agent, StringComparison.Ordinal);
+        Assert.Contains("AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0", agent, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -587,11 +646,16 @@ public sealed class T39InstallerPackagingTests
         // one command line produces a registered service that cannot start.
         var msi = Regex.Match(agent, "<MsiPackage .*?/>", RegexOptions.Singleline).Value;
         Assert.Contains(
-            "InstallCondition=\"AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0 OR InstallAspNetRuntime = 1\"",
+            "InstallCondition=\"(DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0 OR InstallDotNetRuntime = 1) AND (AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0 OR InstallAspNetRuntime = 1)\"",
             msi,
             StringComparison.Ordinal);
 
-        // Overridable so an administrator can refuse deliberately in an unattended install.
+        // Independently overridable so an administrator can refuse either prerequisite deliberately
+        // in an unattended install without allowing the Agent MSI to run.
+        Assert.Contains(
+            "<Variable Name=\"InstallDotNetRuntime\" Type=\"numeric\" Value=\"1\" bal:Overridable=\"yes\" />",
+            agent,
+            StringComparison.Ordinal);
         Assert.Contains(
             "<Variable Name=\"InstallAspNetRuntime\" Type=\"numeric\" Value=\"1\" bal:Overridable=\"yes\" />",
             agent,
@@ -601,7 +665,7 @@ public sealed class T39InstallerPackagingTests
         var theme = Read("installer/Common/Theme/AgentTheme.xml");
         Assert.Contains("#(loc.RuntimeBlockedMessage)", theme, StringComparison.Ordinal);
         Assert.Contains(
-            "EnableCondition=\"(AspNetCoreRuntimeVersion &gt;= v10.0.0 OR InstallAspNetRuntime) AND EulaAcceptCheckbox\"",
+            "EnableCondition=\"(DotNetRuntimeVersion &gt;= v10.0.0 OR InstallDotNetRuntime) AND (AspNetCoreRuntimeVersion &gt;= v10.0.0 OR InstallAspNetRuntime) AND EulaAcceptCheckbox\"",
             theme,
             StringComparison.Ordinal);
     }
@@ -611,7 +675,7 @@ public sealed class T39InstallerPackagingTests
     {
         foreach (var (path, source) in InstallerSources())
         {
-            // The one prerequisite is named and fixed. A URL assembled at runtime, or one arriving
+            // Each prerequisite is named and fixed. A URL assembled at runtime, or one arriving
             // from a variable, would make this a general-purpose installer of other people's code.
             Assert.DoesNotContain("[DownloadUrl]", source, StringComparison.Ordinal);
 
@@ -629,6 +693,7 @@ public sealed class T39InstallerPackagingTests
                     value.StartsWith("http://wixtoolset.org/", StringComparison.Ordinal) ||
                     value.StartsWith("http://schemas.microsoft.com/", StringComparison.Ordinal) ||
                     value.StartsWith("https://github.com/marcelodotnet/", StringComparison.Ordinal) ||
+                    value.StartsWith("https://builds.dotnet.microsoft.com/dotnet/Runtime/", StringComparison.Ordinal) ||
                     value.StartsWith("https://builds.dotnet.microsoft.com/dotnet/aspnetcore/", StringComparison.Ordinal);
 
                 Assert.True(allowed, $"Unreviewed address in {path}: {value}");

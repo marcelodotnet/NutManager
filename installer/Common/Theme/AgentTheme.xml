@@ -8,13 +8,15 @@
   So the subtitle says what it is, a line states the service name and start type, and another states
   plainly that nothing here touches NUT.
 
-  The dependency block is the other difference. The Agent runs framework-dependent, so ASP.NET Core
-  10 x64 is a real precondition rather than a recommendation, and this screen has to answer three
-  questions honestly: is it here, will we install it, and what happens if you say no.
+  The dependency block is the other difference. The Agent runs framework-dependent, so .NET 10 x64
+  and ASP.NET Core 10 x64 are real preconditions rather than recommendations, and this screen has to
+  answer three questions honestly for each: is it here, will we install it, and what happens if you
+  say no.
 
-  Conditions read two Burn variables. AspNetCoreRuntimeVersion is set by netfx:DotNetCoreSearch and
-  holds the newest installed ASP.NET Core 10.x, unset when there is none. InstallAspNetRuntime is the
-  operator's answer, defaulted to yes and only ever consulted when the runtime is missing.
+  Conditions read four Burn variables. DotNetRuntimeVersion and AspNetCoreRuntimeVersion hold the
+  newest installed compatible 10.x runtime of each type and are unset when their runtime is missing.
+  InstallDotNetRuntime and InstallAspNetRuntime are the operator's answers, defaulted to yes and only
+  ever consulted when the corresponding runtime is missing.
 -->
 <Theme xmlns="http://wixtoolset.org/schemas/v4/thmutil">
   <Font Id="0" Height="-12" Weight="400" Foreground="windowtext" Background="window">Segoe UI</Font>
@@ -58,23 +60,27 @@
       <Label X="20" Y="194" Width="-20" Height="16" FontId="5" DisablePrefix="yes">#(loc.NutUntouched)</Label>
 
       <Label X="20" Y="222" Width="-20" Height="16" FontId="4" DisablePrefix="yes">#(loc.DependenciesHeader)</Label>
-      <Label X="20" Y="242" Width="-20" Height="16" FontId="3" DisablePrefix="yes">#(loc.RuntimeName)</Label>
+      <Label X="20" Y="244" Width="270" Height="16" FontId="3" DisablePrefix="yes">#(loc.DotNetRuntimeName)</Label>
 
-      <!-- Present: state it and offer nothing. A reinstall checkbox for a component that is already
-           correct is an invitation to break a working server. -->
-      <Label X="20" Y="260" Width="-20" Height="16" FontId="4" DisablePrefix="yes"
+      <Label X="300" Y="244" Width="100" Height="16" FontId="4" DisablePrefix="yes"
+             VisibleCondition="DotNetRuntimeVersion &gt;= v10.0.0">#(loc.RuntimeInstalled)</Label>
+      <Label X="300" Y="244" Width="100" Height="16" FontId="6" DisablePrefix="yes"
+             VisibleCondition="NOT (DotNetRuntimeVersion &gt;= v10.0.0)">#(loc.RuntimeRequired)</Label>
+      <Checkbox Name="InstallDotNetRuntime" X="410" Y="240" Width="-20" Height="20" TabStop="yes" FontId="3"
+                VisibleCondition="NOT (DotNetRuntimeVersion &gt;= v10.0.0)">#(loc.RuntimeInstallCheckbox)</Checkbox>
+
+      <Label X="20" Y="274" Width="270" Height="16" FontId="3" DisablePrefix="yes">#(loc.AspNetCoreRuntimeName)</Label>
+      <Label X="300" Y="274" Width="100" Height="16" FontId="4" DisablePrefix="yes"
              VisibleCondition="AspNetCoreRuntimeVersion &gt;= v10.0.0">#(loc.RuntimeInstalled)</Label>
-
-      <!-- Missing: say so, and offer the official Microsoft package, ticked by default. -->
-      <Label X="20" Y="260" Width="-20" Height="16" FontId="6" DisablePrefix="yes"
+      <Label X="300" Y="274" Width="100" Height="16" FontId="6" DisablePrefix="yes"
              VisibleCondition="NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0)">#(loc.RuntimeRequired)</Label>
-      <Checkbox Name="InstallAspNetRuntime" X="20" Y="280" Width="-20" Height="20" TabStop="yes" FontId="3"
+      <Checkbox Name="InstallAspNetRuntime" X="410" Y="270" Width="-20" Height="20" TabStop="yes" FontId="3"
                 VisibleCondition="NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0)">#(loc.RuntimeInstallCheckbox)</Checkbox>
 
       <!-- Declined while missing. The Install action is disabled below; this says why, because a
            greyed-out button with no explanation is indistinguishable from a broken installer. -->
       <Label X="20" Y="304" Width="-20" Height="32" FontId="6" DisablePrefix="yes"
-             VisibleCondition="NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND NOT InstallAspNetRuntime">#(loc.RuntimeBlockedMessage)</Label>
+             VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND NOT InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND NOT InstallAspNetRuntime)">#(loc.RuntimeBlockedMessage)</Label>
 
       <Label X="20" Y="344" Width="-20" Height="16" FontId="4" DisablePrefix="yes">#(loc.TermsHeader)</Label>
       <Richedit Name="EulaRichedit" X="20" Y="364" Width="-20" Height="-104" TabStop="yes" FontId="0" HexStyle="800000" />
@@ -94,7 +100,7 @@
         both means the worst case is a redundant clause rather than a missing one.
       -->
       <Button Name="InstallButton" X="-116" Y="-20" Width="90" Height="26" TabStop="yes" FontId="0"
-              EnableCondition="(AspNetCoreRuntimeVersion &gt;= v10.0.0 OR InstallAspNetRuntime) AND EulaAcceptCheckbox">#(loc.InstallInstallButton)</Button>
+              EnableCondition="(DotNetRuntimeVersion &gt;= v10.0.0 OR InstallDotNetRuntime) AND (AspNetCoreRuntimeVersion &gt;= v10.0.0 OR InstallAspNetRuntime) AND EulaAcceptCheckbox">#(loc.InstallInstallButton)</Button>
       <Button Name="InstallCancelButton" X="-20" Y="-20" Width="90" Height="26" TabStop="yes" FontId="0">
         <Text>#(loc.InstallCancelButton)</Text>
         <CloseWindowAction />
