@@ -14,11 +14,11 @@
   antes de marcar a v1.0.1. Até lá esta versão é a corrente, não a final.
 -->
 
-**Última atualização:** 26 de agosto de 2026
+**Última atualização:** 27 de agosto de 2026
 
 ## 1. Sobre o NutManager
 
-O **NutManager** é um software desenvolvido por **Marcelo Pacheco (@marcelodotnet)** para facilitar o monitoramento, configuração, diagnóstico e administração de instalações do **Network UPS Tools (NUT)** em sistemas Windows.
+O **NutManager** é um software opensource desenvolvido para facilitar o monitoramento, configuração, diagnóstico e administração de instalações do **Network UPS Tools (NUT)** em sistemas Windows.
 
 O NutManager é uma ferramenta independente e não faz parte, não é afiliado e não representa oficialmente o projeto Network UPS Tools.
 
