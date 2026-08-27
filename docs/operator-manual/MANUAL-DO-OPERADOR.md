@@ -76,7 +76,7 @@ Windows 10 ou 11 x64, ou Windows Server 2019 em diante. Privilégio de administr
 Baixe `NutManager-Setup-x.y.z.exe` e o `SHA256SUMS.txt`. Confira antes de executar:
 
 ```powershell
-Get-FileHash .\NutManager-Setup-1.0.0.exe -Algorithm SHA256
+Get-FileHash .\NutManager-Setup-1.0.1.exe -Algorithm SHA256
 ```
 
 Compare com a linha correspondente no `SHA256SUMS.txt`. Se divergir, **não execute**.
@@ -215,13 +215,13 @@ código-fonte continua sob **GNU GPL v2.0**, e os Termos não restringem os dire
 ### Instalação desassistida
 
 ```powershell
-NutManager-Agent-Setup-1.0.0.exe /quiet
+NutManager-Agent-Setup-1.0.1.exe /quiet
 ```
 
 Instala o runtime da Microsoft por padrão, se estiver faltando. Para recusar deliberadamente:
 
 ```powershell
-NutManager-Agent-Setup-1.0.0.exe /quiet InstallAspNetRuntime=0
+NutManager-Agent-Setup-1.0.1.exe /quiet InstallAspNetRuntime=0
 ```
 
 Com o runtime ausente e essa opção em `0`, a instalação **falha antes de registrar o serviço**. Isso é
@@ -586,14 +586,13 @@ Ver [Packaging and release](../PACKAGING-AND-RELEASE.md).
 
 ## 15. Notas de versão
 
-**1.0.0** — primeira versão com instaladores.
+**1.0.1** — primeira versão pública do NutManager.
 
-Artefatos: `NutManager-Setup-1.0.0.exe`, `NutManager-Agent-Setup-1.0.0.exe`,
+Artefatos: `NutManager-Setup-1.0.1.exe`, `NutManager-Agent-Setup-1.0.1.exe`,
 `NutManager-win-x64.zip`, `SHA256SUMS.txt`. Confira os checksums antes de instalar.
 
-Mudanças relevantes para quem já usava o Agent: ele agora é **self-contained** — o ASP.NET Core Runtime
-10 deixou de ser pré-requisito no servidor. Em troca, correção de segurança do runtime passa a chegar
-como nova versão do NutManager.
+O Agent permanece **framework-dependent** e requer o ASP.NET Core Runtime 10 no servidor. O instalador
+pode instalar o runtime oficial da Microsoft quando ele estiver ausente.
 
 Compatibilidade: o protocolo do Agent não mudou. Um Desktop novo conversa com um Agent antigo e
 vice-versa; capacidades ausentes são detectadas pelo handshake em vez de assumidas.
