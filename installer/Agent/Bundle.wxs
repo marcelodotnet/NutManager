@@ -8,7 +8,8 @@
     The NutManager Agent installer, a product separate from the desktop application.
 
     Unlike the desktop bundle this one has a real prerequisite. The Agent publishes
-    framework-dependent, so ASP.NET Core 10 x64 must already be on the machine or be installed here.
+    framework-dependent, so .NET 10 x64 and ASP.NET Core 10 x64 must already be on the machine or be
+    installed here.
     That trade was made on purpose: the Agent is a long-lived service on a server, and a private copy
     of the runtime inside its own directory means a .NET security fix requires a NutManager release
     before that server is patched. Sharing the machine's runtime puts servicing back where the
@@ -40,13 +41,18 @@
       dotnet.exe on disk or shelling a runtime listing out to the CLI. A file existing is not a
       runtime, and a runtime for the wrong architecture is not a usable one.
 
-      RuntimeType aspnet, not dotnet: the Agent takes a FrameworkReference on Microsoft.AspNetCore.App
-      for HTTP.sys, so the base .NET runtime alone would not be enough. Platform x64 because that is
-      the only architecture this product ships.
+      The generated runtimeconfig requires both Microsoft.NETCore.App and Microsoft.AspNetCore.App.
+      RuntimeType core asks for the first and aspnet asks for the second. Neither can stand in for the
+      other. Platform x64 because that is the only architecture this product ships.
 
       The variable holds the newest installed 10.x and is left unset when there is none, which is why
       every condition below compares it rather than testing whether it exists.
     -->
+    <netfx:DotNetCoreSearch Id="SearchDotNet"
+                            RuntimeType="core"
+                            Platform="x64"
+                            MajorVersion="$(DotNetMajorVersion)"
+                            Variable="DotNetRuntimeVersion" />
     <netfx:DotNetCoreSearch Id="SearchAspNetCore"
                             RuntimeType="aspnet"
                             Platform="x64"
@@ -54,7 +60,7 @@
                             Variable="AspNetCoreRuntimeVersion" />
 
     <!--
-      The operator's answer to "shall I install it?", and nothing more.
+      The operator's answers to "shall I install each missing runtime?", and nothing more.
 
       Default 1, so the interactive checkbox starts ticked when the runtime is missing and an
       unattended /quiet install on a bare server does the useful thing without an extra switch. It is
@@ -64,17 +70,19 @@
 
       bal:Overridable is what lets an administrator refuse deliberately:
 
-          NutManager-Agent-Setup-x.y.z.exe /quiet InstallAspNetRuntime=0
+          NutManager-Agent-Setup-x.y.z.exe /quiet InstallDotNetRuntime=0 InstallAspNetRuntime=0
 
-      With the runtime absent and this set to 0, the install fails before the service is registered.
+      With either runtime absent and its option set to 0, the install fails before the service is
+      registered.
       That is the intended outcome, not a defect: a NutManagerAgent that installs and then cannot
       start is worse than one that refused, because it leaves something broken behind on a server.
     -->
+    <Variable Name="InstallDotNetRuntime" Type="numeric" Value="1" bal:Overridable="yes" />
     <Variable Name="InstallAspNetRuntime" Type="numeric" Value="1" bal:Overridable="yes" />
 
     <Chain>
       <!--
-        The Microsoft runtime, from Microsoft.
+        The Microsoft runtimes, from Microsoft.
 
         Declaring the payload with a DownloadUrl and no local SourceFile is what makes it remote: it
         stays out of the NutManager download, so the Agent installer remains small and the runtime is
@@ -96,6 +104,26 @@
         InstallCondition is the operator's choice; DetectCondition is the machine's state. Both must
         want it before anything is downloaded.
       -->
+      <ExePackage Id="DotNetRuntime"
+                  DisplayName="$(DotNetRuntimeDisplayName)"
+                  Cache="remove"
+                  PerMachine="yes"
+                  Permanent="yes"
+                  Vital="yes"
+                  DetectCondition="DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0"
+                  InstallCondition="InstallDotNetRuntime = 1"
+                  InstallArguments="/install /quiet /norestart"
+                  RepairArguments="/repair /quiet /norestart"
+                  UninstallArguments="/uninstall /quiet /norestart">
+        <ExePackagePayload Name="$(DotNetRuntimeFileName)"
+                           ProductName="$(DotNetRuntimeDisplayName)"
+                           Description="$(DotNetRuntimeDisplayName)"
+                           DownloadUrl="$(DotNetRuntimeUrl)"
+                           Hash="$(DotNetRuntimeHash)"
+                           Size="$(DotNetRuntimeSize)"
+                           Version="$(DotNetRuntimeVersion).0" />
+      </ExePackage>
+
       <ExePackage Id="AspNetCoreRuntime"
                   DisplayName="$(AspNetCoreRuntimeDisplayName)"
                   Cache="remove"
@@ -130,7 +158,7 @@
       <MsiPackage SourceFile="$(PackagePath)"
                   ForcePerMachine="yes"
                   Visible="no"
-                  InstallCondition="AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0 OR InstallAspNetRuntime = 1" />
+                  InstallCondition="(DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0 OR InstallDotNetRuntime = 1) AND (AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0 OR InstallAspNetRuntime = 1)" />
     </Chain>
   </Bundle>
 </Wix>

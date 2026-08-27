@@ -23,11 +23,12 @@
   <String Id="NutUntouched" Value="O instalador não instala, configura ou reinicia o serviço NUT." />
 
   <String Id="DependenciesHeader" Value="Dependências" />
-  <String Id="RuntimeName" Value="Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="DotNetRuntimeName" Value="Microsoft .NET Runtime 10 x64" />
+  <String Id="AspNetCoreRuntimeName" Value="Microsoft ASP.NET Core Runtime 10 x64" />
   <String Id="RuntimeInstalled" Value="Instalado" />
   <String Id="RuntimeRequired" Value="Necessário" />
-  <String Id="RuntimeInstallCheckbox" Value="Instalar o Microsoft ASP.NET Core Runtime 10 x64" />
-  <String Id="RuntimeBlockedMessage" Value="O NutManager Agent requer o Microsoft ASP.NET Core Runtime 10 x64. Instale o runtime manualmente ou marque a opção acima para continuar." />
+  <String Id="RuntimeInstallCheckbox" Value="Instalar" />
+  <String Id="RuntimeBlockedMessage" Value="O NutManager Agent requer os dois runtimes. Instale o runtime ausente manualmente ou marque a opção correspondente para continuar." />
 
   <String Id="LocationLabel" Value="Local de instalação:" />
   <String Id="LocationValue" Value="C:\Program Files\NutManager Agent" />
@@ -89,7 +90,7 @@
     isso deliberadamente.
   -->
   <String Id="HelpHeader" Value="Ajuda do instalador" />
-  <String Id="HelpText" Value="/install | /repair | /uninstall | /layout [pasta] - instala, repara, remove ou cria uma&#xA;   cópia local completa do instalador na pasta indicada. O padrão é /install.&#xA;&#xA;/passive | /quiet - exibe interface mínima sem perguntas, ou nenhuma interface e&#xA;   nenhuma pergunta. Por padrão a interface e as perguntas são exibidas.&#xA;&#xA;/norestart   - suprime tentativas de reinicialização.&#xA;/log log.txt - grava o log no arquivo indicado. Por padrão um log é criado em %TEMP%.&#xA;&#xA;InstallAspNetRuntime=0 - não instalar o Microsoft ASP.NET Core Runtime 10 x64.&#xA;   Se o runtime não estiver presente, a instalação falha antes de registrar o serviço,&#xA;   em vez de deixar um NutManagerAgent que não inicia." />
+  <String Id="HelpText" Value="/install | /repair | /uninstall | /layout [pasta] - instala, repara, remove ou cria uma&#xA;   cópia local completa do instalador na pasta indicada. O padrão é /install.&#xA;&#xA;/passive | /quiet - exibe interface mínima sem perguntas, ou nenhuma interface e&#xA;   nenhuma pergunta. Por padrão a interface e as perguntas são exibidas.&#xA;&#xA;/norestart   - suprime tentativas de reinicialização.&#xA;/log log.txt - grava o log no arquivo indicado. Por padrão um log é criado em %TEMP%.&#xA;&#xA;InstallDotNetRuntime=0 - não instalar o Microsoft .NET Runtime 10 x64.&#xA;InstallAspNetRuntime=0 - não instalar o Microsoft ASP.NET Core Runtime 10 x64.&#xA;   Se um runtime necessário estiver ausente, a instalação falha antes de registrar o serviço." />
   <String Id="HelpCloseButton" Value="&amp;Fechar" />
 
   <String Id="CheckingForUpdatesLabel" Value="Verificando atualizações" />

@@ -37,17 +37,25 @@
   <?define SourceLicenseUrl = "https://github.com/marcelodotnet/NutManager/blob/main/LICENSE" ?>
 
   <!--
-    The Agent's runtime prerequisite.
+    The Agent's runtime prerequisites.
 
     Detection and installation are deliberately different questions. Detection asks whether any
-    serviced ASP.NET Core 10.x can run the agent, so a machine already on 10.0.7 is satisfied and
-    nothing is downloaded. Installation, when it is needed, uses one exact pinned build - a floating
-    "latest" URL would mean two machines running the same installer on different days get different
-    runtimes, and neither could be reproduced from the repository.
+    serviced .NET 10.x and ASP.NET Core 10.x can run the agent, so a machine already on compatible
+    10.x releases is satisfied and nothing is downloaded. Installation, when it is needed, uses exact
+    pinned builds - a floating "latest" URL would mean two machines running the same installer on
+    different days get different runtimes, and neither could be reproduced from the repository.
 
     The hash and size below describe that exact file. They come from Microsoft's published checksum
     list for 10.0.11 and from the download's own response headers, not from a local copy.
   -->
+  <?define DotNetMajorVersion = "10" ?>
+  <?define DotNetRuntimeVersion = "10.0.11" ?>
+  <?define DotNetRuntimeFileName = "dotnet-runtime-10.0.11-win-x64.exe" ?>
+  <?define DotNetRuntimeDisplayName = "Microsoft .NET Runtime 10 x64" ?>
+  <?define DotNetRuntimeUrl = "https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe" ?>
+  <?define DotNetRuntimeSize = "30604768" ?>
+  <?define DotNetRuntimeHash = "694e0e0af26b2b8949b8eda8a3831ab31aeac79797d43d6ff8c8798eae642c0904852e641c47329d7d893408f25feab1530ca2b7a0c6ed0d991e0113466a4bf9" ?>
+
   <?define AspNetCoreMajorVersion = "10" ?>
   <?define AspNetCoreRuntimeVersion = "10.0.11" ?>
   <?define AspNetCoreRuntimeFileName = "aspnetcore-runtime-10.0.11-win-x64.exe" ?>

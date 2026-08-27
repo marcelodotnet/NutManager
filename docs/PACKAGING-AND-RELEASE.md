@@ -23,7 +23,7 @@ wix extension add --global WixToolset.Netfx.wixext/5.0.2
 ```
 
 The Netfx extension is what provides `DotNetCoreSearch`, which the agent bundle uses to detect the
-ASP.NET Core runtime.
+.NET and ASP.NET Core runtimes independently.
 
 ## Building a release
 
@@ -118,18 +118,30 @@ same, and a test asserts both call sites. The build also checks the published ag
 `hostpolicy.dll`, `coreclr.dll` and their neighbours, so "framework-dependent" is proven from the
 payload rather than inferred from its size.
 
-## The Agent's runtime prerequisite
+## The Agent's runtime prerequisites
 
-**Detection.** `netfx:DotNetCoreSearch` with `RuntimeType="aspnet"`, `Platform="x64"`,
-`MajorVersion="10"`. It asks the supported question — can this machine run the agent — rather than
-looking for `dotnet.exe` on disk. The agent takes a `FrameworkReference` on `Microsoft.AspNetCore.App`
-for HTTP.sys, so the base .NET runtime alone would not be enough.
+**Payload contract.** The generated `NutManager.Agent.runtimeconfig.json` requires both
+`Microsoft.NETCore.App 10.0.0` and `Microsoft.AspNetCore.App 10.0.0`. The release pipeline reads that
+generated file and fails if either shared-framework requirement is absent or moves outside 10.x.
 
-**Roll-forward semantics.** Detection is compatibility-oriented: `AspNetCoreRuntimeVersion >= v10.0.0`.
-Any serviced 10.x satisfies it, so a server already on 10.0.7 downloads nothing. Pinning detection to
-one patch would reinstall a runtime that already works.
+**Detection.** Two independent supported `netfx:DotNetCoreSearch` checks use `RuntimeType="core"` and
+`RuntimeType="aspnet"`, with `Platform="x64"` and `MajorVersion="10"`. They ask whether each required
+shared framework is installed instead of probing files or invoking `dotnet.exe`.
 
-**The package, when one is needed.** Exactly one, pinned in `installer/Common/Product.wxi`:
+**Roll-forward semantics.** Detection is compatibility-oriented: both detected versions are compared
+with `v10.0.0`. Any serviced 10.x satisfies its corresponding requirement, so compatible installed
+runtimes do not trigger downloads. Pinning detection to one patch would reinstall a runtime that
+already works.
+
+**The packages, when needed.** Two exact Microsoft packages are pinned in
+`installer/Common/Product.wxi`:
+
+```text
+dotnet-runtime-10.0.11-win-x64.exe
+https://builds.dotnet.microsoft.com/dotnet/Runtime/10.0.11/dotnet-runtime-10.0.11-win-x64.exe
+SHA512  694e0e0a…13466a4bf9
+Size    30 604 768 bytes
+```
 
 ```text
 aspnetcore-runtime-10.0.11-win-x64.exe
@@ -140,25 +152,34 @@ Size    11 262 944 bytes
 
 Fixed at compile time, HTTPS, Microsoft's own build service. No user-supplied URL, no mirror list, no
 redirect through anything this project controls, no address arriving from an API response. Burn
-verifies the hash and size before running it with elevation, so a substituted or corrupted download
-fails the install instead of executing.
+verifies each hash and size before running a package with elevation, so a substituted or corrupted
+download fails the install instead of executing.
 
-The normal ASP.NET Core Runtime, **not** the Hosting Bundle: the agent does not use IIS, and installing
-an IIS hosting bundle to obtain a runtime would change the server's configuration well beyond what was
-asked for.
+The normal .NET Runtime and ASP.NET Core Runtime are used, **not** the Hosting Bundle: the agent does
+not use IIS, and installing an IIS hosting bundle would change the server's configuration well beyond
+what was asked for.
 
-**Ownership.** `Permanent="yes"`. The runtime is a machine-shared Microsoft component and removing
-NutManager Agent must not take it from whatever else on the server depends on it.
+**Exact-package evidence.** Microsoft's official .NET 10 release metadata identifies both 10.0.11
+URLs and SHA-512 values. Static inspection on 2026-08-27 verified valid Microsoft Authenticode
+signatures and matching hashes. The exact ASP.NET Core executable contains one MSI with
+`Microsoft.AspNetCore.App` but no `coreclr.dll`, `hostpolicy.dll`, `System.Private.CoreLib.dll` or
+`Microsoft.NETCore.App.deps.json`; it therefore does not install the base runtime. The exact .NET
+Runtime executable contains the host, hostfxr and runtime MSIs, including those base-runtime files.
+No package was executed or installed during inspection. Official metadata:
+`https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/10.0/releases.json`.
+
+**Ownership.** Both packages use `Permanent="yes"`. They are machine-shared Microsoft components,
+and removing NutManager Agent must not take either runtime from other applications.
 
 **Behaviour:**
 
 | Situation | What happens |
 | --- | --- |
-| Compatible runtime present | Screen shows *Instalado*. Nothing is downloaded, nothing is offered. Works offline. |
-| Runtime missing, interactive | Screen shows *Necessário* with the install option ticked by default. |
-| Runtime missing, operator unticks | **Install Agent is disabled**, with a message saying why. |
-| Runtime missing, `/quiet` | The official package is installed by default. |
-| Runtime missing, `/quiet InstallAspNetRuntime=0` | Fails **before** the service is registered. |
+| Both compatible runtimes present | Both show *Instalado*. Nothing is downloaded or offered. Works offline. |
+| Either runtime missing, interactive | The missing dependency shows *Necessário* with its install option ticked by default. |
+| Missing runtime's option unticked | **Install Agent is disabled**, with a message saying why. |
+| Either or both runtimes missing, `/quiet` | Every missing official package is installed by default. |
+| Missing runtime with its `InstallDotNetRuntime=0` or `InstallAspNetRuntime=0` opt-out | Fails **before** the service is registered. |
 | Download or install fails | Bundle fails, named as a download failure. No retry, no fallback mirror, no partial agent. |
 
 The refusal is the point. A `NutManagerAgent` that registers and then cannot start is worse than one
@@ -248,16 +269,16 @@ NutManager-Setup-1.0.1.exe /uninstall /quiet
 NutManager-Setup-1.0.1.exe /log <path>
 ```
 
-The agent installer takes the same switches, plus one Burn variable of its own:
+The agent installer takes the same switches, plus two independent Burn variables:
 
 ```text
-NutManager-Agent-Setup-1.0.1.exe /quiet InstallAspNetRuntime=0
+NutManager-Agent-Setup-1.0.1.exe /quiet InstallDotNetRuntime=0 InstallAspNetRuntime=0
 ```
 
-`InstallAspNetRuntime` defaults to `1`, so an unattended install on a bare server installs the official
-Microsoft runtime without an extra switch. Setting it to `0` declines that deliberately; if the runtime
-is then absent, the install fails before the service is registered rather than leaving a
-`NutManagerAgent` that cannot start.
+Both variables default to `1`, so an unattended install on a bare server installs every missing
+official Microsoft runtime without extra switches. Setting either variable to `0` declines that
+package deliberately; if its runtime is absent, the install fails before the service is registered
+rather than leaving a `NutManagerAgent` that cannot start.
 
 Exit codes are Windows Installer's: `0` success, `1602` user cancelled, `1603` fatal error, `3010`
 success with a restart pending. A deployment tool should treat `3010` as success.

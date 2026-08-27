@@ -23,11 +23,12 @@
   <String Id="NutUntouched" Value="This installer does not install, configure or restart the NUT service." />
 
   <String Id="DependenciesHeader" Value="Dependencies" />
-  <String Id="RuntimeName" Value="Microsoft ASP.NET Core Runtime 10 x64" />
+  <String Id="DotNetRuntimeName" Value="Microsoft .NET Runtime 10 x64" />
+  <String Id="AspNetCoreRuntimeName" Value="Microsoft ASP.NET Core Runtime 10 x64" />
   <String Id="RuntimeInstalled" Value="Installed" />
   <String Id="RuntimeRequired" Value="Required" />
-  <String Id="RuntimeInstallCheckbox" Value="Install Microsoft ASP.NET Core Runtime 10 x64" />
-  <String Id="RuntimeBlockedMessage" Value="NutManager Agent requires Microsoft ASP.NET Core Runtime 10 x64. Install the runtime manually, or tick the option above to continue." />
+  <String Id="RuntimeInstallCheckbox" Value="Install" />
+  <String Id="RuntimeBlockedMessage" Value="NutManager Agent requires both runtimes. Install the missing runtime manually, or tick its corresponding option to continue." />
 
   <String Id="LocationLabel" Value="Install location:" />
   <String Id="LocationValue" Value="C:\Program Files\NutManager Agent" />
@@ -89,7 +90,7 @@
     how to refuse that deliberately.
   -->
   <String Id="HelpHeader" Value="Setup help" />
-  <String Id="HelpText" Value="/install | /repair | /uninstall | /layout [directory] - installs, repairs, uninstalls or&#xA;   creates a complete local copy of the bundle in directory. Install is the default.&#xA;&#xA;/passive | /quiet -  displays minimal UI with no prompts or displays no UI and&#xA;   no prompts. By default UI and all prompts are displayed.&#xA;&#xA;/norestart   - suppress any attempts to restart.&#xA;/log log.txt - logs to a specific file. By default a log file is created in %TEMP%.&#xA;&#xA;InstallAspNetRuntime=0 - do not install Microsoft ASP.NET Core Runtime 10 x64.&#xA;   If the runtime is absent, setup fails before registering the service rather than&#xA;   leaving a NutManagerAgent that cannot start." />
+  <String Id="HelpText" Value="/install | /repair | /uninstall | /layout [directory] - installs, repairs, uninstalls or&#xA;   creates a complete local copy of the bundle in directory. Install is the default.&#xA;&#xA;/passive | /quiet -  displays minimal UI with no prompts or displays no UI and&#xA;   no prompts. By default UI and all prompts are displayed.&#xA;&#xA;/norestart   - suppress any attempts to restart.&#xA;/log log.txt - logs to a specific file. By default a log file is created in %TEMP%.&#xA;&#xA;InstallDotNetRuntime=0 - do not install Microsoft .NET Runtime 10 x64.&#xA;InstallAspNetRuntime=0 - do not install Microsoft ASP.NET Core Runtime 10 x64.&#xA;   If a required runtime is absent, setup fails before registering the service." />
   <String Id="HelpCloseButton" Value="&amp;Close" />
 
   <String Id="CheckingForUpdatesLabel" Value="Checking for updates" />

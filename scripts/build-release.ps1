@@ -177,6 +177,27 @@ if ($leaked)
 }
 Write-Host '  agent publish carries no private .NET shared framework' -ForegroundColor Green
 
+# The framework-dependent payload's generated runtimeconfig is the executable contract. Keep the
+# installer prerequisite chain aligned with it rather than inferring requirements from project
+# references, which can change how the SDK writes the final framework list.
+$agentRuntimeConfigPath = Join-Path $agentPublish 'NutManager.Agent.runtimeconfig.json'
+if (-not (Test-Path -LiteralPath $agentRuntimeConfigPath))
+{
+    throw 'The agent runtimeconfig is missing from the framework-dependent publish.'
+}
+
+$agentRuntimeConfig = Get-Content -LiteralPath $agentRuntimeConfigPath -Raw | ConvertFrom-Json
+$agentFrameworks = @($agentRuntimeConfig.runtimeOptions.frameworks)
+foreach ($requiredFramework in @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.App'))
+{
+    $match = @($agentFrameworks | Where-Object { $_.name -eq $requiredFramework })
+    if ($match.Count -ne 1 -or -not ([string] $match[0].version).StartsWith('10.', [StringComparison]::Ordinal))
+    {
+        throw "The agent runtimeconfig does not require exactly one compatible $requiredFramework 10.x framework."
+    }
+}
+Write-Host '  agent runtimeconfig requires Microsoft.NETCore.App and Microsoft.AspNetCore.App 10.x' -ForegroundColor Green
+
 # ---------------------------------------------------------------- installers
 
 function Build-Installer

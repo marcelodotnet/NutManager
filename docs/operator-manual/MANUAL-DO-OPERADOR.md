@@ -218,15 +218,17 @@ código-fonte continua sob **GNU GPL v2.0**, e os Termos não restringem os dire
 NutManager-Agent-Setup-1.0.1.exe /quiet
 ```
 
-Instala o runtime da Microsoft por padrão, se estiver faltando. Para recusar deliberadamente:
+Instala por padrão cada runtime Microsoft necessário que estiver faltando. Para recusar
+deliberadamente um ou ambos:
 
 ```powershell
-NutManager-Agent-Setup-1.0.1.exe /quiet InstallAspNetRuntime=0
+NutManager-Agent-Setup-1.0.1.exe /quiet InstallDotNetRuntime=0 InstallAspNetRuntime=0
 ```
 
-Com o runtime ausente e essa opção em `0`, a instalação **falha antes de registrar o serviço**. Isso é
-intencional: um `NutManagerAgent` registrado que não inicia é pior que uma recusa, porque a recusa
-aparece e o serviço quebrado não.
+`InstallDotNetRuntime` controla o Microsoft .NET Runtime 10 x64 e `InstallAspNetRuntime` controla o
+Microsoft ASP.NET Core Runtime 10 x64. Se um runtime estiver ausente e sua opção estiver em `0`, a
+instalação **falha antes de registrar o serviço**. Isso é intencional: um `NutManagerAgent` registrado
+que não inicia é pior que uma recusa, porque a recusa aparece e o serviço quebrado não.
 
 ### Passo 3 — verifique
 
