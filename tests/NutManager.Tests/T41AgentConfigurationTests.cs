@@ -183,14 +183,29 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Width=\"800\"", window, StringComparison.Ordinal);
         Assert.Contains("Height=\"600\"", window, StringComparison.Ordinal);
         Assert.Contains("CanResize=\"False\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-main-card\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ConfigurationSurface\"", window, StringComparison.Ordinal);
         Assert.Contains("ColumnDefinitions=\"0.82*,1.18*\"", window, StringComparison.Ordinal);
         Assert.Contains("Grid.ColumnSpan=\"2\"", window, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"agent-disable-https\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NamedPipeTransportRow\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HttpsTransportRow\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HttpsEditorFields\"", window, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanToggleNamedPipe}\"", window, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanToggleHttps}\"", window, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding HttpsEnabled}\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-disable-https", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-reach-badge", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentIconLock", window, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CertificateDetailsButtonText}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Strings[Https.Thumbprint]", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCopyValueClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding ApplicationVersion}\"", window, StringComparison.Ordinal);
 
         var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
+        var firstScrollViewer = window.IndexOf("<ScrollViewer", StringComparison.Ordinal);
         var operators = window.IndexOf("Group administration remains available", StringComparison.Ordinal);
+        Assert.True(firstScrollViewer > diagnostics,
+            "The fixed 800x600 configuration surface must not depend on a page-level ScrollViewer.");
         Assert.True(diagnostics >= 0 && operators > diagnostics,
             "Operators administration must remain available without changing the reference configuration surface.");
 
@@ -600,6 +615,51 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.NamedPipeEnabled);
         Assert.False(context.ViewModel.CanToggleNamedPipe);
         Assert.True(context.ViewModel.ShowsLastTransportNotice);
+    }
+
+    [Fact]
+    public async Task TransportToggleAvailabilityTracksTheLastActiveTransport()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.NamedPipeEnabled);
+        Assert.True(context.ViewModel.HttpsEnabled);
+        Assert.True(context.ViewModel.CanToggleNamedPipe);
+        Assert.True(context.ViewModel.CanToggleHttps);
+
+        context.ViewModel.HttpsEnabled = false;
+
+        Assert.True(context.ViewModel.NamedPipeEnabled);
+        Assert.False(context.ViewModel.CanToggleNamedPipe);
+        Assert.True(context.ViewModel.CanToggleHttps);
+
+        context.ViewModel.HttpsEnabled = true;
+
+        Assert.True(context.ViewModel.CanToggleNamedPipe);
+        Assert.True(context.ViewModel.CanToggleHttps);
+
+        context.ViewModel.NamedPipeEnabled = false;
+
+        Assert.True(context.ViewModel.CanToggleNamedPipe);
+        Assert.False(context.ViewModel.CanToggleHttps);
+    }
+
+    [Fact]
+    public async Task DisablingHttpsKeepsItsSavedPresentationValuesAvailable()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+        var endpoint = context.ViewModel.HttpsEndpoint;
+        var thumbprint = context.ViewModel.CertificateThumbprint;
+
+        context.ViewModel.HttpsEnabled = false;
+
+        Assert.False(context.ViewModel.HttpsEnabled);
+        Assert.Equal(endpoint, context.ViewModel.HttpsEndpoint);
+        Assert.Equal(thumbprint, context.ViewModel.CertificateThumbprint);
+        Assert.False(context.ViewModel.HttpsIsValid);
+        Assert.Null(context.ViewModel.HttpsValidationMessage);
     }
 
     [Fact]

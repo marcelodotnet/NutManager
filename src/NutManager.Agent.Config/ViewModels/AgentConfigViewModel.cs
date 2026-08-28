@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NutManager.Agent.Config.Localization;
@@ -154,23 +155,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string HttpsStatusText => HttpsEnabled ? Strings["Transport.Active"] : Strings["Transport.Inactive"];
 
-    /// <summary>
-    /// The padlock beside each transport says how far that transport reaches, and it does not change
-    /// with the checkbox.
-    ///
-    /// A named pipe is closed: it never leaves the machine, and Windows enforces that rather than a
-    /// setting. HTTPS is open: enabling it puts a port on the network, which is the single most
-    /// consequential thing this window can do. The tooltip carries the same sentence, so the padlock is
-    /// never the only place the distinction is made.
-    /// </summary>
-    public string NamedPipeReachIcon => "AgentIconLock";
-
-    public string HttpsReachIcon => "AgentIconLockOpen";
-
-    public string NamedPipeReachTooltip => Strings["Transport.Reach.Local"];
-
-    public string HttpsReachTooltip => Strings["Transport.Reach.Network"];
-
     partial void OnNamedPipeEnabledChanged(bool value) =>
         OnTransportChanged(value, HttpsEnabled, () => NamedPipeEnabled = true);
 
@@ -178,7 +162,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         OnTransportChanged(value, NamedPipeEnabled, () => HttpsEnabled = true);
 
-        OnPropertyChanged(nameof(HttpsSectionVisible));
         RefreshHttpsValidation();
 
         // The listener row is derived from the transport, so turning HTTPS on has to redraw it. This
@@ -231,8 +214,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public ObservableCollection<AgentCertificateOption> Certificates { get; } = [];
 
-    public bool HttpsSectionVisible => HttpsEnabled;
-
     /// <summary>The endpoint exactly as it will be written and bound, built once by the shared rules.</summary>
     [ObservableProperty]
     private string _httpsEndpoint = string.Empty;
@@ -275,6 +256,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ? $"{option.Certificate.NotBefore:yyyy-MM-dd} — {option.Certificate.NotAfter:yyyy-MM-dd}"
         : null;
 
+    public string? CertificateNotBefore => SelectedCertificate is { } option
+        ? option.Certificate.NotBefore.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)
+        : null;
+
+    public string? CertificateNotAfter => SelectedCertificate is { } option
+        ? option.Certificate.NotAfter.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)
+        : null;
+
     /// <summary>
     /// The subject alternative names, which are where a modern certificate actually carries the host it
     /// speaks for. Shown because "does not name this host" is the rejection an operator most often
@@ -294,8 +283,15 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ? option.Certificate.SupportsServerAuthentication ? Strings["Https.Certificate.Yes"] : Strings["Https.Certificate.No"]
         : null;
 
+    public string? CertificateHostMatchText => SelectedCertificate is { } option
+        ? AgentCertificateRules.MatchesHost(option.Certificate, HttpsHost.Trim())
+            ? Strings["Https.Certificate.Match"]
+            : Strings["Https.Certificate.Mismatch"]
+        : null;
+
     partial void OnHttpsHostChanged(string value)
     {
+        OnPropertyChanged(nameof(CertificateHostMatchText));
         RefreshHttpsValidation();
         RefreshDirty();
     }
@@ -312,9 +308,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CertificateSubject));
         OnPropertyChanged(nameof(CertificateIssuer));
         OnPropertyChanged(nameof(CertificateValidity));
+        OnPropertyChanged(nameof(CertificateNotBefore));
+        OnPropertyChanged(nameof(CertificateNotAfter));
         OnPropertyChanged(nameof(CertificateSubjectAlternativeNames));
         OnPropertyChanged(nameof(CertificatePrivateKeyText));
         OnPropertyChanged(nameof(CertificateServerAuthenticationText));
+        OnPropertyChanged(nameof(CertificateHostMatchText));
         RefreshHttpsValidation();
         RefreshDirty();
     }
@@ -330,7 +329,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         if (!HttpsEnabled)
         {
-            HttpsEndpoint = string.Empty;
+            HttpsEndpoint = AgentHttpsPrefixRules.TryBuildPrefix(HttpsHost, HttpsPort, out var disabledPrefix, out _)
+                ? disabledPrefix!
+                : string.Empty;
             HttpsValidationMessage = null;
             HttpsIsValid = false;
             RefreshApplyState();
@@ -1000,7 +1001,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanToggleNamedPipe));
         OnPropertyChanged(nameof(CanToggleHttps));
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
-        OnPropertyChanged(nameof(HttpsSectionVisible));
 
         RefreshHttpsValidation();
         RefreshDirty();
