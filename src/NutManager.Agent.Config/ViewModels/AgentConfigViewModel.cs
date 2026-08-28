@@ -84,6 +84,18 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public AgentConfigStrings Strings { get; }
 
+    /// <summary>The product version shown in the fixed operational footer.</summary>
+    public string ApplicationVersion
+    {
+        get
+        {
+            var version = typeof(AgentConfigViewModel).Assembly.GetName().Version;
+            return version is null
+                ? "v—"
+                : $"v{version.Major}.{version.Minor}.{Math.Max(0, version.Build)}";
+        }
+    }
+
     // ---------------------------------------------------------------- which half is showing
 
     /// <summary>
@@ -142,6 +154,23 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string HttpsStatusText => HttpsEnabled ? Strings["Transport.Active"] : Strings["Transport.Inactive"];
 
+    /// <summary>
+    /// The padlock beside each transport says how far that transport reaches, and it does not change
+    /// with the checkbox.
+    ///
+    /// A named pipe is closed: it never leaves the machine, and Windows enforces that rather than a
+    /// setting. HTTPS is open: enabling it puts a port on the network, which is the single most
+    /// consequential thing this window can do. The tooltip carries the same sentence, so the padlock is
+    /// never the only place the distinction is made.
+    /// </summary>
+    public string NamedPipeReachIcon => "AgentIconLock";
+
+    public string HttpsReachIcon => "AgentIconLockOpen";
+
+    public string NamedPipeReachTooltip => Strings["Transport.Reach.Local"];
+
+    public string HttpsReachTooltip => Strings["Transport.Reach.Network"];
+
     partial void OnNamedPipeEnabledChanged(bool value) =>
         OnTransportChanged(value, HttpsEnabled, () => NamedPipeEnabled = true);
 
@@ -151,6 +180,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HttpsSectionVisible));
         RefreshHttpsValidation();
+
+        // The listener row is derived from the transport, so turning HTTPS on has to redraw it. This
+        // recomposes from the resource state already read; it does not go back to HTTP.sys, which
+        // would put a blocking Windows query on the UI thread every time a checkbox is clicked.
+        RebuildResourceStatus();
+        RebuildDiagnostics();
     }
 
     /// <summary>
@@ -211,6 +246,54 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string? CertificateThumbprint => SelectedCertificate?.Thumbprint;
 
+    /// <summary>
+    /// Whether the chosen certificate is expanded.
+    ///
+    /// Inline rather than a Windows certificate dialog: X509Certificate2UI never came to .NET, and the
+    /// four facts that decide whether HTTPS will work — the subject, the alternative names, the private
+    /// key and the server-authentication usage — are exactly the four this panel shows. Sending an
+    /// operator to certlm.msc to read them would be sending them away from the screen that refused the
+    /// certificate.
+    /// </summary>
+    [ObservableProperty]
+    private bool _showCertificateDetails;
+
+    partial void OnShowCertificateDetailsChanged(bool value) =>
+        OnPropertyChanged(nameof(CertificateDetailsButtonText));
+
+    public string CertificateDetailsButtonText =>
+        ShowCertificateDetails ? Strings["Https.Certificate.Hide"] : Strings["Https.Certificate.View"];
+
+    [RelayCommand]
+    private void ToggleCertificateDetails() => ShowCertificateDetails = !ShowCertificateDetails;
+
+    public string? CertificateSubject => SelectedCertificate?.Certificate.Subject;
+
+    public string? CertificateIssuer => SelectedCertificate?.Certificate.Issuer;
+
+    public string? CertificateValidity => SelectedCertificate is { } option
+        ? $"{option.Certificate.NotBefore:yyyy-MM-dd} — {option.Certificate.NotAfter:yyyy-MM-dd}"
+        : null;
+
+    /// <summary>
+    /// The subject alternative names, which are where a modern certificate actually carries the host it
+    /// speaks for. Shown because "does not name this host" is the rejection an operator most often
+    /// disagrees with, and this is the evidence.
+    /// </summary>
+    public string? CertificateSubjectAlternativeNames => SelectedCertificate is { } option
+        ? option.Certificate.SubjectAlternativeNames.Count > 0
+            ? string.Join(", ", option.Certificate.SubjectAlternativeNames)
+            : Strings["Https.Certificate.NoSans"]
+        : null;
+
+    public string? CertificatePrivateKeyText => SelectedCertificate is { } option
+        ? option.Certificate.HasPrivateKey ? Strings["Https.Certificate.Yes"] : Strings["Https.Certificate.No"]
+        : null;
+
+    public string? CertificateServerAuthenticationText => SelectedCertificate is { } option
+        ? option.Certificate.SupportsServerAuthentication ? Strings["Https.Certificate.Yes"] : Strings["Https.Certificate.No"]
+        : null;
+
     partial void OnHttpsHostChanged(string value)
     {
         RefreshHttpsValidation();
@@ -226,6 +309,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnSelectedCertificateChanged(AgentCertificateOption? value)
     {
         OnPropertyChanged(nameof(CertificateThumbprint));
+        OnPropertyChanged(nameof(CertificateSubject));
+        OnPropertyChanged(nameof(CertificateIssuer));
+        OnPropertyChanged(nameof(CertificateValidity));
+        OnPropertyChanged(nameof(CertificateSubjectAlternativeNames));
+        OnPropertyChanged(nameof(CertificatePrivateKeyText));
+        OnPropertyChanged(nameof(CertificateServerAuthenticationText));
         RefreshHttpsValidation();
         RefreshDirty();
     }
@@ -248,10 +337,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             return;
         }
 
-        if (!AgentHttpsPrefixRules.TryBuildPrefix(HttpsHost, HttpsPort, out var prefix, out var prefixFailure))
+        if (!AgentHttpsPrefixRules.TryBuildPrefix(HttpsHost, HttpsPort, out var prefix, out _))
         {
             HttpsEndpoint = string.Empty;
-            HttpsValidationMessage = prefixFailure;
+            HttpsValidationMessage = DescribeEndpointProblem();
             HttpsIsValid = false;
             RefreshApplyState();
             return;
@@ -269,9 +358,86 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         var verdict = AgentCertificateRules.Evaluate(option.Certificate, HttpsHost.Trim(), _time.GetUtcNow());
 
-        HttpsValidationMessage = verdict.IsUsable ? Strings["Https.Certificate.Valid"] : string.Join(" ", verdict.Problems);
+        HttpsValidationMessage = verdict.IsUsable
+            ? Strings["Https.Certificate.Valid"]
+            : DescribeCertificateProblems(option);
         HttpsIsValid = verdict.IsUsable;
         RefreshApplyState();
+    }
+
+    /// <summary>
+    /// Why the endpoint is not usable, in the operator's language.
+    ///
+    /// The rules in Core carry English text, which is right for a log and wrong for this window - an
+    /// operator on a pt-BR server was being shown "An explicit host or FQDN is required." The verdict
+    /// still comes from Core; only the sentence is chosen here.
+    /// </summary>
+    private string DescribeEndpointProblem()
+    {
+        var host = HttpsHost?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(host)) return Strings["Https.Invalid.Host"];
+
+        if (host.Contains('*', StringComparison.Ordinal) || host.StartsWith('+'))
+        {
+            return Strings["Https.Invalid.Wildcard"];
+        }
+
+        if (host.Contains('/', StringComparison.Ordinal) ||
+            host.Contains(':', StringComparison.Ordinal) ||
+            host.Contains(' ', StringComparison.Ordinal))
+        {
+            return Strings["Https.Invalid.HostFormat"];
+        }
+
+        if (HttpsPort is < AgentHttpsPrefixRules.MinimumPort or > AgentHttpsPrefixRules.MaximumPort)
+        {
+            return Strings["Https.Invalid.Port"];
+        }
+
+        return Strings["Https.Invalid.HostFormat"];
+    }
+
+    /// <summary>
+    /// The same for the certificate.
+    ///
+    /// Each clause re-asks a question Core already answers publicly — the private key, the validity
+    /// window, the server-authentication usage, and <see cref="AgentCertificateRules.MatchesHost"/> —
+    /// so the phrasing is localized here without the rule being decided here. Whether the certificate
+    /// is usable at all remains Core's answer, and this only runs once it has said no.
+    /// </summary>
+    private string DescribeCertificateProblems(AgentCertificateOption option)
+    {
+        var certificate = option.Certificate;
+        var now = _time.GetUtcNow();
+
+        // One reason, not a list. Three stacked warnings cost three lines of a 600px window and still
+        // leave the operator deciding which to act on first, so the order below is that decision made
+        // once: a missing private key cannot be fixed from this screen at all, an expired certificate
+        // comes next, and the name mismatch last because it is the one a different host would resolve.
+        if (!certificate.HasPrivateKey) return Strings["Https.Cert.NoPrivateKey"];
+
+        if (now < certificate.NotBefore)
+        {
+            return Strings.Format("Https.Cert.NotYetValid", certificate.NotBefore.ToString("dd/MM/yyyy"));
+        }
+
+        if (now > certificate.NotAfter)
+        {
+            return Strings.Format("Https.Cert.Expired", certificate.NotAfter.ToString("dd/MM/yyyy"));
+        }
+
+        if (!certificate.SupportsServerAuthentication) return Strings["Https.Cert.NoServerAuth"];
+
+        var host = HttpsHost?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(host) && !AgentCertificateRules.MatchesHost(certificate, host))
+        {
+            return Strings.Format("Https.Cert.HostMismatch", host);
+        }
+
+        // Core judged the certificate unusable and every reason above was ruled out. Saying so beats
+        // returning an empty string, which would read as approval.
+        return Strings["Https.Cert.Unusable"];
     }
 
     // ---------------------------------------------------------------- operators group
@@ -389,6 +555,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
+    /// <summary>
+    /// The footer's one line about the service: which service, and what it is doing. Two facts, in the
+    /// order an operator reads them, and never merged into a single word.
+    /// </summary>
+    public string ServiceFooterText =>
+        $"{Strings["Service.Title"]} {Strings["Service.Name"]} ({ServiceStateText})";
+
     public bool ServiceIsRunning => _serviceState.IsRunning;
 
     public bool ServiceIsInstalled => _serviceState.IsInstalled;
@@ -398,6 +571,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool CanStopService => ServiceIsRunning && !IsBusy;
 
     public bool CanRestartService => ServiceIsRunning && !IsBusy;
+
+    /// <summary>
+    /// Which service action leads.
+    ///
+    /// A stopped agent needs starting and a running one needs restarting, and showing both with equal
+    /// weight makes the operator work out which one applies. Stop stays available while it is running,
+    /// but as the quiet option: it is the one that takes monitoring away.
+    /// </summary>
+    public bool ShowStartServiceAction => ServiceIsInstalled && !ServiceIsRunning;
+
+    public bool ShowRunningServiceActions => ServiceIsRunning;
 
     [RelayCommand]
     private Task StartServiceAsync(CancellationToken cancellationToken) =>
@@ -452,6 +636,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ServiceState));
         OnPropertyChanged(nameof(ServiceIsRunning));
         OnPropertyChanged(nameof(ServiceIsInstalled));
+        OnPropertyChanged(nameof(ServiceFooterText));
+        OnPropertyChanged(nameof(ShowStartServiceAction));
+        OnPropertyChanged(nameof(ShowRunningServiceActions));
         RefreshCommandStates();
         RebuildDiagnostics();
     }
@@ -732,6 +919,22 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     // ---------------------------------------------------------------- load
 
+    /// <summary>
+    /// Puts a failed start-up read on the screen.
+    ///
+    /// Reading the machine is the one thing this window does before an operator touches anything, and
+    /// when it fails every section is empty for a reason nobody can see. This is the reason, in the
+    /// place they are already looking.
+    /// </summary>
+    public void ReportStartupFailure(AggregateException? failure)
+    {
+        var inner = failure?.GetBaseException();
+        if (inner is null) return;
+
+        ApplyFailed = true;
+        ApplyMessage = $"{Strings["Message.RefreshFailed"]} ({inner.GetType().Name}: {inner.Message})";
+    }
+
     /// <summary>Reads everything the window shows. Safe to call again at any time: nothing here writes.</summary>
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
@@ -839,12 +1042,64 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void RebuildResourceStatus()
     {
         ResourceStatus.Clear();
-        ResourceStatus.Add(Describe(Strings["Resources.SslBinding"], _resourceState.SslBinding));
-        ResourceStatus.Add(Describe(Strings["Resources.UrlReservation"], _resourceState.UrlReservation));
-        ResourceStatus.Add(Describe(Strings["Resources.Firewall"], _resourceState.FirewallRule));
+        ResourceStatus.Add(Describe(Strings["Resources.SslBinding"], _resourceState.SslBinding, "NutIconTls"));
+        ResourceStatus.Add(Describe(Strings["Resources.UrlReservation"], _resourceState.UrlReservation, "NutIconRemote"));
+        // The firewall row names its port when there is one to name, as the reference does.
+        var firewall = HttpsEnabled
+            ? Strings.Format("Resources.Firewall.Port", HttpsPort)
+            : Strings["Resources.Firewall"];
+        ResourceStatus.Add(Describe(firewall, _resourceState.FirewallRule, "NutIconShield"));
+        ResourceStatus.Add(DescribeListener());
     }
 
-    private AgentStatusItemViewModel Describe(string label, AgentResourceState state)
+    /// <summary>
+    /// Whether the HTTPS listener is actually up.
+    ///
+    /// This is a composed answer, not a probe, and the difference is worth saying out loud: it reports
+    /// that HTTPS is enabled, that its endpoint is valid, that the binding and the reservation are
+    /// ours, and that the service is running — everything the listener needs. It does not open a
+    /// socket, and it is not a claim that any client has ever authenticated over it. Those are separate
+    /// facts, and the diagnostics view keeps them separate.
+    /// </summary>
+    private AgentStatusItemViewModel DescribeListener()
+    {
+        const string icon = "NutIconConnection";
+        var label = Strings["Resources.Listener"];
+
+        if (!HttpsEnabled)
+        {
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.Disabled"], icon);
+        }
+
+        if (!_serviceState.IsInstalled)
+        {
+            // Not installed is not stopped. Reporting a service that does not exist as merely stopped
+            // sends an administrator to the wrong place, and it is exactly the conflation the
+            // diagnostics rules forbid.
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.ServiceMissing"], icon);
+        }
+
+        if (!_serviceState.IsRunning)
+        {
+            // The configuration can be perfect and nothing is listening, because the service is not
+            // running. Saying "ready" here would be the most misleading line on the screen.
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.ServiceStopped"], icon);
+        }
+
+        if (!HttpsIsValid || !_resourceState.IsFullyConfigured)
+        {
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.Incomplete"], icon);
+        }
+
+        return AgentStatusItemViewModel.From(
+            Strings, label, AgentDiagnosticState.Ready, Strings.Format("Resources.Listener.Listening", HttpsEndpoint), icon);
+    }
+
+    private AgentStatusItemViewModel Describe(string label, AgentResourceState state, string iconKey)
     {
         var diagnostic = state.Ownership switch
         {
@@ -864,7 +1119,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             _ => null,
         };
 
-        return AgentStatusItemViewModel.From(Strings, label, diagnostic, detail);
+        return AgentStatusItemViewModel.From(Strings, label, diagnostic, detail, iconKey);
     }
 
     /// <summary>

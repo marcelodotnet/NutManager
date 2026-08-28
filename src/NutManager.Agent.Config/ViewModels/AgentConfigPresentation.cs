@@ -12,13 +12,35 @@ namespace NutManager.Agent.Config.ViewModels;
 /// </summary>
 public sealed class AgentStatusItemViewModel
 {
-    public AgentStatusItemViewModel(string label, AgentDiagnosticState state, string? detail, string statusText)
+    public AgentStatusItemViewModel(
+        string label, AgentDiagnosticState state, string? detail, string statusText, string iconKey = "NutIconShield")
     {
         Label = label;
         State = state;
         Detail = detail;
         StatusText = statusText;
+        IconKey = iconKey;
     }
+
+    /// <summary>
+    /// Which glyph names the thing this row is about — the binding, the reservation, the rule, the
+    /// listener. A resource key rather than a geometry, so the view resolves it from the product's own
+    /// catalog and this type stays constructible in a test with no Avalonia application running.
+    /// </summary>
+    public string IconKey { get; }
+
+    /// <summary>
+    /// The trailing glyph, which reports the state rather than repeating the subject. Separate from
+    /// <see cref="IconKey"/> because one identifies the resource and the other judges it, and a row
+    /// where both were the same drawing would be a row saying nothing twice.
+    /// </summary>
+    public string StateIconKey => State switch
+    {
+        AgentDiagnosticState.Ready => "AgentIconStateReady",
+        AgentDiagnosticState.Attention => "AgentIconStateAttention",
+        AgentDiagnosticState.NotConfigured => "AgentIconStateNotConfigured",
+        _ => "AgentIconStateError",
+    };
 
     public string Label { get; }
 
@@ -58,8 +80,12 @@ public sealed class AgentStatusItemViewModel
     public string AccessibleText => HasDetail ? $"{Label}: {StatusText}. {Detail}" : $"{Label}: {StatusText}";
 
     internal static AgentStatusItemViewModel From(
-        AgentConfigStrings strings, string label, AgentDiagnosticState state, string? detail = null) =>
-        new(label, state, detail, StatusTextFor(strings, state));
+        AgentConfigStrings strings,
+        string label,
+        AgentDiagnosticState state,
+        string? detail = null,
+        string iconKey = "NutIconShield") =>
+        new(label, state, detail, StatusTextFor(strings, state), iconKey);
 
     internal static string StatusTextFor(AgentConfigStrings strings, AgentDiagnosticState state) => state switch
     {

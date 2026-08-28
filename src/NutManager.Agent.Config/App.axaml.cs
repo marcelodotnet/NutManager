@@ -46,7 +46,16 @@ public sealed class App : Application
 
             // Started after the window exists so a slow query — the certificate store on a domain
             // member can take a moment — shows an open window rather than nothing at all.
-            _ = viewModel.RefreshAsync();
+            //
+            // The result is observed rather than discarded. A bare `_ = RefreshAsync()` swallows any
+            // exception into a dropped task, and the visible symptom is a window that opens with empty
+            // sections and no explanation — exactly the state an operator would report as "it shows
+            // nothing". A failure to read the machine belongs on the screen.
+            viewModel.RefreshAsync().ContinueWith(
+                task => viewModel.ReportStartupFailure(task.Exception),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.FromCurrentSynchronizationContext());
         }
 
         base.OnFrameworkInitializationCompleted();

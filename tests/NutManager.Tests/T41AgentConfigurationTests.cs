@@ -171,6 +171,35 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
+    public void AgentConfigWindowKeepsTheFixedReferenceComposition()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var codeBehind = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml.cs");
+
+        // 800x600. Both numbers are pinned because the window cannot be resized, so anything that does
+        // not fit is unreachable rather than merely cramped - the "Status da configuração" strip is the
+        // part that falls off first, and it carries the four owned Windows resources. 4:3 is also the
+        // reference composition's own proportion, which is why this fits where 854x480 did not.
+        Assert.Contains("Width=\"800\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"600\"", window, StringComparison.Ordinal);
+        Assert.Contains("CanResize=\"False\"", window, StringComparison.Ordinal);
+        Assert.Contains("ColumnDefinitions=\"0.82*,1.18*\"", window, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"2\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-disable-https\"", window, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCopyValueClicked\"", window, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding ApplicationVersion}\"", window, StringComparison.Ordinal);
+
+        var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
+        var operators = window.IndexOf("Group administration remains available", StringComparison.Ordinal);
+        Assert.True(diagnostics >= 0 && operators > diagnostics,
+            "Operators administration must remain available without changing the reference configuration surface.");
+
+        Assert.Contains("DataTransferItem", codeBehind, StringComparison.Ordinal);
+        Assert.Contains("DataFormat.Text", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("SetTextAsync", codeBehind, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AgentStartupFailsClosedWhenAHandEditedFileDisablesBothTransports()
     {
         var service = Read("src/NutManager.Agent/NutAgentWindowsService.cs");
@@ -541,6 +570,14 @@ public sealed class T41AgentConfigurationStoreTests
 public sealed class T41AgentConfigViewModelTests
 {
     [Fact]
+    public void FooterVersionComesFromTheAgentConfigAssembly()
+    {
+        var context = CreateContext();
+
+        Assert.Matches("^v[0-9]+\\.[0-9]+\\.[0-9]+$", context.ViewModel.ApplicationVersion);
+    }
+
+    [Fact]
     public async Task RefreshUsesLegacyNamedPipeDefault()
     {
         var context = CreateContext();
@@ -744,6 +781,85 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
         Assert.Empty(context.Resources.RemoveRequests);
         Assert.False(Assert.Single(context.Store.Writes).HttpsEnabled);
+    }
+
+    [Fact]
+    public async Task ServiceActionsAreContextualRatherThanThreeButtonsOfEqualWeight()
+    {
+        var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
+        await stopped.ViewModel.RefreshAsync();
+
+        // A stopped agent is offered the one action that helps: start it.
+        Assert.True(stopped.ViewModel.ShowStartServiceAction);
+        Assert.False(stopped.ViewModel.ShowRunningServiceActions);
+
+        var running = CreateContext(serviceState: AgentServiceState.Running);
+        await running.ViewModel.RefreshAsync();
+
+        Assert.False(running.ViewModel.ShowStartServiceAction);
+        Assert.True(running.ViewModel.ShowRunningServiceActions);
+
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+
+        // Neither action is offered for a service that does not exist: there is nothing to start.
+        Assert.False(absent.ViewModel.ShowStartServiceAction);
+        Assert.False(absent.ViewModel.ShowRunningServiceActions);
+    }
+
+    [Fact]
+    public async Task TheListenerRowSeparatesAnAbsentServiceFromAStoppedOne()
+    {
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+        absent.ViewModel.HttpsEnabled = true;
+
+        var absentListener = absent.ViewModel.ResourceStatus.Last();
+        Assert.Contains("not installed", absentListener.Detail, StringComparison.OrdinalIgnoreCase);
+
+        var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
+        await stopped.ViewModel.RefreshAsync();
+        stopped.ViewModel.HttpsEnabled = true;
+
+        // Stopped and absent are different machine states and must not collapse into one sentence.
+        var stoppedListener = stopped.ViewModel.ResourceStatus.Last();
+        Assert.Contains("stopped", stoppedListener.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.NotEqual(absentListener.Detail, stoppedListener.Detail);
+    }
+
+    [Fact]
+    public async Task AnUnusableCertificateReportsOneReasonRatherThanEveryReasonAtOnce()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "other.sbra.local";
+        context.ViewModel.HttpsPort = 5199;
+        context.ViewModel.SelectedCertificate = Assert.Single(context.ViewModel.Certificates);
+
+        Assert.False(context.ViewModel.HttpsIsValid);
+
+        // One sentence. Three stacked warnings cost three lines of a 600px window and still leave the
+        // operator deciding which to act on first.
+        var message = Assert.IsType<string>(context.ViewModel.HttpsValidationMessage);
+        Assert.DoesNotContain(". ", message.TrimEnd('.'), StringComparison.Ordinal);
+        Assert.Contains("other.sbra.local", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheFirewallRowNamesItsPortOnlyWhileHttpsIsOn()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.DoesNotContain(context.ViewModel.ResourceStatus, item => item.Label.Contains("5199", StringComparison.Ordinal));
+
+        EnableValidHttps(context.ViewModel);
+
+        Assert.Contains(context.ViewModel.ResourceStatus, item => item.Label.Contains("5199", StringComparison.Ordinal));
+        Assert.Equal(4, context.ViewModel.ResourceStatus.Count);
+        Assert.Equal(Thumbprint, context.ViewModel.CertificateThumbprint);
     }
 
     private const string Thumbprint = "A909502DD82AE41433E6F83886B00D4277A32A7B";

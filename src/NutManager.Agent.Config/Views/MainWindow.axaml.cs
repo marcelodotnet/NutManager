@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 
@@ -7,9 +8,8 @@ namespace NutManager.Agent.Config.Views;
 /// <summary>
 /// The window.
 ///
-/// Closing it is the one thing a button here does that no view model can express — a view model able
-/// to close its own window would need a handle to it, and that is exactly the coupling this
-/// code-behind exists to avoid. Everything else on this screen is a command.
+/// Window-only actions live here: close the window and copy already-presented, non-secret endpoint or
+/// certificate identifiers. Administrative behavior remains in the view model and infrastructure.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -18,4 +18,18 @@ public sealed partial class MainWindow : Window
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
     private void OnCloseClicked(object? sender, RoutedEventArgs e) => Close();
+
+    private async void OnCopyValueClicked(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string value } || string.IsNullOrWhiteSpace(value)) return;
+
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard is null) return;
+
+        var item = new DataTransferItem();
+        item.Set(DataFormat.Text, value);
+        var data = new DataTransfer();
+        data.Add(item);
+        await clipboard.SetDataAsync(data);
+    }
 }

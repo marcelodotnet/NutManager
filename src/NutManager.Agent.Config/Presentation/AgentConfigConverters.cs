@@ -43,6 +43,17 @@ public static class AgentConfigConverters
             Resource<Geometry>(valid ? "NutIconSuccess" : "NutIconWarning"));
 
     /// <summary>
+    /// A catalog key to its drawing.
+    ///
+    /// This is what lets a status row carry its own icon without the view model ever holding a
+    /// Geometry: the row names the glyph, and resolution happens here, where an Avalonia application
+    /// exists. It is also why such a row can be constructed in a test with no UI at all.
+    /// </summary>
+    public static readonly IValueConverter IconByKey =
+        new FuncValueConverter<string?, Geometry?>(key =>
+            string.IsNullOrWhiteSpace(key) ? null : Resource<Geometry>(key));
+
+    /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager
     /// theme files put it. A missing key returns null rather than throwing: an uncoloured glyph is a
     /// cosmetic fault, and taking the window down over one would not be.

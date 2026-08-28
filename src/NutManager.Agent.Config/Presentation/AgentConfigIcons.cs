@@ -19,25 +19,57 @@ namespace NutManager.Agent.Config.Presentation;
 /// </summary>
 public static class AgentConfigIcons
 {
-    private static readonly (string Key, MaterialIconKind Kind)[] Map =
+    /// <summary>
+    /// The catalog keys this window draws. Every kind here is the one the desktop's own library maps
+    /// that key to, and a test holds the two side by side — so these cannot drift into being a second,
+    /// slightly different icon set.
+    /// </summary>
+    private static readonly (string Key, MaterialIconKind Kind)[] SharedMap =
     [
         ("NutIconDiagnostics", MaterialIconKind.Pulse),
-        ("NutIconNetwork", MaterialIconKind.LanConnect),
-        ("NutIconTls", MaterialIconKind.LockCheckOutline),
+        ("NutIconNetwork", MaterialIconKind.Web),
+        ("NutIconTls", MaterialIconKind.LockOutline),
         ("NutIconCertificate", MaterialIconKind.CertificateOutline),
         ("NutIconShield", MaterialIconKind.ShieldCheckOutline),
         ("NutIconUsers", MaterialIconKind.AccountGroupOutline),
-        ("NutIconService", MaterialIconKind.CogSyncOutline),
+        ("NutIconService", MaterialIconKind.ServerOutline),
         ("NutIconRestart", MaterialIconKind.Restart),
-        ("NutIconApply", MaterialIconKind.ContentSaveOutline),
+        ("NutIconApply", MaterialIconKind.CheckCircleOutline),
         ("NutIconInfo", MaterialIconKind.InformationOutline),
         ("NutIconWarning", MaterialIconKind.AlertOutline),
         ("NutIconSuccess", MaterialIconKind.CheckCircleOutline),
-        ("NutIconError", MaterialIconKind.CloseCircleOutline),
+        ("NutIconError", MaterialIconKind.AlertCircleOutline),
         ("NutIconCopy", MaterialIconKind.ContentCopy),
         ("NutIconRefresh", MaterialIconKind.Refresh),
         ("NutIconSmb", MaterialIconKind.FolderNetworkOutline),
+        ("NutIconConnection", MaterialIconKind.LanConnect),
+        ("NutIconRemote", MaterialIconKind.RemoteDesktop),
+        ("NutIconLogs", MaterialIconKind.TextBoxOutline),
+        ("NutIconClose", MaterialIconKind.Close),
     ];
+
+    /// <summary>
+    /// Glyphs this utility needs and the desktop has no key for. Named with an Agent prefix precisely
+    /// so they cannot be mistaken for catalog entries: adding them to NutIcons.axaml would change the
+    /// desktop application's own resources, which is not this task's to do.
+    /// </summary>
+    private static readonly (string Key, MaterialIconKind Kind)[] LocalMap =
+    [
+        ("AgentIconLock", MaterialIconKind.LockOutline),
+        ("AgentIconLockOpen", MaterialIconKind.LockOpenVariantOutline),
+        ("AgentIconEye", MaterialIconKind.EyeOutline),
+
+        // Filled state glyphs. The catalog's NutIconSuccess is an outlined check because that is what
+        // the desktop draws inline in prose; a status strip reads better with a solid disc, and giving
+        // these keys of their own keeps the shared catalog untouched.
+        ("AgentIconStateReady", MaterialIconKind.CheckCircle),
+        ("AgentIconStateAttention", MaterialIconKind.Alert),
+        ("AgentIconStateError", MaterialIconKind.AlertCircle),
+        ("AgentIconStateNotConfigured", MaterialIconKind.CircleOutline),
+        ("AgentIconProhibit", MaterialIconKind.CancelOutline),
+    ];
+
+    private static readonly (string Key, MaterialIconKind Kind)[] Map = [.. SharedMap, .. LocalMap];
 
     /// <summary>
     /// Replaces the fallback drawings this map covers. Called after the dictionaries are composed, so
@@ -57,6 +89,12 @@ public static class AgentConfigIcons
         }
     }
 
-    /// <summary>The map, so a test can hold it against the desktop's.</summary>
+    /// <summary>Everything this utility fills in, shared and local alike.</summary>
     public static IReadOnlyList<(string Key, MaterialIconKind Kind)> SuppliedIcons => Map;
+
+    /// <summary>
+    /// Only the keys the desktop also owns, so a test can hold these against its library and leave the
+    /// Agent-prefixed ones — which the desktop has never heard of — out of the comparison.
+    /// </summary>
+    public static IReadOnlyList<(string Key, MaterialIconKind Kind)> SharedIcons => SharedMap;
 }

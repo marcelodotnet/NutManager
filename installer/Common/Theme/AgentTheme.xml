@@ -27,6 +27,23 @@
   <Font Id="5" Height="-11" Weight="400" Foreground="graytext">Segoe UI</Font>
   <Font Id="6" Height="-12" Weight="600" Foreground="#B34700">Segoe UI</Font>
 
+  <!--
+    The two fonts for text that changes while the window is open. The only thing separating them from
+    4 and 5 is Background, and that one attribute is the whole fix.
+
+    thmutil draws a label's text without erasing what was there before. A font with no Background is
+    transparent, so when Burn replaces "Microsoft .NET Runtime 10 x64" with "Microsoft ASP.NET Core
+    Runtime 10 x64" the second string is painted on top of the first and both stay on screen - which is
+    what produced "NutMsoafgAPAGEnCtoree R0.uxnG4ne" on the progress page, and "016%" where a
+    percentage was counting up. Declaring Background makes the control fill its rectangle first, so
+    each update replaces the previous value instead of accumulating over it.
+
+    Any label whose text Burn or the MSI engine updates must use one of these two. A static label may
+    use any font, because it is only ever drawn once.
+  -->
+  <Font Id="7" Height="-12" Weight="600" Foreground="windowtext" Background="window">Segoe UI</Font>
+  <Font Id="8" Height="-11" Weight="400" Foreground="graytext" Background="window">Segoe UI</Font>
+
   <Window Width="620" Height="600" HexStyle="100a0000" FontId="0" Caption="#(loc.Caption)">
     <ImageControl X="20" Y="20" Width="88" Height="88" ImageFile="logo.png" Visible="yes" />
     <Label X="124" Y="22" Width="-20" Height="34" FontId="1" Visible="yes" DisablePrefix="yes">#(loc.Title)</Label>
@@ -160,13 +177,13 @@
 
       <Label X="20" Y="176" Width="96" Height="17" FontId="3" DisablePrefix="yes"
              VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)">#(loc.ProgressDownloadLabel)</Label>
-      <Label Name="CacheProgressPackageText" X="120" Y="176" Width="-20" Height="17" FontId="4" DisablePrefix="yes"
+      <Label Name="CacheProgressPackageText" X="120" Y="176" Width="-20" Height="17" FontId="7" DisablePrefix="yes"
              VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)" />
       <Progressbar Name="CacheProgressbar" X="20" Y="198" Width="-20" Height="14"
                    VisibleCondition="(NOT (DotNetRuntimeVersion &gt;= v10.0.0) AND InstallDotNetRuntime) OR (NOT (AspNetCoreRuntimeVersion &gt;= v10.0.0) AND InstallAspNetRuntime)" />
 
       <Label X="20" Y="234" Width="96" Height="17" FontId="3" DisablePrefix="yes">#(loc.ProgressInstallLabel)</Label>
-      <Label Name="ExecuteProgressPackageText" X="120" Y="234" Width="-20" Height="17" FontId="4" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Label>
+      <Label Name="ExecuteProgressPackageText" X="120" Y="234" Width="-20" Height="17" FontId="7" DisablePrefix="yes">#(loc.OverallProgressPackageText)</Label>
       <Progressbar Name="ExecuteProgressbar" X="20" Y="256" Width="-20" Height="14" />
 
       <!--
@@ -182,7 +199,7 @@
 
       <Label X="38" Y="322" Width="86" Height="17" FontId="5" DisablePrefix="yes"
              VisibleCondition="ShowProgressDetails">#(loc.ProgressComponentLabel)</Label>
-      <Label Name="ExecuteProgressText" X="128" Y="322" Width="-20" Height="17" FontId="5" DisablePrefix="yes"
+      <Label Name="ExecuteProgressText" X="128" Y="322" Width="-20" Height="17" FontId="8" DisablePrefix="yes"
              VisibleCondition="ShowProgressDetails" />
 
       <Label X="38" Y="346" Width="86" Height="17" FontId="5" DisablePrefix="yes"
@@ -193,7 +210,7 @@
         not parsed, reformatted or interpreted here - reading structured state out of localized
         installer text is how a progress display starts inventing stages that do not exist.
       -->
-      <Label Name="ExecuteProgressActionDataText" X="128" Y="346" Width="-24" Height="32" FontId="5" DisablePrefix="yes"
+      <Label Name="ExecuteProgressActionDataText" X="128" Y="346" Width="-24" Height="32" FontId="8" DisablePrefix="yes"
              VisibleCondition="ShowProgressDetails" />
 
       <Label X="38" Y="386" Width="86" Height="17" FontId="5" DisablePrefix="yes"
