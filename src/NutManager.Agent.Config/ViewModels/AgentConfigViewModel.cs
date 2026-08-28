@@ -217,6 +217,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public ObservableCollection<AgentCertificateOption> Certificates { get; } = [];
 
+    public bool HasSelectedCertificate => SelectedCertificate is not null;
+
     /// <summary>The endpoint exactly as it will be written and bound, built once by the shared rules.</summary>
     [ObservableProperty]
     private string _httpsEndpoint = string.Empty;
@@ -350,6 +352,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnSelectedCertificateChanged(AgentCertificateOption? value)
     {
         ClearImportFeedback();
+        OnPropertyChanged(nameof(HasSelectedCertificate));
         OnPropertyChanged(nameof(CertificateThumbprint));
         OnPropertyChanged(nameof(CertificateSubject));
         OnPropertyChanged(nameof(CertificateIssuer));
@@ -720,15 +723,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool CanRestartService => ServiceIsRunning && !IsBusy;
 
     /// <summary>
-    /// Which service action leads.
-    ///
-    /// A stopped agent needs starting and a running one needs restarting, and showing both with equal
-    /// weight makes the operator work out which one applies. Stop stays available while it is running,
-    /// but as the quiet option: it is the one that takes monitoring away.
+    /// The first service-control position is stable: it starts a stopped service and stops a running
+    /// one. A missing service keeps the start control visible but disabled so the action row does not
+    /// jump while the service state changes.
     /// </summary>
-    public bool ShowStartServiceAction => ServiceIsInstalled && !ServiceIsRunning;
+    public bool ShowStartServiceAction => !ServiceIsRunning;
 
-    public bool ShowRunningServiceActions => ServiceIsRunning;
+    public bool ShowStopServiceAction => ServiceIsRunning;
 
     [RelayCommand]
     private Task StartServiceAsync(CancellationToken cancellationToken) =>
@@ -785,7 +786,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ServiceIsInstalled));
         OnPropertyChanged(nameof(ServiceFooterText));
         OnPropertyChanged(nameof(ShowStartServiceAction));
-        OnPropertyChanged(nameof(ShowRunningServiceActions));
+        OnPropertyChanged(nameof(ShowStopServiceAction));
         RefreshCommandStates();
         RebuildDiagnostics();
     }

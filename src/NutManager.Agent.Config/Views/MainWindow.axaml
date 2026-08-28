@@ -35,9 +35,11 @@
           <StackPanel Grid.Column="1" Spacing="0">
             <TextBlock Classes="nut-body"
                        FontWeight="SemiBold"
+                       FontSize="12"
                        Foreground="{DynamicResource NutTextPrimaryBrush}"
                        Text="{Binding Label}"
-                       TextWrapping="Wrap" />
+                       TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis" />
             <TextBlock Classes="nut-metadata"
                        Text="{Binding Detail}"
                        IsVisible="{Binding HasDetail}"
@@ -97,24 +99,20 @@
       <Setter Property="BorderBrush" Value="{DynamicResource NutBorderBrush}" />
       <Setter Property="BorderThickness" Value="1" />
       <Setter Property="CornerRadius" Value="10" />
-      <Setter Property="Padding" Value="9" />
+      <Setter Property="Padding" Value="10" />
     </Style>
     <Style Selector="Border.agent-transport-row">
       <Setter Property="Padding" Value="2,7" />
       <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Transitions">
-        <Transitions>
-          <BrushTransition Property="Background" Duration="0:0:0.16" />
-        </Transitions>
-      </Setter>
     </Style>
-    <Style Selector="Border.agent-transport-row:pointerover">
-      <Setter Property="Background" Value="{DynamicResource NutSurfaceHoverBrush}" />
-    </Style>
-    <Style Selector="Border.agent-transport-row:disabled">
+    <Style Selector="Border.agent-transport-row.locked CheckBox,
+                     Border.agent-transport-row.locked PathIcon,
+                     Border.agent-transport-row.locked StackPanel">
       <Setter Property="Opacity" Value="0.58" />
-      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Border.agent-transport-status TextBlock">
+      <Setter Property="FontWeight" Value="SemiBold" />
     </Style>
     <Style Selector="Border.agent-transport-status.healthy TextBlock">
       <Setter Property="Foreground" Value="{DynamicResource NutHealthyBrightBrush}" />
@@ -140,6 +138,30 @@
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.agent-static-field">
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="{DynamicResource NutSurface2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.agent-service-action">
+      <Setter Property="Transitions">
+        <Transitions />
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-service-action PathIcon">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Transitions">
+        <Transitions />
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-service-action:pointerover PathIcon">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="none" />
     </Style>
 
     <!-- The expanded certificate, held in a quiet inset so it reads as detail rather than as a card. -->
@@ -215,15 +237,15 @@
     <!-- ============================================================ main surface -->
     <Panel Margin="10,5,10,4">
       <Border Classes="agent-main-card">
-        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
           <!-- Header belongs to the principal surface; the native title bar and footer remain outside. -->
           <Grid x:Name="AgentMainHeader"
                 Grid.Row="0"
                 ColumnDefinitions="Auto,*,Auto"
-                Margin="10,5">
+                Margin="10,7">
               <Border Grid.Column="0"
-                      Width="56"
-                      Height="56"
+                      Width="62"
+                      Height="62"
                       Margin="0,0,12,0"
                       CornerRadius="12"
                       Background="{DynamicResource NutSurface2Brush}"
@@ -263,7 +285,7 @@
                   IsVisible="{Binding ShowConfiguration}"
                   RowDefinitions="*,Auto"
                   ColumnDefinitions="0.82*,1.18*"
-                  RowSpacing="8"
+                  RowSpacing="10"
                   ColumnSpacing="8">
 
             <!-- ============================================== transport and access -->
@@ -271,7 +293,7 @@
                     Grid.Column="0"
                     Classes="agent-shell-card"
                     VerticalAlignment="Stretch">
-              <StackPanel Spacing="7">
+              <StackPanel Spacing="8">
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <PathIcon Classes="agent-section-icon" Data="{DynamicResource NutIconNetwork}" />
                   <TextBlock Classes="nut-card-title"
@@ -285,8 +307,8 @@
 
                 <Border x:Name="NamedPipeTransportRow"
                         Classes="agent-transport-row"
-                        Margin="0,4,0,0"
-                        IsEnabled="{Binding CanToggleNamedPipe}">
+                        Classes.locked="{Binding !CanToggleNamedPipe}"
+                        Margin="0,4,0,0">
                   <Grid ColumnDefinitions="Auto,Auto,*,64" ColumnSpacing="6">
                     <CheckBox Grid.Column="0"
                               IsChecked="{Binding NamedPipeEnabled}"
@@ -325,7 +347,7 @@
 
                 <Border x:Name="HttpsTransportRow"
                         Classes="agent-transport-row"
-                        IsEnabled="{Binding CanToggleHttps}">
+                        Classes.locked="{Binding !CanToggleHttps}">
                   <Grid ColumnDefinitions="Auto,Auto,*,64" ColumnSpacing="6">
                     <CheckBox Grid.Column="0"
                               IsChecked="{Binding HttpsEnabled}"
@@ -384,7 +406,7 @@
                     x:Name="HttpsEditorCard"
                     Classes="agent-shell-card"
                     VerticalAlignment="Stretch">
-              <StackPanel Spacing="6">
+              <StackPanel Spacing="7">
                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7">
                   <PathIcon Grid.Column="0"
                             Classes="agent-section-icon"
@@ -398,7 +420,7 @@
 
                 <StackPanel x:Name="HttpsEditorFields"
                             Classes="agent-https-fields"
-                            Spacing="3"
+                            Spacing="4"
                             IsEnabled="{Binding HttpsEnabled}">
                   <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
                     <StackPanel Grid.Column="0" Spacing="1">
@@ -465,32 +487,38 @@
                   <StackPanel Spacing="1">
                     <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Certificate]}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-                      <ComboBox Grid.Column="0"
-                                ItemsSource="{Binding Certificates}"
-                              SelectedItem="{Binding SelectedCertificate}"
-                              HorizontalAlignment="Stretch"
-                              PlaceholderText="{Binding Strings[Https.Certificate.None]}"
+                      <Border Grid.Column="0"
+                              Classes="agent-static-field"
                               AutomationProperties.Name="{Binding Strings[Https.Certificate]}">
-                      <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="viewModels:AgentCertificateOption">
-                          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0">
-                            <PathIcon Grid.Column="0"
-                                      Data="{DynamicResource NutIconCertificate}"
-                                      Width="14"
-                                      Height="14"
-                                      VerticalAlignment="Center"
-                                      Foreground="{DynamicResource NutHealthyBrush}" />
-                            <StackPanel Grid.Column="1" Spacing="0">
-                              <TextBlock Classes="nut-body"
-                                         Foreground="{DynamicResource NutTextPrimaryBrush}"
-                                         Text="{Binding DisplayName}" />
-                              <TextBlock Classes="nut-metadata" Text="{Binding IssuerLine}" />
-                              <TextBlock Classes="nut-metadata" Text="{Binding ValidityLine}" />
-                            </StackPanel>
-                          </Grid>
-                        </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                      </ComboBox>
+                        <Grid>
+                          <TextBlock Classes="nut-metadata"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding Strings[Https.Certificate.None]}"
+                                     IsVisible="{Binding !HasSelectedCertificate}" />
+                          <ContentControl Content="{Binding SelectedCertificate}"
+                                          IsVisible="{Binding HasSelectedCertificate}">
+                            <ContentControl.ContentTemplate>
+                              <DataTemplate x:DataType="viewModels:AgentCertificateOption">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6">
+                                  <PathIcon Grid.Column="0"
+                                            Data="{DynamicResource NutIconCertificate}"
+                                            Width="14"
+                                            Height="14"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource NutHealthyBrush}" />
+                                  <StackPanel Grid.Column="1" Spacing="0">
+                                    <TextBlock Classes="nut-body"
+                                               Foreground="{DynamicResource NutTextPrimaryBrush}"
+                                               Text="{Binding DisplayName}" />
+                                    <TextBlock Classes="nut-metadata" Text="{Binding IssuerLine}" />
+                                    <TextBlock Classes="nut-metadata" Text="{Binding ValidityLine}" />
+                                  </StackPanel>
+                                </Grid>
+                              </DataTemplate>
+                            </ContentControl.ContentTemplate>
+                          </ContentControl>
+                        </Grid>
+                      </Border>
                       <!--
                         Inline rather than the Windows certificate dialog: X509Certificate2UI never came
                         to .NET, and the four facts that decide whether HTTPS will work are the four
@@ -519,21 +547,13 @@
                   </StackPanel>
                   <StackPanel x:Name="ThumbprintField" Spacing="1">
                     <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Thumbprint]}" />
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                      <TextBox Grid.Column="0"
-                               Classes="nut-code"
+                    <TextBlock Classes="nut-code"
+                               MinHeight="30"
+                               Margin="2,0,0,0"
+                               VerticalAlignment="Center"
                                Text="{Binding CertificateThumbprint}"
-                               IsReadOnly="True"
+                               TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="{Binding Strings[Https.Thumbprint]}" />
-                      <Button Grid.Column="1"
-                              Classes="agent-copy-button"
-                              Tag="{Binding CertificateThumbprint}"
-                              Click="OnCopyValueClicked"
-                              IsEnabled="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}"
-                              ToolTip.Tip="{Binding Strings[Https.Copy]}">
-                        <PathIcon Data="{DynamicResource NutIconCopy}" Width="16" Height="16" />
-                      </Button>
-                    </Grid>
                   </StackPanel>
                   <StackPanel Orientation="Horizontal"
                               Spacing="8"
@@ -704,33 +724,45 @@
                   x:Name="ContextualActions"
                   BorderBrush="{DynamicResource NutBorderSubtleBrush}"
                   BorderThickness="0,1,0,0"
-                  Padding="0,8,0,0">
+                  Padding="0,10,0,0">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
               <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
-                <Button Command="{Binding StartServiceCommand}"
-                        IsEnabled="{Binding CanStartService}"
-                        IsVisible="{Binding ShowStartServiceAction}">
+                <Grid>
+                  <Button x:Name="StartServiceAction"
+                          Classes="nut-success agent-service-action"
+                          MinWidth="126"
+                          Command="{Binding StartServiceCommand}"
+                          IsEnabled="{Binding CanStartService}"
+                          IsVisible="{Binding ShowStartServiceAction}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{DynamicResource NutIconStart}" Width="17" Height="17" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Start]}" />
+                    </StackPanel>
+                  </Button>
+                  <Button x:Name="StopServiceAction"
+                          Classes="nut-danger-solid agent-service-action"
+                          MinWidth="126"
+                          Command="{Binding StopServiceCommand}"
+                          IsEnabled="{Binding CanStopService}"
+                          IsVisible="{Binding ShowStopServiceAction}">
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                      <PathIcon Data="{DynamicResource NutIconStop}" Width="17" Height="17" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Stop]}" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+                <Button x:Name="RestartServiceAction"
+                        Classes="agent-service-action"
+                        MinWidth="136"
+                        Command="{Binding RestartServiceCommand}"
+                        IsEnabled="{Binding CanRestartService}">
                   <StackPanel Orientation="Horizontal" Spacing="7">
-                    <PathIcon Data="{DynamicResource NutIconStart}" Width="17" Height="17" />
-                    <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Start]}" />
-                  </StackPanel>
-                </Button>
-                <Button Command="{Binding RestartServiceCommand}"
-                        IsEnabled="{Binding CanRestartService}"
-                        IsVisible="{Binding ShowRunningServiceActions}">
-                  <StackPanel Orientation="Horizontal" Spacing="7">
-                    <PathIcon Classes="nut-icon-refresh"
-                              Data="{DynamicResource NutIconRestart}"
+                    <PathIcon Data="{DynamicResource NutIconRestart}"
                               Width="17"
                               Height="17" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Restart]}" />
                   </StackPanel>
                 </Button>
-                <Button Classes="nut-ghost"
-                        Command="{Binding StopServiceCommand}"
-                        IsEnabled="{Binding CanStopService}"
-                        IsVisible="{Binding ShowRunningServiceActions}"
-                        Content="{Binding Strings[Service.Stop]}" />
               </StackPanel>
               <TextBlock Grid.Column="1"
                          Classes="nut-metadata"
@@ -787,22 +819,22 @@
                          Text="{Binding Strings[Https.Certificate.Details]}" />
             </StackPanel>
             <ScrollViewer Grid.Row="1"
-                          HorizontalScrollBarVisibility="Disabled"
+                          HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto">
               <Border Classes="agent-detail-panel">
-                <Grid ColumnDefinitions="130,*"
+                <Grid ColumnDefinitions="165,*"
                       RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                       ColumnSpacing="12"
                       RowSpacing="7">
                   <TextBlock Grid.Row="0" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Certificate.Subject]}" />
                   <TextBlock Grid.Row="0" Grid.Column="1" Classes="hint"
-                             Text="{Binding CertificateSubject}" TextWrapping="Wrap" />
+                             Text="{Binding CertificateSubject}" TextWrapping="NoWrap" />
 
                   <TextBlock Grid.Row="1" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Certificate.Issuer]}" />
                   <TextBlock Grid.Row="1" Grid.Column="1" Classes="hint"
-                             Text="{Binding CertificateIssuer}" TextWrapping="Wrap" />
+                             Text="{Binding CertificateIssuer}" TextWrapping="NoWrap" />
 
                   <TextBlock Grid.Row="2" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Certificate.NotBefore]}" />
@@ -817,12 +849,12 @@
                   <TextBlock Grid.Row="4" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Thumbprint]}" />
                   <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-code hint"
-                             Text="{Binding CertificateThumbprint}" TextWrapping="Wrap" />
+                             Text="{Binding CertificateThumbprint}" TextWrapping="NoWrap" />
 
                   <TextBlock Grid.Row="5" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Certificate.Sans]}" />
                   <TextBlock Grid.Row="5" Grid.Column="1" Classes="hint"
-                             Text="{Binding CertificateSubjectAlternativeNames}" TextWrapping="Wrap" />
+                             Text="{Binding CertificateSubjectAlternativeNames}" TextWrapping="NoWrap" />
 
                   <TextBlock Grid.Row="6" Grid.Column="0" Classes="nut-label"
                              Text="{Binding Strings[Https.Certificate.PrivateKey]}" />

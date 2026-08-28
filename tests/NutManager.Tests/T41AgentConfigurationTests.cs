@@ -211,6 +211,13 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Classes.critical=\"{Binding !HttpsEnabled}\"", window, StringComparison.Ordinal);
         Assert.Contains("NutHealthyBrightBrush", window, StringComparison.Ordinal);
         Assert.Contains("NutCriticalBrightBrush", window, StringComparison.Ordinal);
+        Assert.Contains("Border.agent-transport-status TextBlock", window, StringComparison.Ordinal);
+        Assert.Contains("Property=\"FontWeight\" Value=\"SemiBold\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes.locked=\"{Binding !CanToggleNamedPipe}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes.locked=\"{Binding !CanToggleHttps}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Border.agent-transport-row.locked StackPanel", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Border.agent-transport-row:pointerover", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Border.agent-transport-row:disabled", window, StringComparison.Ordinal);
         Assert.DoesNotContain("agent-disable-https", window, StringComparison.Ordinal);
         Assert.DoesNotContain("agent-reach-badge", window, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentIconLock", window, StringComparison.Ordinal);
@@ -244,7 +251,36 @@ public sealed class T41InstallerAndPackagingTests
         var certificateFeedback = window.IndexOf("IsVisible=\"{Binding ShowCertificateFeedback}\"", thumbprintField, StringComparison.Ordinal);
         var thumbprintMarkup = window[thumbprintField..certificateFeedback];
         Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Classes=\"nut-code\"", thumbprintMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<TextBox", thumbprintMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnCopyValueClicked", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("IsVisible=", thumbprintMarkup, StringComparison.Ordinal);
+
+        var certificateField = window.IndexOf("Strings[Https.Certificate]", StringComparison.Ordinal);
+        var thumbprintLabel = window.IndexOf("x:Name=\"ThumbprintField\"", certificateField, StringComparison.Ordinal);
+        var certificateMarkup = window[certificateField..thumbprintLabel];
+        Assert.Contains("Classes=\"agent-static-field\"", certificateMarkup, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding SelectedCertificate}\"", certificateMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ComboBox", certificateMarkup, StringComparison.Ordinal);
+
+        Assert.Contains("Width=\"62\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"62\"", window, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"NoWrap\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StartServiceAction\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"nut-success agent-service-action\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StopServiceAction\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"nut-danger-solid agent-service-action\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"RestartServiceAction\"", window, StringComparison.Ordinal);
+        Assert.Contains("Button.agent-service-action:pointerover PathIcon", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Classes=\"nut-icon-refresh\"", window, StringComparison.Ordinal);
+
+        var certificateDetails = window.IndexOf("<!-- ================================================ read-only certificate details -->", StringComparison.Ordinal);
+        var confirmationOverlay = window.IndexOf("<!-- ================================================ confirmation overlay -->", certificateDetails, StringComparison.Ordinal);
+        var certificateDetailsMarkup = window[certificateDetails..confirmationOverlay];
+        Assert.Contains("HorizontalScrollBarVisibility=\"Auto\"", certificateDetailsMarkup, StringComparison.Ordinal);
+        Assert.Contains("ColumnDefinitions=\"165,*\"", certificateDetailsMarkup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CertificateSubject}\" TextWrapping=\"NoWrap\"", certificateDetailsMarkup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CertificateSubjectAlternativeNames}\" TextWrapping=\"NoWrap\"", certificateDetailsMarkup, StringComparison.Ordinal);
 
         var icons = Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
         Assert.Contains("(\"AgentIconStateError\", MaterialIconKind.CloseCircle)", icons, StringComparison.Ordinal);
@@ -897,27 +933,32 @@ public sealed class T41AgentConfigViewModelTests
     }
 
     [Fact]
-    public async Task ServiceActionsAreContextualRatherThanThreeButtonsOfEqualWeight()
+    public async Task ServiceActionsKeepAStableTwoPositionLayout()
     {
         var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
         await stopped.ViewModel.RefreshAsync();
 
-        // A stopped agent is offered the one action that helps: start it.
         Assert.True(stopped.ViewModel.ShowStartServiceAction);
-        Assert.False(stopped.ViewModel.ShowRunningServiceActions);
+        Assert.False(stopped.ViewModel.ShowStopServiceAction);
+        Assert.True(stopped.ViewModel.CanStartService);
+        Assert.False(stopped.ViewModel.CanRestartService);
 
         var running = CreateContext(serviceState: AgentServiceState.Running);
         await running.ViewModel.RefreshAsync();
 
         Assert.False(running.ViewModel.ShowStartServiceAction);
-        Assert.True(running.ViewModel.ShowRunningServiceActions);
+        Assert.True(running.ViewModel.ShowStopServiceAction);
+        Assert.True(running.ViewModel.CanStopService);
+        Assert.True(running.ViewModel.CanRestartService);
 
         var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
         await absent.ViewModel.RefreshAsync();
 
-        // Neither action is offered for a service that does not exist: there is nothing to start.
-        Assert.False(absent.ViewModel.ShowStartServiceAction);
-        Assert.False(absent.ViewModel.ShowRunningServiceActions);
+        // Keep the first slot present, but do not offer an operation for a service that does not exist.
+        Assert.True(absent.ViewModel.ShowStartServiceAction);
+        Assert.False(absent.ViewModel.ShowStopServiceAction);
+        Assert.False(absent.ViewModel.CanStartService);
+        Assert.False(absent.ViewModel.CanRestartService);
     }
 
     [Fact]
