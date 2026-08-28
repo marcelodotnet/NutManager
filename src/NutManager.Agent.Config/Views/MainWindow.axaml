@@ -188,37 +188,10 @@
       for the affirmative button inside a confirmation, where the operator has already been told what
       will happen; using it out here would give a card header the visual weight of a final answer.
     -->
-    <!--
-      A segmented switch built from radio buttons: the ellipse the Fluent template draws is hidden and
-      the segment itself carries the selection, so the pair reads as one control rather than as two
-      form fields sharing a border.
-    -->
-    <Style Selector="Border.agent-language-switch">
-      <Setter Property="CornerRadius" Value="7" />
-      <Setter Property="Padding" Value="2" />
-      <Setter Property="Background" Value="{DynamicResource NutSurface2Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="RadioButton.agent-language-option">
-      <Setter Property="MinHeight" Value="26" />
-      <Setter Property="MinWidth" Value="0" />
-      <Setter Property="Padding" Value="9,3" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="CornerRadius" Value="5" />
-      <Setter Property="Foreground" Value="{DynamicResource NutTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="RadioButton.agent-language-option /template/ Ellipse">
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
-    <Style Selector="RadioButton.agent-language-option /template/ Grid">
-      <Setter Property="Margin" Value="0" />
-    </Style>
-    <Style Selector="RadioButton.agent-language-option:checked">
-      <Setter Property="Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Background" Value="{DynamicResource NutAccentSoftBrush}" />
+    <Style Selector="Button.agent-language-selector">
+      <Setter Property="Width" Value="86" />
+      <Setter Property="MinHeight" Value="30" />
+      <Setter Property="Padding" Value="9,5" />
     </Style>
     <Style Selector="Button.agent-reset-https">
       <Setter Property="Background" Value="Transparent" />
@@ -302,10 +275,10 @@
           <Grid x:Name="AgentMainHeader"
                 Grid.Row="0"
                 ColumnDefinitions="Auto,*,Auto"
-                Margin="10,6,10,7">
+                Margin="10,1,10,2">
               <Border Grid.Column="0"
-                      Width="68"
-                      Height="68"
+                      Width="78"
+                      Height="78"
                       Margin="0,0,13,0"
                       CornerRadius="12"
                       Background="{DynamicResource NutSurface2Brush}"
@@ -331,36 +304,38 @@
                           Spacing="7"
                           VerticalAlignment="Center">
                 <!--
-                  A segmented pair, not a drop-down.
-
-                  Two options do not need a list, and a ComboBox here actively misbehaved: it resolved
-                  its selection before its items were ready, fell back to the first entry and wrote
-                  that back over the operator's saved preference. Radio buttons never check
-                  themselves, so the only thing that changes the language is somebody choosing one.
-
-                  The codes are invariant and stay untranslated; the tooltips carry the full names,
-                  because a code is not obvious to somebody who does not already know it. Choosing one
-                  re-renders this window and touches nothing else - not agent.json, not the service,
-                  not the machine.
+                  One compact selector. The menu items bind their checked state one-way, so opening
+                  the menu cannot write a default over the saved preference. Only an explicit item
+                  click changes the language, and that still touches no Agent configuration.
                 -->
-                <Border Classes="agent-language-switch"
+                <Button x:Name="LanguageSelector"
+                        Classes="agent-language-selector"
                         ToolTip.Tip="{Binding Strings[Language.Label]}"
                         AutomationProperties.Name="{Binding Strings[Language.Label]}">
-                  <StackPanel Orientation="Horizontal">
-                    <RadioButton Classes="agent-language-option"
-                                 GroupName="AgentConfigLanguage"
-                                 IsChecked="{Binding IsPortugueseSelected}"
-                                 Content="PT-BR"
-                                 ToolTip.Tip="Português (Brasil)"
-                                 AutomationProperties.Name="Português (Brasil)" />
-                    <RadioButton Classes="agent-language-option"
-                                 GroupName="AgentConfigLanguage"
-                                 IsChecked="{Binding IsEnglishSelected}"
-                                 Content="EN-US"
-                                 ToolTip.Tip="English (United States)"
-                                 AutomationProperties.Name="English (United States)" />
+                  <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedRight">
+                      <MenuItem Header="{Binding Strings[Language.Portuguese]}"
+                                ToggleType="Radio"
+                                GroupName="AgentConfigLanguage"
+                                IsChecked="{Binding IsPortugueseSelected, Mode=OneWay}"
+                                Click="OnSelectPortugueseClicked" />
+                      <MenuItem Header="{Binding Strings[Language.English]}"
+                                ToggleType="Radio"
+                                GroupName="AgentConfigLanguage"
+                                IsChecked="{Binding IsEnglishSelected, Mode=OneWay}"
+                                Click="OnSelectEnglishClicked" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock VerticalAlignment="Center"
+                               FontWeight="SemiBold"
+                               Text="{Binding SelectedLanguageCode}" />
+                    <PathIcon Data="{DynamicResource NutIconChevronDown}"
+                              Width="11"
+                              Height="11"
+                              VerticalAlignment="Center" />
                   </StackPanel>
-                </Border>
+                </Button>
                 <Button VerticalAlignment="Center"
                         Padding="11,6"
                         Command="{Binding ToggleDiagnosticsCommand}">
@@ -548,29 +523,6 @@
                   </Button>
                 </Grid>
 
-                <Grid DockPanel.Dock="Bottom"
-                      ColumnDefinitions="Auto,*"
-                      ColumnSpacing="8"
-                      Margin="0,6,0,0"
-                      IsVisible="{Binding ShowCertificateFeedback}">
-                  <!--
-                    A Grid rather than a horizontal StackPanel: a horizontal stack measures its
-                    children with unbounded width, so TextWrapping never engages and a long message
-                    runs off the card. The star column gives the text a width to wrap inside.
-                  -->
-                  <PathIcon Grid.Column="0"
-                            Width="18"
-                            Height="18"
-                            VerticalAlignment="Top"
-                            Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                            Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
-                  <TextBlock Grid.Column="1"
-                             Classes="hint"
-                             Text="{Binding CertificateFeedbackMessage}"
-                             ToolTip.Tip="{Binding CertificateFeedbackDetail}"
-                             TextWrapping="Wrap" />
-                </Grid>
-
                 <StackPanel x:Name="HttpsEditorFields"
                             Classes="agent-https-fields"
                             Spacing="4"
@@ -719,6 +671,23 @@
                                TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="{Binding Strings[Https.Thumbprint]}" />
                   </StackPanel>
+                  <Grid x:Name="CertificateFeedbackRow"
+                        ColumnDefinitions="Auto,*"
+                        ColumnSpacing="8"
+                        Margin="0,3,0,0"
+                        IsVisible="{Binding ShowCertificateFeedback}">
+                    <PathIcon Grid.Column="0"
+                              Width="18"
+                              Height="18"
+                              VerticalAlignment="Top"
+                              Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
+                              Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
+                    <TextBlock Grid.Column="1"
+                               Classes="hint"
+                               Text="{Binding CertificateFeedbackMessage}"
+                               ToolTip.Tip="{Binding CertificateFeedbackDetail}"
+                               TextWrapping="Wrap" />
+                  </Grid>
                 </StackPanel>
               </DockPanel>
             </Border>
@@ -938,7 +907,8 @@
                          Foreground="{Binding ApplyFailed, Converter={x:Static converters:AgentConfigConverters.MessageBrush}}" />
               <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                 <Button Classes="nut-primary"
-                        MinWidth="88"
+                        Width="116"
+                        Height="34"
                         Command="{Binding ApplyCommand}"
                         IsEnabled="{Binding CanApply}">
                   <StackPanel Orientation="Horizontal" Spacing="8">
@@ -946,15 +916,14 @@
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Action.Apply]}" />
                   </StackPanel>
                 </Button>
-                <Button MinWidth="80" Command="{Binding CancelCommand}">
+                <Button Width="116"
+                        Height="34"
+                        Command="{Binding CancelCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <PathIcon Data="{DynamicResource NutIconClose}" Width="16" Height="16" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Action.Cancel]}" />
                   </StackPanel>
                 </Button>
-                <Button MinWidth="72"
-                        Click="OnCloseClicked"
-                        Content="{Binding Strings[Action.Close]}" />
               </StackPanel>
             </Grid>
           </Border>

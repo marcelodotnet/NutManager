@@ -115,6 +115,33 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
+    public void PortableAgentTestPackageIsAValidatedBinaryOnlyPublish()
+    {
+        var script = Read("scripts/build-agent-test-package.ps1");
+
+        Assert.Contains("src\\NutManager.Agent\\NutManager.Agent.csproj", script, StringComparison.Ordinal);
+        Assert.Contains("src\\NutManager.Agent.Config\\NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(script, "--self-contained false", RegexOptions.IgnoreCase));
+        Assert.Contains("GetRelativePath", script, StringComparison.Ordinal);
+        Assert.Contains("different versions of", script, StringComparison.Ordinal);
+
+        foreach (var marker in new[] { "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "System.Private.CoreLib.dll" })
+        {
+            Assert.Contains(marker, script, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("$source.Extension -eq '.pdb'", script, StringComparison.Ordinal);
+        Assert.Contains("agent.json", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Compress-Archive", script, StringComparison.Ordinal);
+        Assert.Contains("SHA256SUMS.txt", script, StringComparison.Ordinal);
+        Assert.Contains("NutManager-Agent-Test-$Version", script, StringComparison.Ordinal);
+        Assert.Contains("$packageName.zip", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Start-Service", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Stop-Service", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Restart-Service", script, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void InstallerProgressUsesSupportedWixStdBaControlsAndLocalizedPhases()
     {
         var theme = Read("installer/Common/Theme/AgentTheme.xml");
@@ -226,6 +253,7 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Strings[Https.Import]", window, StringComparison.Ordinal);
         Assert.Contains("Strings[Https.Thumbprint]", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ThumbprintField\" Spacing=\"1\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"CertificateFeedbackRow\"", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCopyValueClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding ApplicationVersion}\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes.invalid=\"{Binding HttpsHostHasError}\"", window, StringComparison.Ordinal);
@@ -247,17 +275,20 @@ public sealed class T41InstallerAndPackagingTests
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"{Binding HttpsValidationMessage}\"", window, StringComparison.Ordinal);
 
-        // The thumbprint field runs to the end of the field stack. It used to be bounded by the
-        // certificate feedback block, which now sits above the fields so it can be docked to the
-        // bottom of the card; anchoring on the stack's own close keeps this slice stable either way.
         var thumbprintField = window.IndexOf("x:Name=\"ThumbprintField\"", StringComparison.Ordinal);
-        var fieldsEnd = window.IndexOf("</StackPanel>", thumbprintField, StringComparison.Ordinal);
-        var thumbprintMarkup = window[thumbprintField..fieldsEnd];
+        var certificateFeedback = window.IndexOf("x:Name=\"CertificateFeedbackRow\"", thumbprintField, StringComparison.Ordinal);
+        var fieldsEnd = window.IndexOf("</StackPanel>", certificateFeedback, StringComparison.Ordinal);
+        var thumbprintMarkup = window[thumbprintField..certificateFeedback];
+        var feedbackMarkup = window[certificateFeedback..fieldsEnd];
+        Assert.True(certificateFeedback > thumbprintField,
+            "Certificate validation must occupy its own row below the thumbprint.");
         Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.Contains("<TextBlock Classes=\"nut-code\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("<TextBox", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("OnCopyValueClicked", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("IsVisible=", thumbprintMarkup, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowCertificateFeedback}\"", feedbackMarkup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding CertificateFeedbackMessage}\"", feedbackMarkup, StringComparison.Ordinal);
 
         var certificateField = window.IndexOf("Strings[Https.Certificate]", StringComparison.Ordinal);
         var thumbprintLabel = window.IndexOf("x:Name=\"ThumbprintField\"", certificateField, StringComparison.Ordinal);
@@ -266,8 +297,8 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Content=\"{Binding SelectedCertificate}\"", certificateMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("<ComboBox", certificateMarkup, StringComparison.Ordinal);
 
-        Assert.Contains("Width=\"68\"", window, StringComparison.Ordinal);
-        Assert.Contains("Height=\"68\"", window, StringComparison.Ordinal);
+        Assert.Contains("Width=\"78\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"78\"", window, StringComparison.Ordinal);
         Assert.Contains("TextWrapping=\"NoWrap\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartServiceAction\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"nut-success agent-service-action\"", window, StringComparison.Ordinal);
@@ -276,6 +307,16 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("x:Name=\"RestartServiceAction\"", window, StringComparison.Ordinal);
         Assert.Contains("Button.agent-service-action:pointerover PathIcon", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Classes=\"nut-icon-refresh\"", window, StringComparison.Ordinal);
+
+        var actions = window.IndexOf("x:Name=\"ContextualActions\"", StringComparison.Ordinal);
+        var details = window.IndexOf("<!-- ================================================ read-only certificate details -->", actions, StringComparison.Ordinal);
+        var actionBar = window[actions..details];
+        Assert.Contains("Command=\"{Binding ApplyCommand}\"", actionBar, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding CancelCommand}\"", actionBar, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(actionBar, "Width=\"116\"").Count);
+        Assert.Equal(2, Regex.Matches(actionBar, "Height=\"34\"").Count);
+        Assert.DoesNotContain("Strings[Action.Close]", actionBar, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnCloseClicked", actionBar, StringComparison.Ordinal);
 
         var certificateDetails = window.IndexOf("<!-- ================================================ read-only certificate details -->", StringComparison.Ordinal);
         var confirmationOverlay = window.IndexOf("<!-- ================================================ confirmation overlay -->", certificateDetails, StringComparison.Ordinal);
@@ -461,17 +502,18 @@ public sealed class T41AgentConfigSurfaceTests
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
         var markup = window[header..surface];
 
-        var selector = markup.IndexOf("Classes=\"agent-language-switch\"", StringComparison.Ordinal);
+        var selector = markup.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
         var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
 
         Assert.True(selector >= 0, "The header must carry the language selector.");
         Assert.True(diagnostics > selector, "The language selector belongs beside the diagnostics button.");
-        Assert.Contains("IsChecked=\"{Binding IsPortugueseSelected}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("IsChecked=\"{Binding IsEnglishSelected}\"", markup, StringComparison.Ordinal);
-
-        // Not a ComboBox. One bound to a list of option objects resolved its selection before its
-        // items existed, fell back to the first entry and wrote that back over the saved preference.
-        Assert.DoesNotContain("<ComboBox", markup, StringComparison.Ordinal);
+        Assert.Contains("<MenuFlyout", markup, StringComparison.Ordinal);
+        Assert.Contains("Header=\"{Binding Strings[Language.Portuguese]}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Header=\"{Binding Strings[Language.English]}\"", markup, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(markup, "ToggleType=\"Radio\"").Count);
+        Assert.Contains("Text=\"{Binding SelectedLanguageCode}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(markup, "SelectedLanguageCode"));
     }
 
     private static string Read(string relativePath) =>

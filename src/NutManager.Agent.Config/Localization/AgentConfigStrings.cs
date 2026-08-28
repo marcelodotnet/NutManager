@@ -97,6 +97,8 @@ public sealed class AgentConfigStrings
             "Ative o SMB (Named Pipe) antes de resetar o HTTPS. Pelo menos um transporte deve permanecer ativo.",
 
         ["Language.Label"] = "Idioma",
+        ["Language.Portuguese"] = "Português (Brasil)",
+        ["Language.English"] = "English (United States)",
         ["Https.Certificate.Readonly"] = "Selecionado por Importar...; use o botão ao lado para visualizar.",
         ["Https.Certificate.Details"] = "Detalhes do certificado",
         ["Https.Certificate.Subject"] = "Titular",
@@ -285,6 +287,8 @@ public sealed class AgentConfigStrings
             "Enable SMB (Named Pipe) before resetting HTTPS. At least one transport must stay active.",
 
         ["Language.Label"] = "Language",
+        ["Language.Portuguese"] = "Português (Brasil)",
+        ["Language.English"] = "English (United States)",
         ["Https.Certificate.Readonly"] = "Chosen with Import...; use the button beside it to view.",
         ["Https.Certificate.Details"] = "Certificate details",
         ["Https.Certificate.Subject"] = "Subject",

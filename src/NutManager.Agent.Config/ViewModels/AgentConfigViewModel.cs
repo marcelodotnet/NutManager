@@ -109,6 +109,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private UiLanguagePreference _selectedLanguage;
 
+    public string SelectedLanguageCode => SelectedLanguage == UiLanguagePreference.EnUs ? "EN-US" : "PT-BR";
+
     /// <summary>
     /// The selector's two states, as booleans rather than as a selected object.
     ///
@@ -142,6 +144,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnSelectedLanguageChanged(UiLanguagePreference value)
     {
         Strings = new AgentConfigStrings(value);
+        OnPropertyChanged(nameof(SelectedLanguageCode));
         _preferences.WriteLanguage(value);
         RelocalizeSurface();
     }

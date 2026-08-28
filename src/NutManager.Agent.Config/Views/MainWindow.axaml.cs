@@ -5,14 +5,15 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
 using NutManager.Agent.Config.ViewModels;
 using NutManager.Core.Agent;
+using NutManager.Core.Models;
 
 namespace NutManager.Agent.Config.Views;
 
 /// <summary>
 /// The window.
 ///
-/// Window-only actions live here: close the window and copy already-presented, non-secret endpoint or
-/// certificate identifiers. Administrative behavior remains in the view model and infrastructure.
+/// Window-only actions live here: language-menu selection, file picking and copying already-presented,
+/// non-secret endpoint identifiers. Administrative behavior remains in the view model and infrastructure.
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -20,7 +21,16 @@ public sealed partial class MainWindow : Window
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
 
-    private void OnCloseClicked(object? sender, RoutedEventArgs e) => Close();
+    private void OnSelectPortugueseClicked(object? sender, RoutedEventArgs e) =>
+        SelectLanguage(UiLanguagePreference.PtBr);
+
+    private void OnSelectEnglishClicked(object? sender, RoutedEventArgs e) =>
+        SelectLanguage(UiLanguagePreference.EnUs);
+
+    private void SelectLanguage(UiLanguagePreference language)
+    {
+        if (DataContext is AgentConfigViewModel viewModel) viewModel.SelectedLanguage = language;
+    }
 
     private async void OnCopyValueClicked(object? sender, RoutedEventArgs e)
     {
