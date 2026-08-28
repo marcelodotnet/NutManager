@@ -354,7 +354,8 @@ agent refuses to authorize anyone until it exists.
 
 Configures HTTPS. No certificate, SSL binding, URL reservation or firewall rule is created as an
 installer side effect. Those remain explicit administrative actions performed later in Agent Config —
-see [Windows Agent](WINDOWS-AGENT.md).
+see [Windows Agent](WINDOWS-AGENT.md). Agent Config can explicitly import a selected certificate file
+into `LocalMachine\My`; its HTTPS reset and the installer uninstall never remove that certificate.
 
 Touches NUT in any way.
 

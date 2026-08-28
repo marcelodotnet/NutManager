@@ -170,6 +170,13 @@ public enum AgentConfigConfirmation
     /// <summary>HTTPS is being switched off and system resources exist that could be removed.</summary>
     DisableHttps,
 
+    /// <summary>
+    /// The HTTPS configuration is being reset: this product's system resources removed and the
+    /// endpoint it saved forgotten. Distinct from <see cref="DisableHttps"/>, which only turns the
+    /// transport off and asks what to do with the resources it leaves behind.
+    /// </summary>
+    ResetHttps,
+
     /// <summary>Configuration was saved while the service was running.</summary>
     RestartService,
 }

@@ -247,9 +247,12 @@ public sealed class T41InstallerAndPackagingTests
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"{Binding HttpsValidationMessage}\"", window, StringComparison.Ordinal);
 
+        // The thumbprint field runs to the end of the field stack. It used to be bounded by the
+        // certificate feedback block, which now sits above the fields so it can be docked to the
+        // bottom of the card; anchoring on the stack's own close keeps this slice stable either way.
         var thumbprintField = window.IndexOf("x:Name=\"ThumbprintField\"", StringComparison.Ordinal);
-        var certificateFeedback = window.IndexOf("IsVisible=\"{Binding ShowCertificateFeedback}\"", thumbprintField, StringComparison.Ordinal);
-        var thumbprintMarkup = window[thumbprintField..certificateFeedback];
+        var fieldsEnd = window.IndexOf("</StackPanel>", thumbprintField, StringComparison.Ordinal);
+        var thumbprintMarkup = window[thumbprintField..fieldsEnd];
         Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.Contains("<TextBlock Classes=\"nut-code\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("<TextBox", thumbprintMarkup, StringComparison.Ordinal);
@@ -263,8 +266,8 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Content=\"{Binding SelectedCertificate}\"", certificateMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("<ComboBox", certificateMarkup, StringComparison.Ordinal);
 
-        Assert.Contains("Width=\"62\"", window, StringComparison.Ordinal);
-        Assert.Contains("Height=\"62\"", window, StringComparison.Ordinal);
+        Assert.Contains("Width=\"68\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"68\"", window, StringComparison.Ordinal);
         Assert.Contains("TextWrapping=\"NoWrap\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartServiceAction\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"nut-success agent-service-action\"", window, StringComparison.Ordinal);
@@ -378,6 +381,112 @@ public sealed class T41InstallerAndPackagingTests
     {
         var withoutBlocks = Regex.Replace(source, @"/\*.*?\*/", string.Empty, RegexOptions.Singleline);
         return Regex.Replace(withoutBlocks, @"//.*$", string.Empty, RegexOptions.Multiline);
+    }
+}
+
+public sealed class T41AgentConfigSurfaceTests
+{
+    /// <summary>
+    /// The certificate summary is a surface, not a control.
+    ///
+    /// It was a ComboBox once, and clicking it dropped the whole machine store over the card. What
+    /// replaced it has to stay inert on every action route while remaining hit-testable for its
+    /// explanatory tooltip. A test that only asserted the absence of a ComboBox would pass again the
+    /// moment somebody attached a Click handler.
+    /// </summary>
+    [Fact]
+    public void TheCertificateSummaryIsAReadonlySurfaceAndNotAPicker()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var start = window.IndexOf("Strings[Https.Certificate]", StringComparison.Ordinal);
+        var end = window.IndexOf("x:Name=\"ThumbprintField\"", start, StringComparison.Ordinal);
+        var markup = window[start..end];
+
+        Assert.DoesNotContain("<ComboBox", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Popup", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Flyout", markup, StringComparison.Ordinal);
+        Assert.Contains("Focusable=\"False\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsHitTestVisible=\"False\"", markup, StringComparison.Ordinal);
+
+        // Hover may still explain itself. That is the only thing it does.
+        Assert.Contains(
+            "ToolTip.Tip=\"{Binding Strings[Https.Certificate.Readonly]}\"", markup, StringComparison.Ordinal);
+
+        // The surface carries no command and no click of its own; the two buttons beside it hold the
+        // two actions, and they remain separate from each other.
+        var surfaceEnd = markup.IndexOf("<Button", StringComparison.Ordinal);
+        Assert.True(surfaceEnd > 0, "The certificate field must be followed by its action buttons.");
+        var surface = markup[..surfaceEnd];
+        Assert.DoesNotContain("Command=", surface, StringComparison.Ordinal);
+        Assert.DoesNotContain("Click=", surface, StringComparison.Ordinal);
+
+        Assert.Contains("Click=\"OnImportCertificateClicked\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding ToggleCertificateDetailsCommand}\"", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The reset is a small control in the HTTPS card, and it is not the old disable button under a
+    /// new name: that one, and the status badge beside the title, both stay gone.
+    /// </summary>
+    [Fact]
+    public void ResetHttpsIsASmallControlInTheHttpsCardAndNotTheOldDisableButton()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var card = window.IndexOf("x:Name=\"HttpsEditorCard\"", StringComparison.Ordinal);
+        var fields = window.IndexOf("x:Name=\"HttpsEditorFields\"", card, StringComparison.Ordinal);
+        var header = window[card..fields];
+
+        Assert.Contains("Command=\"{Binding ResetHttpsCommand}\"", header, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanResetHttps}\"", header, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding HttpsResetToolTip}\"", header, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-reset-https\"", header, StringComparison.Ordinal);
+
+        // Not the filled danger treatment: that belongs to the affirmative button inside the
+        // confirmation, where the operator has already been told what will happen.
+        Assert.DoesNotContain("nut-danger", header, StringComparison.Ordinal);
+
+        Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpsStatusText", header, StringComparison.Ordinal);
+    }
+
+    /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
+    [Fact]
+    public void TheLanguageSelectorSitsBesideDiagnostics()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
+        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
+        var markup = window[header..surface];
+
+        var selector = markup.IndexOf("Classes=\"agent-language-switch\"", StringComparison.Ordinal);
+        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(selector >= 0, "The header must carry the language selector.");
+        Assert.True(diagnostics > selector, "The language selector belongs beside the diagnostics button.");
+        Assert.Contains("IsChecked=\"{Binding IsPortugueseSelected}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("IsChecked=\"{Binding IsEnglishSelected}\"", markup, StringComparison.Ordinal);
+
+        // Not a ComboBox. One bound to a list of option objects resolved its selection before its
+        // items existed, fell back to the first entry and wrote that back over the saved preference.
+        Assert.DoesNotContain("<ComboBox", markup, StringComparison.Ordinal);
+    }
+
+    private static string Read(string relativePath) =>
+        File.ReadAllText(Path.Combine(RepositoryRoot(), relativePath));
+
+    private static string RepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "NutManager.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new InvalidOperationException("NutManager.sln was not found.");
     }
 }
 
@@ -671,6 +780,66 @@ public sealed class T41AgentConfigurationStoreTests
     }
 }
 
+public sealed class T41AgentConfigUiPreferencesTests
+{
+    [Fact]
+    public void LanguagePreferenceRoundTripsAsTheOnlyStoredUiValue()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NutManager-T41-Ui-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "agent-config-ui.json");
+
+        try
+        {
+            var preferences = new AgentConfigUiPreferences(path);
+
+            preferences.WriteLanguage(UiLanguagePreference.EnUs);
+
+            Assert.Equal(UiLanguagePreference.EnUs, preferences.ReadLanguage());
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            var property = Assert.Single(json.RootElement.EnumerateObject());
+            Assert.Equal("language", property.Name);
+            Assert.Equal("en-US", property.Value.GetString());
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("{not-json")]
+    [InlineData("{\"language\":\"fr-FR\"}")]
+    public void CorruptOrUnsupportedPreferenceFallsBackWithoutFailing(string contents)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NutManager-T41-Ui-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "agent-config-ui.json");
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(path, contents);
+
+            Assert.Null(new AgentConfigUiPreferences(path).ReadLanguage());
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MissingPreferenceFallsBackWithoutCreatingAFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NutManager-T41-Ui-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "agent-config-ui.json");
+
+        var preferences = new AgentConfigUiPreferences(path);
+
+        Assert.Null(preferences.ReadLanguage());
+        Assert.False(File.Exists(path));
+    }
+}
+
 public sealed class T41AgentConfigViewModelTests
 {
     [Fact]
@@ -914,6 +1083,424 @@ public sealed class T41AgentConfigViewModelTests
         Assert.False(Assert.Single(context.Store.Writes).HttpsEnabled);
     }
 
+    // ================================================================ reset HTTPS
+
+    /// <summary>
+    /// Reset asks first. The button opens a confirmation and does nothing else: no resource is
+    /// touched, no file is written, and the endpoint on screen is still the endpoint that was there.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsAsksBeforeItRemovesAnything()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.ResetHttps, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Resources.RemoveRequests);
+        Assert.Empty(context.Store.Writes);
+        Assert.True(context.ViewModel.HttpsEnabled);
+        Assert.Equal(new Uri(HttpsDocument().HttpsPrefix!).Host, context.ViewModel.HttpsHost);
+    }
+
+    /// <summary>Cancelling is a full stop: the machine and the configuration are exactly as they were.</summary>
+    [Fact]
+    public async Task CancellingTheResetLeavesTheMachineAndTheConfigurationAlone()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Resources.RemoveRequests);
+        Assert.Empty(context.Store.Writes);
+        Assert.True(context.ViewModel.HttpsEnabled);
+        Assert.NotNull(context.ViewModel.SelectedCertificate);
+    }
+
+    /// <summary>
+    /// A confirmed reset clears the endpoint this product configured and returns the port to its
+    /// default, while the certificate stays in the machine store. Removing a certificate is not what
+    /// resetting a listener means, and the catalog is the proof.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsClearsTheEndpointAndLeavesTheCertificateInstalled()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager));
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.False(context.ViewModel.HttpsEnabled);
+        Assert.Equal(string.Empty, context.ViewModel.HttpsHost);
+        Assert.Equal(5199, context.ViewModel.HttpsPort);
+        Assert.Null(context.ViewModel.SelectedCertificate);
+        Assert.Null(context.ViewModel.CertificateThumbprint);
+
+        var written = Assert.Single(context.Store.Writes);
+        Assert.False(written.HttpsEnabled);
+        Assert.Null(written.HttpsPrefix);
+        Assert.Null(written.CertificateThumbprint);
+
+        // The certificate is still in the store. This is the confirmation's central promise, and it
+        // is asserted rather than trusted.
+        Assert.NotEmpty(context.Certificates.List());
+        Assert.False(context.ViewModel.ApplyFailed);
+    }
+
+    /// <summary>
+    /// The reset asks for everything and the ownership rule decides what that means. Foreign and
+    /// unknown resources survive because the adapter refuses them, not because the caller guessed.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsDefersToTheOwnershipRuleForWhatMayGo()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.ForeignOwner),
+            new AgentResourceState(AgentResourceOwnership.Unknown));
+        context.Resources.RemoveResult = AgentHttpsResourceResult.Success(
+            ["ssl binding"],
+            ["The URL reservation belongs to another product.", "The firewall rule owner is unknown."]);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        var request = Assert.Single(context.Resources.RemoveRequests);
+        Assert.True(request.RemoveSslBinding);
+        Assert.True(request.RemoveUrlReservation);
+        Assert.True(request.RemoveFirewallRule);
+
+        // What the adapter refused is reported, not retried and not hidden.
+        Assert.Contains("another product", context.ViewModel.ApplyMessage);
+        Assert.Contains("owner is unknown", context.ViewModel.ApplyMessage);
+        Assert.False(context.ViewModel.ApplyFailed);
+    }
+
+    /// <summary>
+    /// A failed removal stops before the file. Writing "HTTPS is off" while a binding is still live
+    /// would leave the configuration describing a machine that does not exist.
+    /// </summary>
+    [Fact]
+    public async Task AFailedRemovalLeavesTheConfigurationUnwritten()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager));
+        context.Resources.RemoveResult = AgentHttpsResourceResult.Failed(
+            "The SSL binding could not be removed.", ["url reservation"]);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ApplyFailed);
+        Assert.Empty(context.Store.Writes);
+        Assert.True(context.ViewModel.HttpsEnabled);
+        Assert.Contains("could not be removed", context.ViewModel.ApplyMessage);
+
+        // What did come off before the failure is named, so the operator knows the machine is now
+        // between two states rather than in the one it started from.
+        Assert.Contains("url reservation", context.ViewModel.ApplyMessage);
+    }
+
+    /// <summary>
+    /// The last transport rule outranks the reset. HTTPS alone cannot be reset away, and the refusal
+    /// names what to do about it rather than turning the named pipe on to make room.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsIsRefusedWhileItIsTheOnlyTransport()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.NamedPipeEnabled = false;
+
+        Assert.False(context.ViewModel.CanResetHttps);
+        Assert.NotNull(context.ViewModel.HttpsResetBlockedReason);
+        Assert.Contains("SMB", context.ViewModel.HttpsResetBlockedReason);
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Resources.RemoveRequests);
+        Assert.Empty(context.Store.Writes);
+
+        // Nothing turned the named pipe on to satisfy the rule on the operator's behalf.
+        Assert.False(context.ViewModel.NamedPipeEnabled);
+        Assert.True(context.ViewModel.HttpsEnabled);
+    }
+
+    [Fact]
+    public async Task ResetAvailabilityUpdatesImmediatelyWhenTheOtherTransportChanges()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.NamedPipeEnabled = false;
+
+        Assert.False(context.ViewModel.CanResetHttps);
+        Assert.Equal(context.ViewModel.HttpsResetBlockedReason, context.ViewModel.HttpsResetToolTip);
+
+        context.ViewModel.NamedPipeEnabled = true;
+
+        Assert.True(context.ViewModel.CanResetHttps);
+        Assert.Null(context.ViewModel.HttpsResetBlockedReason);
+        Assert.Equal(context.ViewModel.Strings["Https.Reset.Tooltip"], context.ViewModel.HttpsResetToolTip);
+    }
+
+    /// <summary>A reset never starts the agent, and a running one is asked rather than restarted.</summary>
+    [Fact]
+    public async Task ResettingHttpsNeverRestartsTheServiceOnItsOwn()
+    {
+        var context = CreateContext(document: HttpsDocument(), serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentConfigConfirmation.RestartService, context.ViewModel.PendingConfirmation);
+    }
+
+    // ================================================================ certificate import
+
+    /// <summary>
+    /// A successful import selects what was imported and re-derives everything the details panel
+    /// shows, without the window being reopened.
+    /// </summary>
+    [Fact]
+    public async Task ImportingACertificateSelectsItAndRefreshesTheDetails()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        var imported = new AgentCertificateSummary(
+            "0123456789ABCDEF0123456789ABCDEF01234567",
+            "CN=nut-server.example.local",
+            "CN=Test CA",
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(2),
+            HasPrivateKey: true,
+            SupportsServerAuthentication: true,
+            SubjectAlternativeNames: ["nut-server.example.local"]);
+        context.Importer.Result = AgentCertificateImportResult.Imported(imported);
+
+        var result = await context.ViewModel.ImportCertificateAsync("C:/certs/backup.pfx", password: null);
+
+        Assert.Equal(AgentCertificateImportOutcome.Imported, result.Outcome);
+        Assert.Equal(imported.Thumbprint, context.ViewModel.SelectedCertificate?.Thumbprint);
+        Assert.Equal(imported.Thumbprint, context.ViewModel.CertificateThumbprint);
+        Assert.Equal("CN=nut-server.example.local", context.ViewModel.CertificateSubject);
+        Assert.Contains("nut-server.example.local", context.ViewModel.CertificateSubjectAlternativeNames);
+        Assert.True(context.ViewModel.HttpsIsValid);
+    }
+
+    /// <summary>
+    /// Rights and file validity are different problems with different fixes. An import Windows refused
+    /// must not be reported as a bad file, which would send an administrator to their certificate
+    /// authority for a file that was always fine.
+    /// </summary>
+    [Fact]
+    public async Task AnImportRefusedForRightsIsNotReportedAsABadFile()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.Importer.Result = AgentCertificateImportResult.From(
+            AgentCertificateImportOutcome.AccessDenied, "CryptographicException (0x80090010)");
+
+        await context.ViewModel.ImportCertificateAsync("C:/certs/server.pfx", password: null);
+
+        var message = context.ViewModel.CertificateFeedbackMessage;
+        Assert.NotNull(message);
+        Assert.Contains("denied", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Invalid certificate file", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("critical", context.ViewModel.CertificateFeedbackStateClass);
+
+        // The technical detail is one hover away rather than inline: it is a type and a code for a
+        // support conversation, and on the card it would push a two-line message to three.
+        Assert.DoesNotContain("0x80090010", message);
+        Assert.Equal("CryptographicException (0x80090010)", context.ViewModel.CertificateFeedbackDetail);
+
+        // A later success must not leave the previous failure's detail hanging on the tooltip.
+        context.Importer.Result = AgentCertificateImportResult.Imported(
+            Assert.Single(context.Certificates.List()));
+        await context.ViewModel.ImportCertificateAsync("C:/certs/server.pfx", password: null);
+        Assert.Null(context.ViewModel.CertificateFeedbackDetail);
+    }
+
+    /// <summary>
+    /// A failure the adapter never anticipated is reported rather than escaping into an async void
+    /// click handler and taking the window down with it.
+    /// </summary>
+    [Fact]
+    public async Task AnUnanticipatedImportFailureIsReportedRatherThanThrown()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.Importer.Failure = new InvalidOperationException("something nobody planned for");
+
+        var result = await context.ViewModel.ImportCertificateAsync("C:/certs/server.pfx", password: null);
+
+        Assert.Equal(AgentCertificateImportOutcome.Failed, result.Outcome);
+        Assert.True(context.ViewModel.ShowCertificateFeedback);
+        Assert.Contains("InvalidOperationException", context.ViewModel.CertificateFeedbackDetail);
+        Assert.Equal("critical", context.ViewModel.CertificateFeedbackStateClass);
+
+        // The busy flag is cleared on the way out, so the window is usable again rather than frozen.
+        Assert.False(context.ViewModel.IsBusy);
+        Assert.True(context.ViewModel.CanImportCertificate);
+    }
+
+    /// <summary>
+    /// The password is an argument and never becomes state. It reaches the adapter, and nothing that
+    /// is shown, saved or reported afterwards contains it.
+    /// </summary>
+    [Fact]
+    public async Task AnImportPasswordNeverReachesViewStateOrConfiguration()
+    {
+        const string Password = "correct horse battery staple";
+
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.Importer.Result = AgentCertificateImportResult.From(
+            AgentCertificateImportOutcome.PasswordIncorrect);
+
+        await context.ViewModel.ImportCertificateAsync("C:/certs/server.pfx", Password);
+
+        Assert.Equal(Password, context.Importer.LastPassword);
+        Assert.DoesNotContain(Password, context.ViewModel.CertificateFeedbackMessage ?? string.Empty);
+        Assert.DoesNotContain(Password, context.ViewModel.ApplyMessage ?? string.Empty);
+        Assert.DoesNotContain(Password, context.ViewModel.HttpsEndpoint);
+        Assert.All(context.Store.Writes, document => Assert.DoesNotContain(
+            Password, document.CertificateThumbprint ?? string.Empty));
+    }
+
+    // ================================================================ language
+
+    /// <summary>
+    /// Changing the language re-renders the window and touches nothing administrative: no write to
+    /// agent.json and no further call into any of the machine adapters.
+    /// </summary>
+    [Fact]
+    public async Task ChangingLanguageRelocalisesTheWindowWithoutTouchingTheMachine()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        var eventsBefore = context.Events.Count;
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.PtBr;
+
+        Assert.Equal(UiLanguagePreference.PtBr, context.ViewModel.Strings.Language);
+        Assert.Equal("Transporte", context.ViewModel.Strings["Transport.Title"]);
+
+        Assert.Empty(context.Store.Writes);
+        Assert.Equal(eventsBefore, context.Events.Count);
+
+        // The status strip carries text composed when it was built, so it must be rebuilt rather than
+        // left in the previous language.
+        Assert.NotEmpty(context.ViewModel.ResourceStatus);
+        Assert.All(
+            context.ViewModel.ResourceStatus,
+            item => Assert.DoesNotContain("Not configured", item.StatusText, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// The two selector states track the language and, critically, ignore the <c>false</c> that a
+    /// radio group writes to the option it is unchecking.
+    ///
+    /// That write is what the previous ComboBox turned into a silent language change at start-up: it
+    /// overwrote the operator's saved preference before they had touched anything.
+    /// </summary>
+    [Fact]
+    public void TheLanguageSelectorNeverChangesTheLanguageByBeingUnchecked()
+    {
+        var preferences = new FakePreferences(UiLanguagePreference.EnUs);
+        var context = CreateContext(preferences: preferences, language: null);
+
+        Assert.True(context.ViewModel.IsEnglishSelected);
+        Assert.False(context.ViewModel.IsPortugueseSelected);
+
+        // What a radio group writes to the losing option. It must change nothing.
+        context.ViewModel.IsEnglishSelected = false;
+        context.ViewModel.IsPortugueseSelected = false;
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguage);
+        Assert.Equal(UiLanguagePreference.EnUs, preferences.Saved);
+        Assert.Equal(0, preferences.Writes);
+
+        // Choosing the other one does change it, exactly once.
+        context.ViewModel.IsPortugueseSelected = true;
+
+        Assert.Equal(UiLanguagePreference.PtBr, context.ViewModel.SelectedLanguage);
+        Assert.True(context.ViewModel.IsPortugueseSelected);
+        Assert.False(context.ViewModel.IsEnglishSelected);
+        Assert.Equal(1, preferences.Writes);
+    }
+
+    /// <summary>
+    /// Every computed string follows the language, not just the ones somebody listed. Three of them -
+    /// the two transport pills and the last-transport notice - stayed in the previous language when
+    /// this was a hand-written notification list.
+    /// </summary>
+    [Fact]
+    public async Task EveryComputedStringFollowsTheLanguage()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Active", context.ViewModel.NamedPipeStatusText);
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.PtBr;
+
+        Assert.Equal("Ativo", context.ViewModel.NamedPipeStatusText);
+        Assert.Equal("Inativo", context.ViewModel.HttpsStatusText);
+        Assert.Contains("transporte", context.ViewModel.LastTransportNotice, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Serviço", context.ViewModel.ServiceFooterText, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The preference is remembered outside the service's configuration. Which language somebody reads
+    /// is not a property of how the agent listens, and it must never ride an administrative write.
+    /// </summary>
+    [Fact]
+    public async Task TheLanguagePreferenceIsSavedOutsideTheServiceConfiguration()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.PtBr;
+
+        Assert.Equal(UiLanguagePreference.PtBr, preferences.Saved);
+        Assert.Equal(1, preferences.Writes);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>A saved preference is what the window opens in, ahead of the Windows culture.</summary>
+    [Fact]
+    public void ASavedLanguagePreferenceWinsOverTheWindowsCulture()
+    {
+        var context = CreateContext(preferences: new FakePreferences(UiLanguagePreference.PtBr), language: null);
+
+        Assert.Equal(UiLanguagePreference.PtBr, context.ViewModel.SelectedLanguage);
+        Assert.Equal("Transporte", context.ViewModel.Strings["Transport.Title"]);
+    }
+
     [Fact]
     public async Task ForeignAndUnknownResourcesNeverTriggerRemoval()
     {
@@ -1134,7 +1721,9 @@ public sealed class T41AgentConfigViewModelTests
         AgentTransportConfigurationDocument? document = null,
         AgentServiceState serviceState = AgentServiceState.Stopped,
         AgentMachineRole groupRole = AgentMachineRole.StandaloneWorkstation,
-        bool groupExists = false)
+        bool groupExists = false,
+        FakePreferences? preferences = null,
+        UiLanguagePreference? language = UiLanguagePreference.EnUs)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
@@ -1153,11 +1742,14 @@ public sealed class T41AgentConfigViewModelTests
         var certificates = new FakeCertificates(certificate);
         var importer = new FakeCertificateImporter(certificates);
         var inventory = new FakeInventory();
+        var uiPreferences = preferences ?? new FakePreferences();
         var viewModel = new AgentConfigViewModel(
-            store, groups, service, resources, certificates, inventory, UiLanguagePreference.EnUs,
-            certificateImporter: importer);
+            store, groups, service, resources, certificates, inventory, language,
+            certificateImporter: importer,
+            preferences: uiPreferences);
 
-        return new TestContext(viewModel, store, groups, service, resources, certificates, importer, events);
+        return new TestContext(
+            viewModel, store, groups, service, resources, certificates, importer, events);
     }
 
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
@@ -1275,10 +1867,14 @@ public sealed class T41AgentConfigViewModelTests
             return ApplyResult;
         }
 
+        /// <summary>What Remove answers. Settable so a partial failure can be exercised.</summary>
+        public AgentHttpsResourceResult RemoveResult { get; set; } = AgentHttpsResourceResult.Success([]);
+
         public AgentHttpsResourceResult Remove(AgentHttpsBinding binding, AgentHttpsCleanupRequest request)
         {
             RemoveRequests.Add(request);
-            return AgentHttpsResourceResult.Success([]);
+            events.Add("resources.remove");
+            return RemoveResult;
         }
     }
 
@@ -1305,10 +1901,34 @@ public sealed class T41AgentConfigViewModelTests
         public AgentCertificateImportResult Result { get; set; } =
             AgentCertificateImportResult.From(AgentCertificateImportOutcome.Failed);
 
+        /// <summary>Thrown instead of returning, to exercise the unanticipated-failure boundary.</summary>
+        public Exception? Failure { get; set; }
+
+        /// <summary>Recorded only so a test can prove the password never reaches view state.</summary>
+        public string? LastPassword { get; private set; }
+
         public AgentCertificateImportResult Import(string path, string? password)
         {
+            LastPassword = password;
+            if (Failure is not null) throw Failure;
             if (Result.Certificate is { } certificate) certificates.Add(certificate);
             return Result;
+        }
+    }
+
+    /// <summary>An in-memory preference store, so no test reads or writes a real user profile.</summary>
+    private sealed class FakePreferences(UiLanguagePreference? saved = null) : IAgentConfigUiPreferences
+    {
+        public UiLanguagePreference? Saved { get; private set; } = saved;
+
+        public int Writes { get; private set; }
+
+        public UiLanguagePreference? ReadLanguage() => Saved;
+
+        public void WriteLanguage(UiLanguagePreference language)
+        {
+            Saved = language;
+            Writes++;
         }
     }
 

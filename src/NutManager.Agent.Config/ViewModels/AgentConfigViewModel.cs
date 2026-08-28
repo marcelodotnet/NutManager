@@ -35,6 +35,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private readonly IAgentCertificateCatalog _certificates;
     private readonly IAgentRuntimeInventory _inventory;
     private readonly IAgentCertificateImporter? _certificateImporter;
+    private readonly IAgentConfigUiPreferences _preferences;
     private readonly TimeProvider _time;
 
     /// <summary>The last saved document. Cancel returns to this; dirty is measured against it.</summary>
@@ -65,7 +66,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         IAgentRuntimeInventory inventory,
         UiLanguagePreference? language = null,
         TimeProvider? timeProvider = null,
-        IAgentCertificateImporter? certificateImporter = null)
+        IAgentCertificateImporter? certificateImporter = null,
+        IAgentConfigUiPreferences? preferences = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(groups);
@@ -81,12 +83,110 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _certificates = certificates;
         _inventory = inventory;
         _certificateImporter = certificateImporter;
+        _preferences = preferences ?? AgentConfigUiPreferences.None;
         _time = timeProvider ?? TimeProvider.System;
 
-        Strings = new AgentConfigStrings(language ?? AgentConfigStrings.DetectLanguage());
+        // An explicit argument wins, then a saved preference, then the culture Windows is running in.
+        // The saved value is read once here rather than watched: this window is open for minutes, and
+        // a preference that changed underneath it would be somebody else's session, not this one.
+        _selectedLanguage = language ?? _preferences.ReadLanguage() ?? AgentConfigStrings.DetectLanguage();
+        _strings = new AgentConfigStrings(_selectedLanguage);
     }
 
-    public AgentConfigStrings Strings { get; }
+    // ---------------------------------------------------------------- language
+
+    /// <summary>
+    /// The strings the whole window binds through.
+    ///
+    /// Replaced wholesale when the language changes rather than mutated, so every
+    /// <c>{Binding Strings[Key]}</c> in the view re-evaluates from one notification. The alternative —
+    /// an indexer that raises its own change events — would have every one of those bindings depend on
+    /// a notification shape that is easy to get subtly wrong and hard to see when it is.
+    /// </summary>
+    [ObservableProperty]
+    private AgentConfigStrings _strings;
+
+    [ObservableProperty]
+    private UiLanguagePreference _selectedLanguage;
+
+    /// <summary>
+    /// The selector's two states, as booleans rather than as a selected object.
+    ///
+    /// This was a ComboBox bound to a list of option objects, and it overwrote the language at
+    /// start-up: the control resolved its selection against an items source that was not ready yet,
+    /// fell back to the first entry and wrote that back through the two-way binding - which made the
+    /// saved preference useless and, worse, silently re-saved the wrong one over it.
+    ///
+    /// A pair of booleans has no such window. Nothing checks itself, and the setters ignore the
+    /// <c>false</c> the group writes to whichever option is being unchecked, so the only thing that
+    /// can change the language is somebody choosing one.
+    /// </summary>
+    public bool IsPortugueseSelected
+    {
+        get => SelectedLanguage == UiLanguagePreference.PtBr;
+        set
+        {
+            if (value) SelectedLanguage = UiLanguagePreference.PtBr;
+        }
+    }
+
+    public bool IsEnglishSelected
+    {
+        get => SelectedLanguage == UiLanguagePreference.EnUs;
+        set
+        {
+            if (value) SelectedLanguage = UiLanguagePreference.EnUs;
+        }
+    }
+
+    partial void OnSelectedLanguageChanged(UiLanguagePreference value)
+    {
+        Strings = new AgentConfigStrings(value);
+        _preferences.WriteLanguage(value);
+        RelocalizeSurface();
+    }
+
+    /// <summary>
+    /// Re-renders everything that captured a string when it was built.
+    ///
+    /// Computed properties only need a notification; the three collections hold text that was composed
+    /// at construction, so they are rebuilt — from state already in memory, without re-reading the
+    /// machine. Switching language is a view concern and must not go near the store, the service or
+    /// the certificate catalog.
+    /// </summary>
+    private void RelocalizeSurface()
+    {
+        // Transient results — "Configuration saved.", a membership outcome, a failed import — were
+        // written in the previous language and cannot be re-derived. Clearing them is honest;
+        // leaving them would put two languages on screen at once.
+        ApplyMessage = null;
+        ApplyFailed = false;
+        OperatorsMessage = null;
+        ServiceMessage = null;
+        CertificateImportMessage = null;
+        CertificateImportDetail = null;
+
+        var selected = SelectedCertificate?.Thumbprint;
+        var known = Certificates.Select(option => option.Certificate).ToArray();
+        Certificates.Clear();
+        foreach (var certificate in known) Certificates.Add(new AgentCertificateOption(certificate, Strings));
+        if (!string.IsNullOrWhiteSpace(selected))
+        {
+            SelectedCertificate = Certificates.FirstOrDefault(option =>
+                string.Equals(option.Thumbprint, selected, StringComparison.OrdinalIgnoreCase));
+        }
+
+        ApplyServiceText();
+        RefreshHttpsValidation();
+        RebuildResourceStatus();
+        RebuildDiagnostics();
+
+        // Every computed property on this object re-reads, rather than a hand-written list of the
+        // ones somebody remembered. The list version shipped three strings in the previous language -
+        // the two transport pills and the last-transport notice - because they were written after the
+        // list was, and that is a mistake this cannot make again.
+        OnPropertyChanged(string.Empty);
+    }
 
     /// <summary>The product version shown in the fixed operational footer.</summary>
     public string ApplicationVersion
@@ -201,6 +301,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
         OnPropertyChanged(nameof(NamedPipeStatusText));
         OnPropertyChanged(nameof(HttpsStatusText));
+        OnPropertyChanged(nameof(CanResetHttps));
+        OnPropertyChanged(nameof(HttpsResetBlockedReason));
+        OnPropertyChanged(nameof(HttpsResetToolTip));
+        ResetHttpsCommand.NotifyCanExecuteChanged();
         RefreshDirty();
     }
 
@@ -234,6 +338,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private string? _certificateImportMessage;
 
     [ObservableProperty]
+    private string? _certificateImportDetail;
+
+    [ObservableProperty]
     private string _certificateImportStateClass = "healthy";
 
     public bool CanImportCertificate => _certificateImporter is not null && !IsBusy;
@@ -258,6 +365,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         (CertificateImportMessage is not null || (!HttpsHostHasError && !HttpsPortHasError));
 
     public string? CertificateFeedbackMessage => CertificateImportMessage ?? HttpsValidationMessage;
+
+    /// <summary>
+    /// The technical detail behind a failed import, shown only on hover.
+    ///
+    /// It is an exception type and an HRESULT the adapter composed - never a platform message, which
+    /// can name a path, a key container or a store, and never anything derived from a password.
+    /// </summary>
+    public string? CertificateFeedbackDetail => CertificateImportDetail;
 
     public string CertificateFeedbackStateClass => CertificateImportMessage is not null
         ? CertificateImportStateClass
@@ -379,13 +494,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         if (_certificateImporter is null)
         {
-            var unavailable = AgentCertificateImportResult.From(AgentCertificateImportOutcome.Failed);
+            // Its own outcome, not the store failure. Nothing was attempted against LocalMachine\My
+            // here, and saying otherwise would send somebody to check a store that was never opened.
+            var unavailable = AgentCertificateImportResult.From(AgentCertificateImportOutcome.ImporterUnavailable);
             SetImportFeedback(unavailable);
             return unavailable;
         }
 
         IsBusy = true;
         CertificateImportMessage = null;
+        CertificateImportDetail = null;
         NotifyCertificateFeedbackChanged();
         RefreshCommandStates();
 
@@ -406,6 +524,18 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
             return result;
         }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // The adapter classifies every failure it anticipates. One it did not anticipate stops
+            // here rather than escaping an async void click handler and taking the window with it —
+            // named by type and code, which identifies the fault without quoting a platform message
+            // that could carry a path or a container name.
+            var unexpected = AgentCertificateImportResult.From(
+                AgentCertificateImportOutcome.Failed,
+                $"{exception.GetType().Name} (0x{exception.HResult:X8})");
+            SetImportFeedback(unexpected);
+            return unexpected;
+        }
         finally
         {
             IsBusy = false;
@@ -417,6 +547,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         var verdict = AgentCertificateRules.Evaluate(certificate, HttpsHost.Trim(), _time.GetUtcNow());
         CertificateImportStateClass = verdict.IsUsable ? "healthy" : "warning";
+        CertificateImportDetail = null;
         CertificateImportMessage = verdict.IsUsable
             ? Strings["Https.Import.Success"]
             : Strings.Format("Https.Import.SuccessWithIssue", DescribeCertificateProblems(
@@ -429,18 +560,34 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         if (result.Outcome is AgentCertificateImportOutcome.PasswordRequired)
         {
             CertificateImportMessage = null;
+            CertificateImportDetail = null;
             NotifyCertificateFeedbackChanged();
             return;
         }
 
         CertificateImportStateClass = "critical";
-        CertificateImportMessage = result.Outcome switch
+
+        // Each outcome names its own cause. The generic store message is the last resort, not the
+        // default: "could not be imported" tells an administrator nothing they did not already see.
+        var reason = result.Outcome switch
         {
             AgentCertificateImportOutcome.PasswordIncorrect => Strings["Https.Import.PasswordIncorrect"],
             AgentCertificateImportOutcome.UnsupportedFile => Strings["Https.Import.Unsupported"],
             AgentCertificateImportOutcome.InvalidFile => Strings["Https.Import.InvalidFile"],
+            AgentCertificateImportOutcome.AccessDenied => Strings["Https.Import.AccessDenied"],
+            AgentCertificateImportOutcome.ImporterUnavailable => Strings["Https.Import.Unavailable"],
             _ => Strings["Https.Import.Failed"],
         };
+
+        // The technical detail is a type name and an HRESULT the adapter built; it never carries a
+        // password, a key or a path. Appending it keeps the support log on screen instead of in a file
+        // the operator would have to go and find.
+        CertificateImportMessage = reason;
+
+        // The type and HRESULT are for a support conversation, not for the card. Inline they pushed a
+        // two-line message to three and told the operator nothing they could act on; on the tooltip
+        // they are one hover away for whoever actually needs them.
+        CertificateImportDetail = string.IsNullOrWhiteSpace(result.Failure) ? null : result.Failure;
         NotifyCertificateFeedbackChanged();
     }
 
@@ -448,12 +595,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         if (CertificateImportMessage is null) return;
         CertificateImportMessage = null;
+        CertificateImportDetail = null;
         NotifyCertificateFeedbackChanged();
     }
 
     private void NotifyCertificateFeedbackChanged()
     {
         OnPropertyChanged(nameof(CertificateFeedbackMessage));
+        OnPropertyChanged(nameof(CertificateFeedbackDetail));
         OnPropertyChanged(nameof(CertificateFeedbackStateClass));
         OnPropertyChanged(nameof(CertificateFeedbackIconKey));
         OnPropertyChanged(nameof(ShowCertificateFeedback));
@@ -765,7 +914,26 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void ReloadService()
     {
         _serviceState = _service.Describe();
+        ApplyServiceText();
 
+        OnPropertyChanged(nameof(ServiceState));
+        OnPropertyChanged(nameof(ServiceIsRunning));
+        OnPropertyChanged(nameof(ServiceIsInstalled));
+        OnPropertyChanged(nameof(ShowStartServiceAction));
+        OnPropertyChanged(nameof(ShowStopServiceAction));
+        RefreshCommandStates();
+        RebuildDiagnostics();
+    }
+
+    /// <summary>
+    /// Renders the service state into words, from state that has already been read.
+    ///
+    /// Separate from <see cref="ReloadService"/> because changing the interface language must not
+    /// query the service control manager. Re-reading the machine to re-word a label would turn a view
+    /// preference into an administrative call.
+    /// </summary>
+    private void ApplyServiceText()
+    {
         ServiceStateText = _serviceState.State switch
         {
             AgentServiceState.NotInstalled => Strings["Service.State.NotInstalled"],
@@ -781,14 +949,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ? null
             : Strings.Format("Service.StartMode", _serviceState.StartMode);
 
-        OnPropertyChanged(nameof(ServiceState));
-        OnPropertyChanged(nameof(ServiceIsRunning));
-        OnPropertyChanged(nameof(ServiceIsInstalled));
         OnPropertyChanged(nameof(ServiceFooterText));
-        OnPropertyChanged(nameof(ShowStartServiceAction));
-        OnPropertyChanged(nameof(ShowStopServiceAction));
-        RefreshCommandStates();
-        RebuildDiagnostics();
     }
 
     // ---------------------------------------------------------------- confirmations
@@ -820,6 +981,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>Whether the open confirmation is the HTTPS teardown, which is the only one with choices.</summary>
     public bool IsDisablingHttps => PendingConfirmation is AgentConfigConfirmation.DisableHttps;
 
+
     /// <summary>
     /// The affirmative button's label. Each confirmation names what it will actually do rather than
     /// saying "OK" — the difference between "Criar no domínio" and "OK" is the whole point of asking.
@@ -828,6 +990,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryConfirm"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.RemoveAndDisable"],
+        AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Confirm"],
         AgentConfigConfirmation.RestartService => Strings["Service.Restart"],
         _ => Strings["Action.Confirm"],
     };
@@ -836,6 +999,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryTitle"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Title"],
+        AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Title"],
         AgentConfigConfirmation.RestartService => Strings["Service.RestartTitle"],
         _ => null,
     };
@@ -844,12 +1008,150 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryWarning"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Message"],
+        AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Message"],
         AgentConfigConfirmation.RestartService => Strings["Service.RestartQuestion"],
         _ => null,
     };
 
     [RelayCommand]
     private void CancelConfirmation() => PendingConfirmation = AgentConfigConfirmation.None;
+
+    // ---------------------------------------------------------------- reset HTTPS
+
+    /// <summary>
+    /// Whether the reset is refusable before it is offered, and why.
+    ///
+    /// Null means it can run. Named rather than boolean because the one thing that blocks it - HTTPS
+    /// being the only transport left - is a rule the operator can satisfy themselves, and a disabled
+    /// button with no reason given is a rule nobody can satisfy.
+    /// </summary>
+    public string? HttpsResetBlockedReason => NamedPipeEnabled || !HttpsEnabled
+        ? null
+        : Strings["Https.Reset.LastTransport"];
+
+    public bool CanResetHttps => HttpsResetBlockedReason is null && !IsBusy;
+
+    public string HttpsResetToolTip => HttpsResetBlockedReason ?? Strings["Https.Reset.Tooltip"];
+
+    /// <summary>
+    /// Opens the confirmation. It never changes anything by itself.
+    ///
+    /// Reset is not the HTTPS checkbox with a different label. The checkbox turns a transport off and
+    /// leaves the machine as it is; this removes the SSL binding, the URL reservation and the firewall
+    /// rule that this product created, forgets the endpoint and the certificate this product chose,
+    /// and puts the port back to its default. The certificate itself is never touched.
+    /// </summary>
+    [RelayCommand]
+    private void ResetHttps()
+    {
+        if (!CanResetHttps) return;
+        PendingConfirmation = AgentConfigConfirmation.ResetHttps;
+    }
+
+    /// <summary>
+    /// Removes what is provably this product's, then forgets the configuration that named it.
+    ///
+    /// Resources first and the file second, the same order as Apply and for the same reason: if the
+    /// removal fails, the configuration still describes the machine as it actually is. A resource left
+    /// behind because it belongs to somebody else is not a failure - it is the ownership rule working,
+    /// and it is reported rather than retried.
+    /// </summary>
+    private async Task ResetHttpsCoreAsync(CancellationToken cancellationToken)
+    {
+        IsBusy = true;
+        ApplyFailed = false;
+        ApplyMessage = null;
+        RefreshCommandStates();
+
+        try
+        {
+            var notes = new List<string>();
+
+            if (_appliedBinding is { } binding)
+            {
+                var removed = await Task.Run(
+                    () => _resources.Remove(binding, AgentHttpsCleanupRequest.Everything),
+                    cancellationToken).ConfigureAwait(true);
+
+                if (!removed.Succeeded)
+                {
+                    // Some resources may already be gone. Saying so, and naming what was removed
+                    // before the failure, beats writing a configuration that claims HTTPS was reset on
+                    // a machine that still has a live binding on it.
+                    ApplyFailed = true;
+
+                    var failure = new List<string> { Strings["Https.Reset.Failed"] };
+                    if (!string.IsNullOrWhiteSpace(removed.Failure)) failure.Add(removed.Failure);
+                    if (removed.Applied.Count > 0)
+                    {
+                        failure.Add(Strings.Format(
+                            "Https.Reset.PartiallyRemoved", string.Join(", ", removed.Applied)));
+                    }
+
+                    ApplyMessage = string.Join(" ", failure);
+                    RefreshResourceState();
+                    return;
+                }
+
+                // Resources the machine kept because they are not ours. Reported, never retried.
+                notes.AddRange(removed.Skipped);
+            }
+
+            _suppressTransportGuard = true;
+            try
+            {
+                HttpsEnabled = false;
+            }
+            finally
+            {
+                _suppressTransportGuard = false;
+            }
+
+            HttpsHost = string.Empty;
+            HttpsPort = DefaultHttpsPort;
+            SelectedCertificate = null;
+            _appliedBinding = null;
+
+            var document = BuildDocument();
+            var write = _store.Write(document);
+
+            if (!write.Succeeded)
+            {
+                // The resources are gone and the file still names them. The screen keeps the reset
+                // state rather than claiming an endpoint whose binding no longer exists, and the
+                // operator is told that the file is the part that failed.
+                ApplyFailed = true;
+                ApplyMessage = write.Failure;
+                RefreshDirty();
+                RefreshResourceState();
+                return;
+            }
+
+            _confirmed = document;
+            RefreshDirty();
+            RefreshResourceState();
+            RefreshHttpsValidation();
+
+            notes.Insert(0, Strings["Https.Reset.Done"]);
+
+            // Reset never starts or restarts the agent on its own; a running one is offered the
+            // restart in exactly the way Apply offers it.
+            if (_serviceState.IsRunning)
+            {
+                notes.Add(Strings["Service.RestartRequired"]);
+                ApplyMessage = string.Join(" ", notes);
+                PendingConfirmation = AgentConfigConfirmation.RestartService;
+                return;
+            }
+
+            ApplyMessage = string.Join(" ", notes);
+        }
+        finally
+        {
+            IsBusy = false;
+            RefreshCommandStates();
+        }
+    }
 
     /// <summary>
     /// The affirmative answer to whichever confirmation is open.
@@ -873,6 +1175,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 await ApplyCoreAsync(
                     new AgentHttpsCleanupRequest(CleanupFirewallRule, CleanupSslBinding, CleanupUrlReservation),
                     cancellationToken).ConfigureAwait(true);
+                return;
+
+            case AgentConfigConfirmation.ResetHttps:
+                await ResetHttpsCoreAsync(cancellationToken).ConfigureAwait(true);
                 return;
 
             case AgentConfigConfirmation.RestartService:
@@ -1063,6 +1369,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanStopService));
         OnPropertyChanged(nameof(CanRestartService));
         OnPropertyChanged(nameof(CanImportCertificate));
+        OnPropertyChanged(nameof(CanResetHttps));
+        OnPropertyChanged(nameof(HttpsResetBlockedReason));
+        ResetHttpsCommand.NotifyCanExecuteChanged();
         RefreshApplyState();
     }
 

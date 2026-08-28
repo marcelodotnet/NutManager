@@ -75,6 +75,29 @@ public sealed class AgentConfigStrings
         ["Https.Import.Unsupported"] = "Use um arquivo .pfx, .p12, .cer ou .crt.",
         ["Https.Import.InvalidFile"] = "Arquivo de certificado inválido.",
         ["Https.Import.Failed"] = "Não foi possível importar o certificado em LocalMachine\\My.",
+        ["Https.Import.AccessDenied"] = "Acesso ao repositório LocalMachine\\My negado. Execute como administrador.",
+        ["Https.Import.Unavailable"] = "A importação de certificados não está disponível nesta instalação.",
+
+        ["Https.Reset"] = "Resetar",
+        ["Https.Reset.Tooltip"] = "Resetar configuração HTTPS",
+        ["Https.Reset.Title"] = "Resetar configuração HTTPS?",
+        ["Https.Reset.Message"] =
+            "Esta ação removerá as configurações HTTPS criadas pelo NutManager Agent neste computador."
+            + "\n\nSerão removidos, quando pertencentes ao NutManager:"
+            + "\n  • SSL Binding do HTTP.sys"
+            + "\n  • URL Reservation do HTTP.sys"
+            + "\n  • Regra do Windows Firewall"
+            + "\n  • Configuração HTTPS do Agent"
+            + "\n\nO certificado instalado NÃO será removido.",
+        ["Https.Reset.Confirm"] = "Resetar HTTPS",
+        ["Https.Reset.Done"] = "Configuração HTTPS resetada.",
+        ["Https.Reset.Failed"] = "Não foi possível resetar a configuração HTTPS.",
+        ["Https.Reset.PartiallyRemoved"] = "Já removido: {0}.",
+        ["Https.Reset.LastTransport"] =
+            "Ative o SMB (Named Pipe) antes de resetar o HTTPS. Pelo menos um transporte deve permanecer ativo.",
+
+        ["Language.Label"] = "Idioma",
+        ["Https.Certificate.Readonly"] = "Selecionado por Importar...; use o botão ao lado para visualizar.",
         ["Https.Certificate.Details"] = "Detalhes do certificado",
         ["Https.Certificate.Subject"] = "Titular",
         ["Https.Certificate.NotBefore"] = "Válido a partir de",
@@ -240,6 +263,29 @@ public sealed class AgentConfigStrings
         ["Https.Import.Unsupported"] = "Use a .pfx, .p12, .cer or .crt file.",
         ["Https.Import.InvalidFile"] = "Invalid certificate file.",
         ["Https.Import.Failed"] = "The certificate could not be imported into LocalMachine\\My.",
+        ["Https.Import.AccessDenied"] = "Access to the LocalMachine\\My store was denied. Run as administrator.",
+        ["Https.Import.Unavailable"] = "Certificate import is not available in this installation.",
+
+        ["Https.Reset"] = "Reset",
+        ["Https.Reset.Tooltip"] = "Reset HTTPS configuration",
+        ["Https.Reset.Title"] = "Reset the HTTPS configuration?",
+        ["Https.Reset.Message"] =
+            "This will remove the HTTPS configuration created by the NutManager Agent on this computer."
+            + "\n\nThe following are removed when they belong to NutManager:"
+            + "\n  • The HTTP.sys SSL binding"
+            + "\n  • The HTTP.sys URL reservation"
+            + "\n  • The Windows Firewall rule"
+            + "\n  • The Agent's HTTPS configuration"
+            + "\n\nThe installed certificate will NOT be removed.",
+        ["Https.Reset.Confirm"] = "Reset HTTPS",
+        ["Https.Reset.Done"] = "HTTPS configuration reset.",
+        ["Https.Reset.Failed"] = "The HTTPS configuration could not be reset.",
+        ["Https.Reset.PartiallyRemoved"] = "Already removed: {0}.",
+        ["Https.Reset.LastTransport"] =
+            "Enable SMB (Named Pipe) before resetting HTTPS. At least one transport must stay active.",
+
+        ["Language.Label"] = "Language",
+        ["Https.Certificate.Readonly"] = "Chosen with Import...; use the button beside it to view.",
         ["Https.Certificate.Details"] = "Certificate details",
         ["Https.Certificate.Subject"] = "Subject",
         ["Https.Certificate.NotBefore"] = "Not before",
@@ -359,9 +405,10 @@ public sealed class AgentConfigStrings
     public UiLanguagePreference Language { get; }
 
     /// <summary>
-    /// The culture Windows is running in, which is what an administrator on a server expects. There is
-    /// no language switch in this window: it is open for a few minutes, and a preference nobody asked
-    /// for would be one more thing to persist and get wrong.
+    /// The culture Windows is running in, which is what an administrator on a server expects on first
+    /// use. It is the last of three answers: an explicit choice wins, then a saved preference, then
+    /// this. Portuguese is matched on the language rather than the region, so pt-PT and pt-BR both
+    /// land on Portuguese; every other culture takes en-US.
     /// </summary>
     public static UiLanguagePreference DetectLanguage()
     {

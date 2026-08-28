@@ -25,17 +25,22 @@
               BorderBrush="{DynamicResource NutBorderSubtleBrush}"
               BorderThickness="0,0,1,0"
               AutomationProperties.Name="{Binding AccessibleText}">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="5">
+        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
+          <!--
+            The resource glyph sits on the item's centre line rather than at the top of the cell. With
+            a two-line item, Top left it floating above a gap; centring is what makes the icon read as
+            belonging to the label it names.
+          -->
           <PathIcon Grid.Column="0"
                     Data="{Binding IconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
                     Width="21"
                     Height="21"
-                    VerticalAlignment="Top"
+                    VerticalAlignment="Center"
                     Foreground="{DynamicResource NutTextSecondaryBrush}" />
-          <StackPanel Grid.Column="1" Spacing="0">
+          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
             <TextBlock Classes="nut-body"
                        FontWeight="SemiBold"
-                       FontSize="12"
+                       FontSize="11.5"
                        Foreground="{DynamicResource NutTextPrimaryBrush}"
                        Text="{Binding Label}"
                        TextWrapping="NoWrap"
@@ -178,9 +183,64 @@
     <Style Selector="ItemsControl.agent-resource-strip:disabled">
       <Setter Property="Opacity" Value="0.58" />
     </Style>
+    <!--
+      A warning outline rather than a filled danger button. The product's nut-danger fill is reserved
+      for the affirmative button inside a confirmation, where the operator has already been told what
+      will happen; using it out here would give a card header the visual weight of a final answer.
+    -->
+    <!--
+      A segmented switch built from radio buttons: the ellipse the Fluent template draws is hidden and
+      the segment itself carries the selection, so the pair reads as one control rather than as two
+      form fields sharing a border.
+    -->
+    <Style Selector="Border.agent-language-switch">
+      <Setter Property="CornerRadius" Value="7" />
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="Background" Value="{DynamicResource NutSurface2Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="RadioButton.agent-language-option">
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="MinWidth" Value="0" />
+      <Setter Property="Padding" Value="9,3" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Foreground" Value="{DynamicResource NutTextSecondaryBrush}" />
+    </Style>
+    <Style Selector="RadioButton.agent-language-option /template/ Ellipse">
+      <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector="RadioButton.agent-language-option /template/ Grid">
+      <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="RadioButton.agent-language-option:checked">
+      <Setter Property="Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Background" Value="{DynamicResource NutAccentSoftBrush}" />
+    </Style>
+    <Style Selector="Button.agent-reset-https">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource NutWarningBrush}" />
+      <Setter Property="MinHeight" Value="26" />
+    </Style>
+    <Style Selector="Button.agent-reset-https /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
+    </Style>
+    <Style Selector="Button.agent-reset-https:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NutWarningSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
+    </Style>
+    <Style Selector="Button.agent-reset-https PathIcon">
+      <Setter Property="Foreground" Value="{DynamicResource NutWarningBrush}" />
+    </Style>
     <Style Selector="Border.agent-resource-item">
-      <Setter Property="Padding" Value="6,2" />
-      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="7,5" />
+      <Setter Property="MinHeight" Value="46" />
     </Style>
     <Style Selector="TextBox.agent-validation-input.invalid">
       <Setter Property="BorderBrush" Value="{DynamicResource NutCriticalBrush}" />
@@ -242,11 +302,11 @@
           <Grid x:Name="AgentMainHeader"
                 Grid.Row="0"
                 ColumnDefinitions="Auto,*,Auto"
-                Margin="10,7">
+                Margin="10,6,10,7">
               <Border Grid.Column="0"
-                      Width="62"
-                      Height="62"
-                      Margin="0,0,12,0"
+                      Width="68"
+                      Height="68"
+                      Margin="0,0,13,0"
                       CornerRadius="12"
                       Background="{DynamicResource NutSurface2Brush}"
                       BorderBrush="{DynamicResource NutBorderSubtleBrush}"
@@ -266,18 +326,53 @@
                            Text="{Binding Strings[Header.Subtitle]}"
                            TextWrapping="Wrap" />
               </StackPanel>
-              <Button Grid.Column="2"
-                      VerticalAlignment="Center"
-                      Padding="11,6"
-                      Command="{Binding ToggleDiagnosticsCommand}">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <PathIcon Data="{DynamicResource NutIconDiagnostics}"
-                            Width="18"
-                            Height="18"
-                            Foreground="{DynamicResource NutAccentBrightBrush}" />
-                  <TextBlock VerticalAlignment="Center" Text="{Binding ViewToggleText}" />
-                </StackPanel>
-              </Button>
+              <StackPanel Grid.Column="2"
+                          Orientation="Horizontal"
+                          Spacing="7"
+                          VerticalAlignment="Center">
+                <!--
+                  A segmented pair, not a drop-down.
+
+                  Two options do not need a list, and a ComboBox here actively misbehaved: it resolved
+                  its selection before its items were ready, fell back to the first entry and wrote
+                  that back over the operator's saved preference. Radio buttons never check
+                  themselves, so the only thing that changes the language is somebody choosing one.
+
+                  The codes are invariant and stay untranslated; the tooltips carry the full names,
+                  because a code is not obvious to somebody who does not already know it. Choosing one
+                  re-renders this window and touches nothing else - not agent.json, not the service,
+                  not the machine.
+                -->
+                <Border Classes="agent-language-switch"
+                        ToolTip.Tip="{Binding Strings[Language.Label]}"
+                        AutomationProperties.Name="{Binding Strings[Language.Label]}">
+                  <StackPanel Orientation="Horizontal">
+                    <RadioButton Classes="agent-language-option"
+                                 GroupName="AgentConfigLanguage"
+                                 IsChecked="{Binding IsPortugueseSelected}"
+                                 Content="PT-BR"
+                                 ToolTip.Tip="Português (Brasil)"
+                                 AutomationProperties.Name="Português (Brasil)" />
+                    <RadioButton Classes="agent-language-option"
+                                 GroupName="AgentConfigLanguage"
+                                 IsChecked="{Binding IsEnglishSelected}"
+                                 Content="EN-US"
+                                 ToolTip.Tip="English (United States)"
+                                 AutomationProperties.Name="English (United States)" />
+                  </StackPanel>
+                </Border>
+                <Button VerticalAlignment="Center"
+                        Padding="11,6"
+                        Command="{Binding ToggleDiagnosticsCommand}">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <PathIcon Data="{DynamicResource NutIconDiagnostics}"
+                              Width="18"
+                              Height="18"
+                              Foreground="{DynamicResource NutAccentBrightBrush}" />
+                    <TextBlock VerticalAlignment="Center" Text="{Binding ViewToggleText}" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
           </Grid>
 
           <Panel Grid.Row="1">
@@ -406,8 +501,19 @@
                     x:Name="HttpsEditorCard"
                     Classes="agent-shell-card"
                     VerticalAlignment="Stretch">
-              <StackPanel Spacing="7">
-                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7">
+              <!--
+                A DockPanel, not a stack.
+
+                The card is stretched to the row height, and a stack simply overflows it: a two-line
+                failure message was drawn past the bottom edge and cut in half, which is the worst
+                thing on this card to clip. Docking the message to the bottom reserves its height
+                first and lets the fields take what is left, so the explanation is always whole.
+              -->
+              <DockPanel LastChildFill="True">
+                <Grid DockPanel.Dock="Top"
+                      ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="7"
+                      Margin="0,0,0,7">
                   <PathIcon Grid.Column="0"
                             Classes="agent-section-icon"
                             Data="{DynamicResource NutIconTls}" />
@@ -416,11 +522,59 @@
                              FontSize="15"
                              VerticalAlignment="Center"
                              Text="{Binding Strings[Https.Title]}" />
+                  <!--
+                    Reset is not the HTTPS checkbox with a louder label, and it is not styled like one.
+
+                    The checkbox turns the transport off; this removes the SSL binding, the URL
+                    reservation and the firewall rule this product created and forgets the endpoint it
+                    saved. That is the bigger action, which is exactly why it is the smaller control:
+                    a wide red button invites the click, and this one should be found by somebody who
+                    came looking for it. It opens a confirmation and changes nothing by itself.
+                  -->
+                  <Button Grid.Column="2"
+                          Classes="agent-reset-https"
+                          Padding="8,3"
+                          VerticalAlignment="Center"
+                          Command="{Binding ResetHttpsCommand}"
+                          IsEnabled="{Binding CanResetHttps}"
+                          ToolTip.Tip="{Binding HttpsResetToolTip}"
+                          AutomationProperties.Name="{Binding Strings[Https.Reset.Tooltip]}">
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                      <PathIcon Data="{DynamicResource NutIconRestart}" Width="13" Height="13" />
+                      <TextBlock VerticalAlignment="Center"
+                                 FontSize="12"
+                                 Text="{Binding Strings[Https.Reset]}" />
+                    </StackPanel>
+                  </Button>
+                </Grid>
+
+                <Grid DockPanel.Dock="Bottom"
+                      ColumnDefinitions="Auto,*"
+                      ColumnSpacing="8"
+                      Margin="0,6,0,0"
+                      IsVisible="{Binding ShowCertificateFeedback}">
+                  <!--
+                    A Grid rather than a horizontal StackPanel: a horizontal stack measures its
+                    children with unbounded width, so TextWrapping never engages and a long message
+                    runs off the card. The star column gives the text a width to wrap inside.
+                  -->
+                  <PathIcon Grid.Column="0"
+                            Width="18"
+                            Height="18"
+                            VerticalAlignment="Top"
+                            Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
+                            Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
+                  <TextBlock Grid.Column="1"
+                             Classes="hint"
+                             Text="{Binding CertificateFeedbackMessage}"
+                             ToolTip.Tip="{Binding CertificateFeedbackDetail}"
+                             TextWrapping="Wrap" />
                 </Grid>
 
                 <StackPanel x:Name="HttpsEditorFields"
                             Classes="agent-https-fields"
                             Spacing="4"
+                            VerticalAlignment="Top"
                             IsEnabled="{Binding HttpsEnabled}">
                   <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
                     <StackPanel Grid.Column="0" Spacing="1">
@@ -487,8 +641,18 @@
                   <StackPanel Spacing="1">
                     <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Certificate]}" />
                     <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+                      <!--
+                        A readonly surface, and nothing more.
+
+                        This was a ComboBox once, and clicking it dropped a list of every certificate
+                        in the machine store over the card. Focusable="False" keeps it out of keyboard
+                        interaction while hit testing remains available only for its explanatory
+                        tooltip. The two certificate actions remain the separate buttons beside it.
+                      -->
                       <Border Grid.Column="0"
                               Classes="agent-static-field"
+                              Focusable="False"
+                              ToolTip.Tip="{Binding Strings[Https.Certificate.Readonly]}"
                               AutomationProperties.Name="{Binding Strings[Https.Certificate]}">
                         <Grid>
                           <TextBlock Classes="nut-metadata"
@@ -555,20 +719,8 @@
                                TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="{Binding Strings[Https.Thumbprint]}" />
                   </StackPanel>
-                  <StackPanel Orientation="Horizontal"
-                              Spacing="8"
-                              IsVisible="{Binding ShowCertificateFeedback}">
-                    <PathIcon Width="18"
-                              Height="18"
-                              VerticalAlignment="Top"
-                              Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                              Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
-                    <TextBlock Classes="hint"
-                               Text="{Binding CertificateFeedbackMessage}"
-                               TextWrapping="Wrap" />
-                  </StackPanel>
                 </StackPanel>
-              </StackPanel>
+              </DockPanel>
             </Border>
 
             <!-- ============================================== owned Windows resources -->
@@ -598,7 +750,7 @@
                 -->
                 <ItemsControl Classes="agent-resource-strip"
                               ItemsSource="{Binding ResourceStatus}"
-                              MinHeight="62"
+                              MinHeight="68"
                               IsEnabled="{Binding HttpsEnabled}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -764,13 +916,24 @@
                   </StackPanel>
                 </Button>
               </StackPanel>
+              <!--
+                Trimmed, not just wrapped.
+
+                Wrapping alone is not enough here: the messages most worth reading are failures, and a
+                failure names a file - "...\ProgramData\NutManager\Agent\agent.json is denied" - which
+                is one unbreakable token. With nowhere to wrap, the text drew straight over the Apply
+                and Cancel buttons. Trimming keeps it inside its column, and the tooltip keeps the
+                whole message one hover away.
+              -->
               <TextBlock Grid.Column="1"
                          Classes="nut-metadata"
                          VerticalAlignment="Center"
                          TextAlignment="Right"
                          TextWrapping="Wrap"
                          MaxLines="2"
+                         TextTrimming="CharacterEllipsis"
                          Text="{Binding ApplyMessage}"
+                         ToolTip.Tip="{Binding ApplyMessage}"
                          IsVisible="{Binding ApplyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                          Foreground="{Binding ApplyFailed, Converter={x:Static converters:AgentConfigConverters.MessageBrush}}" />
               <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">

@@ -359,11 +359,14 @@ deliberate act by an administrator.
 
 ### Configure with NutManager Agent Config
 
-Enable **HTTPS**, enter the explicit host/FQDN and port, and select a certificate from
-`LocalMachine\My`. The utility shows subject, issuer, expiration and thumbprint and refuses a
-certificate that lacks a private key, is outside its validity window, lacks server-authentication
-usage, or does not cover the host in its SAN (with Common Name used only for a legacy certificate
-that has no SAN). Wildcard matching is limited to one DNS label.
+Enable **HTTPS** and enter the explicit host/FQDN and port. The certificate summary is read-only;
+**Import...** is the explicit file-selection action and accepts `.pfx`, `.p12`, `.cer` and `.crt`
+files into `LocalMachine\My`. A PFX/P12 password is used only for that import attempt and is never
+persisted. The utility shows subject, issuer, expiration and thumbprint and refuses a certificate
+that lacks a private key, is outside its validity window, lacks server-authentication usage, or does
+not cover the host in its SAN (with Common Name used only for a legacy certificate that has no SAN).
+Wildcard matching is limited to one DNS label. A CER/CRT without a private key remains inspectable
+but cannot be used by the HTTPS listener.
 
 Applying HTTPS performs only the requested local administrative actions through documented Windows
 APIs: HTTP Server API for the SSL binding and URL reservation, and Windows Firewall APIs for the
@@ -371,8 +374,9 @@ inbound rule. It does not run `netsh`, PowerShell, `cmd` or `sc.exe`.
 
 Every created resource carries a NutManager ownership marker. Cleanup is offered only after explicit
 confirmation and removes only resources whose ownership can be proven. A foreign or ambiguous
-binding, reservation or firewall rule is left untouched and reported. Certificates are read-only to
-the utility and are never imported, exported or deleted.
+binding, reservation or firewall rule is left untouched and reported. **Reset HTTPS** clears the
+NutManager-owned HTTPS resources and the saved HTTPS selection, but never removes a certificate.
+Certificates are never exported automatically, and private-key material is never displayed.
 
 The resulting `%ProgramData%\NutManager\Agent\agent.json` contains no secret:
 
@@ -380,8 +384,8 @@ The resulting `%ProgramData%\NutManager\Agent\agent.json` contains no secret:
 {
   "namedPipeEnabled": true,
   "httpsEnabled": true,
-  "httpsPrefix": "https://gandalf.sbra.local:5199/",
-  "certificateThumbprint": "A909502DD82AE41433E6F83886B00D4277A32A7B"
+  "httpsPrefix": "https://nut-server.example.local:5199/",
+  "certificateThumbprint": "0123456789ABCDEF0123456789ABCDEF01234567"
 }
 ```
 
@@ -423,10 +427,11 @@ is the platform default and is never bypassed, so fix the certificate rather tha
 **NutManager reports access denied over HTTPS.** Negotiate failed, or the account is not a member of
 `NutManager Operators` on the server. A 401 and a 403 both arrive here.
 
-**Rolling HTTPS back.** Disable HTTPS in Agent Config. The confirmation lets the administrator choose
-which NutManager-owned firewall, SSL-binding and URL-reservation resources to remove, or disable the
-transport while leaving them in place. The certificate is never part of cleanup. Ensure Named Pipe is
-enabled first if HTTPS is the last active transport.
+**Rolling HTTPS back.** Disable HTTPS to stop using the transport while choosing whether to retain or
+remove its proven NutManager-owned resources. Use **Reset HTTPS** to clear the saved HTTPS selection
+and remove every proven NutManager-owned firewall, SSL-binding and URL-reservation resource. Foreign
+and unknown resources remain untouched, and the certificate is never part of either cleanup. Ensure
+Named Pipe is enabled first if HTTPS is the last active transport.
 
 ## Event log
 

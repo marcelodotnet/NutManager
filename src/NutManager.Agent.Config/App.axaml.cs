@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using NutManager.Agent.Config.Presentation;
+using NutManager.Agent.Config.Localization;
 using NutManager.Agent.Config.ViewModels;
 using NutManager.Agent.Config.Views;
 using NutManager.Infrastructure.AgentConfiguration;
@@ -41,7 +42,8 @@ public sealed class App : Application
                 new WindowsAgentHttpsResourceAdministration(),
                 new WindowsAgentCertificateCatalog(),
                 new WindowsAgentRuntimeInventory(),
-                certificateImporter: new WindowsAgentCertificateImporter());
+                certificateImporter: new WindowsAgentCertificateImporter(),
+                preferences: new AgentConfigUiPreferences());
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
 

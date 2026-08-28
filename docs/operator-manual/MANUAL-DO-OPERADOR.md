@@ -205,7 +205,8 @@ somente recursos locais pertencentes ao Agent.
    confirmação separada.
 2. Escolha `SMB (Named Pipe)`, `HTTPS` ou ambos. Pelo menos um transporte precisa permanecer ativo; o
    último não pode ser desmarcado até o outro ser habilitado.
-3. Se usar HTTPS, informe host/FQDN e porta e selecione um certificado válido de `LocalMachine\My`.
+3. Se usar HTTPS, informe host/FQDN e porta. Use **Importar...** para adicionar explicitamente um
+   certificado válido ao `LocalMachine\My`; o resumo do certificado é somente leitura.
 4. Clique em **Aplicar**. Salvar não inicia um Agent parado. Se ele já estiver rodando, o aplicativo
    oferece um reinício explícito e nunca reinicia silenciosamente.
 5. Confira **Diagnóstico** e clique em **Iniciar Agent** quando grupo, transportes e NUT estiverem
@@ -282,12 +283,15 @@ Preserva: `agent.json`, certificados, bindings SSL, reservas de URL, regras de f
 **Opcional.** O Named Pipe atende a maioria dos casos e não abre porta. Use HTTPS quando o pipe não
 serve — tipicamente um cliente fora do domínio do servidor, que não consegue estabelecer sessão SMB.
 
-Nada disso ocorre durante o MSI. Abra **NutManager Agent Config**, habilite HTTPS, informe o host/FQDN
-e a porta e selecione um certificado já existente em `LocalMachine\My`.
+Nada disso ocorre durante o MSI. Abra **NutManager Agent Config**, habilite HTTPS e informe o host/FQDN
+e a porta. O resumo do certificado é somente leitura. Para escolher um arquivo, use **Importar...**:
+`.pfx`, `.p12`, `.cer` e `.crt` são importados explicitamente para `LocalMachine\My`.
 
 O certificado precisa ter chave privada, estar dentro da validade, permitir autenticação de servidor
 e cobrir o host no SAN. O aplicativo mostra subject, emissor, validade e thumbprint e explica por que
-uma seleção não pode ser usada. Ele não cria, importa, exporta nem apaga certificados.
+uma seleção não pode ser usada. Um CER/CRT sem chave privada continua disponível para inspeção, mas
+não serve ao listener HTTPS. A senha de PFX/P12 existe somente durante a tentativa de importação: não
+é salva em preferência, `agent.json`, log ou ViewModel. A chave privada nunca é exibida ou exportada.
 
 Ao aplicar, o utilitário configura o binding SSL e a reserva de URL pelo HTTP Server API e a regra de
 entrada pelas APIs do Windows Firewall. Cada recurso recebe uma identidade do NutManager. Recurso de
@@ -300,8 +304,8 @@ prefixo e thumbprint, por exemplo:
 {
   "namedPipeEnabled": true,
   "httpsEnabled": true,
-  "httpsPrefix": "https://servidor.exemplo.local:5199/",
-  "certificateThumbprint": "<THUMBPRINT>"
+  "httpsPrefix": "https://nut-server.example.local:5199/",
+  "certificateThumbprint": "0123456789ABCDEF0123456789ABCDEF01234567"
 }
 ```
 
@@ -311,7 +315,9 @@ não é confirmado.
 
 Para desativar HTTPS, mantenha Named Pipe ativo se necessário e desmarque HTTPS. A confirmação permite
 remover seletivamente apenas regra, binding e reserva comprovadamente pertencentes ao NutManager, ou
-somente desativar o transporte. O certificado nunca é removido.
+somente desativar o transporte. **Resetar HTTPS** limpa a configuração HTTPS e tenta remover todos os
+recursos comprovadamente pertencentes ao NutManager; recursos estrangeiros ou de propriedade incerta
+são preservados. Nenhum desses fluxos remove o certificado instalado.
 
 ### Autenticação
 

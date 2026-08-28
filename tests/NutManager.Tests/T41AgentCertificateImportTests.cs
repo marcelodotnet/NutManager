@@ -78,6 +78,49 @@ public sealed class T41AgentCertificateImportTests
         Assert.NotEqual(AgentCertificateImportOutcome.PasswordIncorrect, result.Outcome);
     }
 
+    /// <summary>
+    /// A store that refuses for want of rights is a different fault from a store that is broken, and
+    /// only one of the two is fixed by an elevation prompt. Both HRESULTs Windows uses for the refusal
+    /// are covered: E_ACCESSDENIED from the store and NTE_PERM from the machine key set, which report
+    /// the same thing through different codes and identical localised messages.
+    /// </summary>
+    [Theory]
+    [InlineData(unchecked((int)0x80070005))]
+    [InlineData(unchecked((int)0x80090010))]
+    public void ARefusalForRightsIsReportedAsAccessDeniedRatherThanAsAFileProblem(int hresult)
+    {
+        using var file = CertificateFile.Pfx(password: "correct-password");
+        var writer = new CapturingStoreWriter
+        {
+            Failure = new CryptographicException("Access is denied.") { HResult = hresult },
+        };
+        var importer = new WindowsAgentCertificateImporter(writer);
+
+        var result = importer.Import(file.Path, "correct-password");
+
+        Assert.Equal(AgentCertificateImportOutcome.AccessDenied, result.Outcome);
+        Assert.NotEqual(AgentCertificateImportOutcome.InvalidFile, result.Outcome);
+
+        // A type and a code for the support log; never the platform's own message, which can name a
+        // path, a key container or a store.
+        Assert.NotNull(result.Failure);
+        Assert.Contains("CryptographicException", result.Failure);
+        Assert.DoesNotContain("Access is denied", result.Failure, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>UnauthorizedAccessException carries no HRESULT worth reading; the type is the answer.</summary>
+    [Fact]
+    public void AnUnauthorizedStoreIsAlsoReportedAsAccessDenied()
+    {
+        using var file = CertificateFile.Pfx(password: "correct-password");
+        var writer = new CapturingStoreWriter { Failure = new UnauthorizedAccessException() };
+        var importer = new WindowsAgentCertificateImporter(writer);
+
+        Assert.Equal(
+            AgentCertificateImportOutcome.AccessDenied,
+            importer.Import(file.Path, "correct-password").Outcome);
+    }
+
     [Fact]
     public void CerAndCrtImportForInspectionButHaveNoPrivateKey()
     {

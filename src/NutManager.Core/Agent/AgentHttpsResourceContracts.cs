@@ -326,6 +326,20 @@ public enum AgentCertificateImportOutcome
     PasswordIncorrect,
     UnsupportedFile,
     InvalidFile,
+
+    /// <summary>
+    /// Windows refused the operation for want of rights, not because anything was wrong with the file.
+    ///
+    /// Separated from <see cref="Failed"/> because the two send an administrator to different places.
+    /// "Invalid certificate file" sends them back to the certificate authority for a file that was
+    /// always fine; this sends them to the elevation prompt. Both the machine key set and the
+    /// LocalMachine\My store report this the same way, so one outcome covers the pair.
+    /// </summary>
+    AccessDenied,
+
+    /// <summary>Nothing was attempted: this build has no importer wired up.</summary>
+    ImporterUnavailable,
+
     Failed,
 }
 
