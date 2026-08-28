@@ -8,9 +8,10 @@
         Width="800"
         Height="600"
         CanResize="False"
+        UseLayoutRounding="True"
         Icon="/Assets/Branding/NutManager.ico"
         WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource NutWindowOpaqueBrush}">
+        Background="{DynamicResource NutSurface1Brush}">
 
   <!--
     A compact operations console rather than a second desktop shell. The composition follows the
@@ -27,8 +28,8 @@
         <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="5">
           <PathIcon Grid.Column="0"
                     Data="{Binding IconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                    Width="15"
-                    Height="15"
+                    Width="21"
+                    Height="21"
                     VerticalAlignment="Top"
                     Foreground="{DynamicResource NutTextSecondaryBrush}" />
           <StackPanel Grid.Column="1" Spacing="0">
@@ -43,8 +44,8 @@
                        TextWrapping="Wrap" />
           </StackPanel>
           <PathIcon Grid.Column="2"
-                    Width="14"
-                    Height="14"
+                    Width="22"
+                    Height="22"
                     VerticalAlignment="Center"
                     ToolTip.Tip="{Binding StatusText}"
                     Data="{Binding StateIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
@@ -84,17 +85,12 @@
       <Setter Property="MinHeight" Value="30" />
     </Style>
 
-    <!--
-      The card surface is the desktop's own elevated gradient rather than a flat fill. That one brush is
-      what gives the reference its sense of depth: a card lit slightly from the top reads as sitting
-      above the window rather than being painted onto it.
-    -->
+    <!-- The principal surface belongs directly to the window; only functional regions draw cards. -->
     <Style Selector="Border.agent-main-card">
-      <Setter Property="Background" Value="{DynamicResource NutSurface1Brush}" />
-      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="14" />
-      <Setter Property="Padding" Value="10" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Padding" Value="0" />
     </Style>
     <Style Selector="Border.agent-shell-card">
       <Setter Property="Background" Value="{DynamicResource NutElevatedSheenBrush}" />
@@ -120,10 +116,16 @@
       <Setter Property="Opacity" Value="0.58" />
       <Setter Property="Background" Value="Transparent" />
     </Style>
+    <Style Selector="Border.agent-transport-status.healthy TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource NutHealthyBrightBrush}" />
+    </Style>
+    <Style Selector="Border.agent-transport-status.critical TextBlock">
+      <Setter Property="Foreground" Value="{DynamicResource NutCriticalBrightBrush}" />
+    </Style>
     <Style Selector="PathIcon.agent-section-icon">
       <Setter Property="Foreground" Value="{DynamicResource NutAccentBrightBrush}" />
-      <Setter Property="Width" Value="16" />
-      <Setter Property="Height" Value="16" />
+      <Setter Property="Width" Value="21" />
+      <Setter Property="Height" Value="21" />
     </Style>
     <Style Selector="Border.agent-info-strip">
       <Setter Property="Background" Value="{DynamicResource NutAccentSoftBrush}" />
@@ -133,8 +135,8 @@
       <Setter Property="Padding" Value="6" />
     </Style>
     <Style Selector="Button.agent-copy-button">
-      <Setter Property="Width" Value="28" />
-      <Setter Property="Height" Value="28" />
+      <Setter Property="Width" Value="30" />
+      <Setter Property="Height" Value="30" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
       <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -156,57 +158,22 @@
     </Style>
     <Style Selector="Border.agent-resource-item">
       <Setter Property="Padding" Value="6,2" />
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="MinHeight" Value="42" />
+    </Style>
+    <Style Selector="TextBox.agent-validation-input.invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource NutCriticalBrush}" />
+      <Setter Property="BorderThickness" Value="1.5" />
+    </Style>
+    <Style Selector="NumericUpDown.agent-validation-input.invalid">
+      <Setter Property="BorderBrush" Value="{DynamicResource NutCriticalBrush}" />
+      <Setter Property="BorderThickness" Value="1.5" />
     </Style>
   </Window.Styles>
 
   <DockPanel LastChildFill="True">
-    <!-- ============================================================ product header -->
-    <Border DockPanel.Dock="Top"
-            Background="{DynamicResource NutHeaderBrush}"
-            BorderBrush="{DynamicResource NutBorderSubtleBrush}"
-            BorderThickness="0,0,0,1"
-            Padding="14,10">
-      <Grid ColumnDefinitions="Auto,*,Auto">
-        <!-- 56px: large enough to carry the mark, small enough that the header stays a band. -->
-        <Border Grid.Column="0"
-                Width="56"
-                Height="56"
-                Margin="0,0,12,0"
-                CornerRadius="12"
-                Background="{DynamicResource NutSurface2Brush}"
-                BorderBrush="{DynamicResource NutBorderSubtleBrush}"
-                BorderThickness="1"
-                ClipToBounds="True">
-          <Image Source="avares://NutManager.Agent.Config/Assets/Branding/NutManager.png"
-                 Stretch="UniformToFill" />
-        </Border>
-        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-          <TextBlock Classes="nut-product-title"
-                     FontSize="19"
-                     Text="{Binding Strings[Window.Title]}" />
-          <TextBlock Classes="nut-page-subtitle"
-                     FontSize="12"
-                     Text="{Binding Strings[Header.Subtitle]}"
-                     TextWrapping="Wrap" />
-        </StackPanel>
-        <Button Grid.Column="2"
-                VerticalAlignment="Center"
-                Padding="11,6"
-                Command="{Binding ToggleDiagnosticsCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="8">
-            <PathIcon Data="{DynamicResource NutIconDiagnostics}"
-                      Width="15"
-                      Height="15"
-                      Foreground="{DynamicResource NutAccentBrightBrush}" />
-            <TextBlock VerticalAlignment="Center" Text="{Binding ViewToggleText}" />
-          </StackPanel>
-        </Button>
-      </Grid>
-    </Border>
-
     <!-- ============================================================ operational footer -->
-    <Border DockPanel.Dock="Bottom"
+    <Border x:Name="AgentFooter"
+            DockPanel.Dock="Bottom"
             Background="{DynamicResource NutHeaderBrush}"
             BorderBrush="{DynamicResource NutBorderSubtleBrush}"
             BorderThickness="0,1,0,0"
@@ -246,10 +213,52 @@
     </Border>
 
     <!-- ============================================================ main surface -->
-    <Panel Margin="10,0,10,4">
+    <Panel Margin="10,5,10,4">
       <Border Classes="agent-main-card">
-        <Grid RowDefinitions="*,Auto" RowSpacing="8">
-          <Panel Grid.Row="0">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="8">
+          <!-- Header belongs to the principal surface; the native title bar and footer remain outside. -->
+          <Grid x:Name="AgentMainHeader"
+                Grid.Row="0"
+                ColumnDefinitions="Auto,*,Auto"
+                Margin="10,5">
+              <Border Grid.Column="0"
+                      Width="56"
+                      Height="56"
+                      Margin="0,0,12,0"
+                      CornerRadius="12"
+                      Background="{DynamicResource NutSurface2Brush}"
+                      BorderBrush="{DynamicResource NutBorderSubtleBrush}"
+                      BorderThickness="1"
+                      ClipToBounds="True">
+                <Image Source="avares://NutManager.Agent.Config/Assets/Branding/NutManager.png"
+                       Stretch="UniformToFill"
+                       RenderOptions.BitmapInterpolationMode="HighQuality" />
+              </Border>
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                <TextBlock Classes="nut-product-title"
+                           FontSize="20"
+                           Text="{Binding Strings[Window.Title]}" />
+                <TextBlock Classes="nut-page-subtitle"
+                           FontSize="12"
+                           MaxWidth="420"
+                           Text="{Binding Strings[Header.Subtitle]}"
+                           TextWrapping="Wrap" />
+              </StackPanel>
+              <Button Grid.Column="2"
+                      VerticalAlignment="Center"
+                      Padding="11,6"
+                      Command="{Binding ToggleDiagnosticsCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <PathIcon Data="{DynamicResource NutIconDiagnostics}"
+                            Width="18"
+                            Height="18"
+                            Foreground="{DynamicResource NutAccentBrightBrush}" />
+                  <TextBlock VerticalAlignment="Center" Text="{Binding ViewToggleText}" />
+                </StackPanel>
+              </Button>
+          </Grid>
+
+          <Panel Grid.Row="1">
             <Grid x:Name="ConfigurationSurface"
                   IsVisible="{Binding ShowConfiguration}"
                   RowDefinitions="*,Auto"
@@ -278,7 +287,7 @@
                         Classes="agent-transport-row"
                         Margin="0,4,0,0"
                         IsEnabled="{Binding CanToggleNamedPipe}">
-                  <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+                  <Grid ColumnDefinitions="Auto,Auto,*,64" ColumnSpacing="6">
                     <CheckBox Grid.Column="0"
                               IsChecked="{Binding NamedPipeEnabled}"
                               IsEnabled="{Binding CanToggleNamedPipe}"
@@ -286,8 +295,8 @@
                               AutomationProperties.Name="{Binding Strings[Transport.NamedPipe]}" />
                     <PathIcon Grid.Column="1"
                               Data="{DynamicResource NutIconSmb}"
-                              Width="15"
-                              Height="15"
+                              Width="19"
+                              Height="19"
                               VerticalAlignment="Center"
                               Foreground="{DynamicResource NutHealthyBrush}" />
                     <StackPanel Grid.Column="2" Spacing="0">
@@ -301,9 +310,13 @@
                                  TextWrapping="Wrap" />
                     </StackPanel>
                     <Border Grid.Column="3"
-                            Classes="nut-pill"
-                            Classes.healthy="{Binding NamedPipeEnabled}">
-                      <TextBlock Classes="nut-metadata" Text="{Binding NamedPipeStatusText}" />
+                            Classes="nut-pill agent-transport-status"
+                            Classes.healthy="{Binding NamedPipeEnabled}"
+                            Classes.critical="{Binding !NamedPipeEnabled}"
+                            HorizontalAlignment="Stretch">
+                      <TextBlock Classes="nut-metadata"
+                                 HorizontalAlignment="Center"
+                                 Text="{Binding NamedPipeStatusText}" />
                     </Border>
                   </Grid>
                 </Border>
@@ -313,7 +326,7 @@
                 <Border x:Name="HttpsTransportRow"
                         Classes="agent-transport-row"
                         IsEnabled="{Binding CanToggleHttps}">
-                  <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="6">
+                  <Grid ColumnDefinitions="Auto,Auto,*,64" ColumnSpacing="6">
                     <CheckBox Grid.Column="0"
                               IsChecked="{Binding HttpsEnabled}"
                               IsEnabled="{Binding CanToggleHttps}"
@@ -321,8 +334,8 @@
                               AutomationProperties.Name="{Binding Strings[Transport.Https]}" />
                     <PathIcon Grid.Column="1"
                               Data="{DynamicResource NutIconTls}"
-                              Width="15"
-                              Height="15"
+                              Width="19"
+                              Height="19"
                               VerticalAlignment="Center"
                               Foreground="{DynamicResource NutAccentBrightBrush}" />
                     <StackPanel Grid.Column="2" Spacing="0">
@@ -336,9 +349,13 @@
                                  TextWrapping="Wrap" />
                     </StackPanel>
                     <Border Grid.Column="3"
-                            Classes="nut-pill"
-                            Classes.healthy="{Binding HttpsEnabled}">
-                      <TextBlock Classes="nut-metadata" Text="{Binding HttpsStatusText}" />
+                            Classes="nut-pill agent-transport-status"
+                            Classes.healthy="{Binding HttpsEnabled}"
+                            Classes.critical="{Binding !HttpsEnabled}"
+                            HorizontalAlignment="Stretch">
+                      <TextBlock Classes="nut-metadata"
+                                 HorizontalAlignment="Center"
+                                 Text="{Binding HttpsStatusText}" />
                     </Border>
                   </Grid>
                 </Border>
@@ -364,10 +381,11 @@
             <!-- ============================================== HTTPS editor -->
             <Border Grid.Row="0"
                     Grid.Column="1"
+                    x:Name="HttpsEditorCard"
                     Classes="agent-shell-card"
                     VerticalAlignment="Stretch">
-              <StackPanel Spacing="7">
-                <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="6">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="7">
                   <PathIcon Grid.Column="0"
                             Classes="agent-section-icon"
                             Data="{DynamicResource NutIconTls}" />
@@ -376,31 +394,56 @@
                              FontSize="15"
                              VerticalAlignment="Center"
                              Text="{Binding Strings[Https.Title]}" />
-                  <Border Grid.Column="2"
-                          Classes="nut-pill"
-                          Classes.healthy="{Binding HttpsEnabled}">
-                    <TextBlock Classes="nut-metadata" Text="{Binding HttpsStatusText}" />
-                  </Border>
                 </Grid>
 
                 <StackPanel x:Name="HttpsEditorFields"
                             Classes="agent-https-fields"
-                            Spacing="4"
+                            Spacing="3"
                             IsEnabled="{Binding HttpsEnabled}">
                   <Grid ColumnDefinitions="*,132" ColumnSpacing="8">
                     <StackPanel Grid.Column="0" Spacing="1">
-                      <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Host]}" />
-                      <TextBox Text="{Binding HttpsHost}"
-                               AutomationProperties.Name="{Binding Strings[Https.Host]}" />
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                        <TextBlock Grid.Column="0" Classes="nut-label" Text="{Binding Strings[Https.Host]}" />
+                        <PathIcon Grid.Column="1"
+                                  Width="13"
+                                  Height="13"
+                                  Focusable="True"
+                                  IsVisible="{Binding HttpsHostHasError}"
+                                  Data="{DynamicResource NutIconError}"
+                                  Foreground="{DynamicResource NutCriticalBrush}"
+                                  ToolTip.Tip="{Binding HttpsHostValidationMessage}"
+                                  AutomationProperties.Name="{Binding HttpsHostValidationMessage}" />
+                      </Grid>
+                      <TextBox Classes="agent-validation-input"
+                               Classes.invalid="{Binding HttpsHostHasError}"
+                               Text="{Binding HttpsHost}"
+                               ToolTip.Tip="{Binding HttpsHostValidationMessage}"
+                               AutomationProperties.Name="{Binding Strings[Https.Host]}"
+                               AutomationProperties.HelpText="{Binding HttpsHostValidationMessage}" />
                     </StackPanel>
                     <StackPanel Grid.Column="1" Spacing="1">
-                      <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Port]}" />
-                      <NumericUpDown Value="{Binding HttpsPort}"
+                      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="4">
+                        <TextBlock Grid.Column="0" Classes="nut-label" Text="{Binding Strings[Https.Port]}" />
+                        <PathIcon Grid.Column="1"
+                                  Width="13"
+                                  Height="13"
+                                  Focusable="True"
+                                  IsVisible="{Binding HttpsPortHasError}"
+                                  Data="{DynamicResource NutIconError}"
+                                  Foreground="{DynamicResource NutCriticalBrush}"
+                                  ToolTip.Tip="{Binding HttpsPortValidationMessage}"
+                                  AutomationProperties.Name="{Binding HttpsPortValidationMessage}" />
+                      </Grid>
+                      <NumericUpDown Classes="agent-validation-input"
+                                     Classes.invalid="{Binding HttpsPortHasError}"
+                                     Value="{Binding HttpsPort}"
                                      Minimum="1"
                                      Maximum="65535"
                                      Increment="1"
                                      FormatString="0"
-                                     AutomationProperties.Name="{Binding Strings[Https.Port]}" />
+                                     ToolTip.Tip="{Binding HttpsPortValidationMessage}"
+                                     AutomationProperties.Name="{Binding Strings[Https.Port]}"
+                                     AutomationProperties.HelpText="{Binding HttpsPortValidationMessage}" />
                     </StackPanel>
                   </Grid>
                   <StackPanel Spacing="1">
@@ -415,13 +458,13 @@
                               Tag="{Binding HttpsEndpoint}"
                               Click="OnCopyValueClicked"
                               ToolTip.Tip="{Binding Strings[Https.Copy]}">
-                        <PathIcon Data="{DynamicResource NutIconCopy}" Width="13" Height="13" />
+                        <PathIcon Data="{DynamicResource NutIconCopy}" Width="16" Height="16" />
                       </Button>
                     </Grid>
                   </StackPanel>
                   <StackPanel Spacing="1">
                     <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Certificate]}" />
-                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
                       <ComboBox Grid.Column="0"
                                 ItemsSource="{Binding Certificates}"
                               SelectedItem="{Binding SelectedCertificate}"
@@ -437,7 +480,7 @@
                                       Height="14"
                                       VerticalAlignment="Center"
                                       Foreground="{DynamicResource NutHealthyBrush}" />
-                            <StackPanel Grid.Column="1" Spacing="2">
+                            <StackPanel Grid.Column="1" Spacing="0">
                               <TextBlock Classes="nut-body"
                                          Foreground="{DynamicResource NutTextPrimaryBrush}"
                                          Text="{Binding DisplayName}" />
@@ -455,19 +498,26 @@
                         sending them away from the screen that refused the certificate.
                       -->
                       <Button Grid.Column="1"
+                              Click="OnImportCertificateClicked"
+                              IsEnabled="{Binding CanImportCertificate}"
+                              ToolTip.Tip="{Binding Strings[Https.Import]}">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                          <PathIcon Data="{DynamicResource AgentIconImport}" Width="16" Height="16" />
+                          <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Https.Import]}" />
+                        </StackPanel>
+                      </Button>
+                      <Button Grid.Column="2"
                               Classes="nut-ghost"
                               Command="{Binding ToggleCertificateDetailsCommand}"
-                              IsEnabled="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}">
-                        <StackPanel Orientation="Horizontal" Spacing="7">
-                          <PathIcon Data="{DynamicResource AgentIconEye}" Width="13" Height="13" />
-                          <TextBlock VerticalAlignment="Center" Text="{Binding CertificateDetailsButtonText}" />
-                        </StackPanel>
+                              IsEnabled="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}"
+                              ToolTip.Tip="{Binding Strings[Https.Certificate.View]}"
+                              AutomationProperties.Name="{Binding Strings[Https.Certificate.View]}">
+                        <PathIcon Data="{DynamicResource AgentIconEye}" Width="17" Height="17" />
                       </Button>
                     </Grid>
 
                   </StackPanel>
-                  <StackPanel Spacing="5"
-                              IsVisible="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}">
+                  <StackPanel x:Name="ThumbprintField" Spacing="1">
                     <TextBlock Classes="nut-label" Text="{Binding Strings[Https.Thumbprint]}" />
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                       <TextBox Grid.Column="0"
@@ -479,22 +529,22 @@
                               Classes="agent-copy-button"
                               Tag="{Binding CertificateThumbprint}"
                               Click="OnCopyValueClicked"
+                              IsEnabled="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}"
                               ToolTip.Tip="{Binding Strings[Https.Copy]}">
-                        <PathIcon Data="{DynamicResource NutIconCopy}" Width="13" Height="13" />
+                        <PathIcon Data="{DynamicResource NutIconCopy}" Width="16" Height="16" />
                       </Button>
                     </Grid>
                   </StackPanel>
                   <StackPanel Orientation="Horizontal"
                               Spacing="8"
-                              IsVisible="{Binding HttpsValidationMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                    <PathIcon Width="17"
-                              Height="17"
+                              IsVisible="{Binding ShowCertificateFeedback}">
+                    <PathIcon Width="18"
+                              Height="18"
                               VerticalAlignment="Top"
-                              Classes.healthy="{Binding HttpsIsValid}"
-                              Classes.warning="{Binding !HttpsIsValid}"
-                              Data="{Binding HttpsIsValid, Converter={x:Static converters:AgentConfigConverters.VerdictIcon}}" />
+                              Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
+                              Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
                     <TextBlock Classes="hint"
-                               Text="{Binding HttpsValidationMessage}"
+                               Text="{Binding CertificateFeedbackMessage}"
                                TextWrapping="Wrap" />
                   </StackPanel>
                 </StackPanel>
@@ -505,11 +555,16 @@
             <Border Grid.Row="1"
                     Grid.Column="0"
                     Grid.ColumnSpan="2"
+                    x:Name="ResourceStatusCard"
                     Classes="agent-shell-card">
               <StackPanel Spacing="8">
-                <TextBlock Classes="nut-card-title"
-                           FontSize="15"
-                           Text="{Binding Strings[Resources.Title]}" />
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <PathIcon Classes="agent-section-icon" Data="{DynamicResource NutIconShield}" />
+                  <TextBlock Classes="nut-card-title"
+                             FontSize="15"
+                             VerticalAlignment="Center"
+                             Text="{Binding Strings[Resources.Title]}" />
+                </StackPanel>
                 <!--
                   The strip is an ItemsControl over a UniformGrid, and the MinHeight is not decoration.
 
@@ -523,7 +578,7 @@
                 -->
                 <ItemsControl Classes="agent-resource-strip"
                               ItemsSource="{Binding ResourceStatus}"
-                              MinHeight="58"
+                              MinHeight="62"
                               IsEnabled="{Binding HttpsEnabled}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -645,7 +700,8 @@
           </Panel>
 
           <!-- ============================================== actions within the main card -->
-          <Border Grid.Row="1"
+          <Border Grid.Row="2"
+                  x:Name="ContextualActions"
                   BorderBrush="{DynamicResource NutBorderSubtleBrush}"
                   BorderThickness="0,1,0,0"
                   Padding="0,8,0,0">
@@ -655,7 +711,7 @@
                         IsEnabled="{Binding CanStartService}"
                         IsVisible="{Binding ShowStartServiceAction}">
                   <StackPanel Orientation="Horizontal" Spacing="7">
-                    <PathIcon Data="{DynamicResource NutIconStart}" Width="14" Height="14" />
+                    <PathIcon Data="{DynamicResource NutIconStart}" Width="17" Height="17" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Start]}" />
                   </StackPanel>
                 </Button>
@@ -665,8 +721,8 @@
                   <StackPanel Orientation="Horizontal" Spacing="7">
                     <PathIcon Classes="nut-icon-refresh"
                               Data="{DynamicResource NutIconRestart}"
-                              Width="14"
-                              Height="14" />
+                              Width="17"
+                              Height="17" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Service.Restart]}" />
                   </StackPanel>
                 </Button>
@@ -691,13 +747,13 @@
                         Command="{Binding ApplyCommand}"
                         IsEnabled="{Binding CanApply}">
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <PathIcon Data="{DynamicResource NutIconApply}" Width="13" Height="13" />
+                    <PathIcon Data="{DynamicResource NutIconApply}" Width="16" Height="16" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Action.Apply]}" />
                   </StackPanel>
                 </Button>
                 <Button MinWidth="80" Command="{Binding CancelCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="8">
-                    <PathIcon Data="{DynamicResource NutIconClose}" Width="15" Height="15" />
+                    <PathIcon Data="{DynamicResource NutIconClose}" Width="16" Height="16" />
                     <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Action.Cancel]}" />
                   </StackPanel>
                 </Button>

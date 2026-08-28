@@ -96,7 +96,7 @@ public sealed class WindowsAgentCertificateCatalog : IAgentCertificateCatalog
         }
     }
 
-    private static AgentCertificateSummary Describe(X509Certificate2 certificate) =>
+    internal static AgentCertificateSummary Describe(X509Certificate2 certificate) =>
         new(
             certificate.Thumbprint ?? string.Empty,
             certificate.Subject,

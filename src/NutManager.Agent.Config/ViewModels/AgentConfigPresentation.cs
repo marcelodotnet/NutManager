@@ -61,7 +61,7 @@ public sealed class AgentStatusItemViewModel
     {
         AgentDiagnosticState.Ready => "✓",
         AgentDiagnosticState.Attention => "!",
-        AgentDiagnosticState.NotConfigured => "○",
+        AgentDiagnosticState.NotConfigured => "—",
         _ => "✕",
     };
 

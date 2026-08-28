@@ -318,6 +318,46 @@ public interface IAgentCertificateCatalog
     AgentCertificateSummary? Find(string thumbprint);
 }
 
+/// <summary>The outcome of importing one operator-selected certificate file.</summary>
+public enum AgentCertificateImportOutcome
+{
+    Imported,
+    PasswordRequired,
+    PasswordIncorrect,
+    UnsupportedFile,
+    InvalidFile,
+    Failed,
+}
+
+/// <summary>
+/// The result of adding a certificate to <c>LocalMachine\My</c>.
+///
+/// The password is deliberately absent from this contract. It is an input used only while opening a
+/// PKCS#12 file and is never part of a result, configuration document, log or persisted view state.
+/// </summary>
+public sealed record AgentCertificateImportResult(
+    AgentCertificateImportOutcome Outcome,
+    AgentCertificateSummary? Certificate = null,
+    string? Failure = null)
+{
+    public static AgentCertificateImportResult Imported(AgentCertificateSummary certificate) =>
+        new(AgentCertificateImportOutcome.Imported, certificate);
+
+    public static AgentCertificateImportResult From(AgentCertificateImportOutcome outcome, string? failure = null) =>
+        new(outcome, null, failure);
+}
+
+/// <summary>
+/// Imports an operator-selected certificate file into the Windows machine certificate store.
+///
+/// The implementation owns file parsing and store access. Callers supply a password only for the
+/// duration of one import attempt; implementations must never persist or log it.
+/// </summary>
+public interface IAgentCertificateImporter
+{
+    AgentCertificateImportResult Import(string path, string? password);
+}
+
 /// <summary>The result of writing <c>agent.json</c>.</summary>
 public sealed record AgentConfigurationWriteResult(bool Succeeded, string? Failure)
 {

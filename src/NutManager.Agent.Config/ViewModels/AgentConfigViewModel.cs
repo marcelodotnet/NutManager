@@ -34,6 +34,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private readonly IAgentHttpsResourceAdministration _resources;
     private readonly IAgentCertificateCatalog _certificates;
     private readonly IAgentRuntimeInventory _inventory;
+    private readonly IAgentCertificateImporter? _certificateImporter;
     private readonly TimeProvider _time;
 
     /// <summary>The last saved document. Cancel returns to this; dirty is measured against it.</summary>
@@ -63,7 +64,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         IAgentCertificateCatalog certificates,
         IAgentRuntimeInventory inventory,
         UiLanguagePreference? language = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IAgentCertificateImporter? certificateImporter = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(groups);
@@ -78,6 +80,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _resources = resources;
         _certificates = certificates;
         _inventory = inventory;
+        _certificateImporter = certificateImporter;
         _time = timeProvider ?? TimeProvider.System;
 
         Strings = new AgentConfigStrings(language ?? AgentConfigStrings.DetectLanguage());
@@ -225,6 +228,46 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private bool _httpsIsValid;
 
+    [ObservableProperty]
+    private string? _certificateImportMessage;
+
+    [ObservableProperty]
+    private string _certificateImportStateClass = "healthy";
+
+    public bool CanImportCertificate => _certificateImporter is not null && !IsBusy;
+
+    public string? HttpsHostValidationMessage => HttpsEnabled ? DescribeHostProblem() : null;
+
+    public string? HttpsPortValidationMessage => HttpsEnabled && !IsPortValid()
+        ? Strings["Https.Invalid.Port"]
+        : null;
+
+    public bool HttpsHostHasError => HttpsHostValidationMessage is not null;
+
+    public bool HttpsPortHasError => HttpsPortValidationMessage is not null;
+
+    /// <summary>
+    /// Endpoint errors belong on the fields themselves. The compact line below the certificate area
+    /// is reserved for certificate/import feedback, so an empty host never consumes a permanent row.
+    /// </summary>
+    public bool ShowCertificateFeedback =>
+        HttpsEnabled &&
+        !string.IsNullOrWhiteSpace(CertificateFeedbackMessage) &&
+        (CertificateImportMessage is not null || (!HttpsHostHasError && !HttpsPortHasError));
+
+    public string? CertificateFeedbackMessage => CertificateImportMessage ?? HttpsValidationMessage;
+
+    public string CertificateFeedbackStateClass => CertificateImportMessage is not null
+        ? CertificateImportStateClass
+        : HttpsIsValid ? "healthy" : "warning";
+
+    public string CertificateFeedbackIconKey => CertificateFeedbackStateClass switch
+    {
+        "healthy" => "AgentIconStateReady",
+        "critical" => "AgentIconStateError",
+        _ => "AgentIconStateAttention",
+    };
+
     public string? CertificateThumbprint => SelectedCertificate?.Thumbprint;
 
     /// <summary>
@@ -291,6 +334,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     partial void OnHttpsHostChanged(string value)
     {
+        ClearImportFeedback();
         OnPropertyChanged(nameof(CertificateHostMatchText));
         RefreshHttpsValidation();
         RefreshDirty();
@@ -298,12 +342,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     partial void OnHttpsPortChanged(int value)
     {
+        ClearImportFeedback();
         RefreshHttpsValidation();
         RefreshDirty();
     }
 
     partial void OnSelectedCertificateChanged(AgentCertificateOption? value)
     {
+        ClearImportFeedback();
         OnPropertyChanged(nameof(CertificateThumbprint));
         OnPropertyChanged(nameof(CertificateSubject));
         OnPropertyChanged(nameof(CertificateIssuer));
@@ -319,6 +365,98 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Imports one file through the Windows adapter, refreshes the machine catalog, and selects the
+    /// imported certificate. No password is copied into a property: it exists only as this call's
+    /// argument and the adapter's PKCS#12 loader input.
+    /// </summary>
+    public async Task<AgentCertificateImportResult> ImportCertificateAsync(
+        string path,
+        string? password,
+        CancellationToken cancellationToken = default)
+    {
+        if (_certificateImporter is null)
+        {
+            var unavailable = AgentCertificateImportResult.From(AgentCertificateImportOutcome.Failed);
+            SetImportFeedback(unavailable);
+            return unavailable;
+        }
+
+        IsBusy = true;
+        CertificateImportMessage = null;
+        NotifyCertificateFeedbackChanged();
+        RefreshCommandStates();
+
+        try
+        {
+            var result = await Task.Run(
+                () => _certificateImporter.Import(path, password), cancellationToken).ConfigureAwait(true);
+
+            if (result.Outcome is AgentCertificateImportOutcome.Imported && result.Certificate is { } imported)
+            {
+                ReloadCertificates(imported.Thumbprint, imported);
+                SetImportedCertificateFeedback(imported);
+            }
+            else
+            {
+                SetImportFeedback(result);
+            }
+
+            return result;
+        }
+        finally
+        {
+            IsBusy = false;
+            RefreshCommandStates();
+        }
+    }
+
+    private void SetImportedCertificateFeedback(AgentCertificateSummary certificate)
+    {
+        var verdict = AgentCertificateRules.Evaluate(certificate, HttpsHost.Trim(), _time.GetUtcNow());
+        CertificateImportStateClass = verdict.IsUsable ? "healthy" : "warning";
+        CertificateImportMessage = verdict.IsUsable
+            ? Strings["Https.Import.Success"]
+            : Strings.Format("Https.Import.SuccessWithIssue", DescribeCertificateProblems(
+                new AgentCertificateOption(certificate, Strings)));
+        NotifyCertificateFeedbackChanged();
+    }
+
+    private void SetImportFeedback(AgentCertificateImportResult result)
+    {
+        if (result.Outcome is AgentCertificateImportOutcome.PasswordRequired)
+        {
+            CertificateImportMessage = null;
+            NotifyCertificateFeedbackChanged();
+            return;
+        }
+
+        CertificateImportStateClass = "critical";
+        CertificateImportMessage = result.Outcome switch
+        {
+            AgentCertificateImportOutcome.PasswordIncorrect => Strings["Https.Import.PasswordIncorrect"],
+            AgentCertificateImportOutcome.UnsupportedFile => Strings["Https.Import.Unsupported"],
+            AgentCertificateImportOutcome.InvalidFile => Strings["Https.Import.InvalidFile"],
+            _ => Strings["Https.Import.Failed"],
+        };
+        NotifyCertificateFeedbackChanged();
+    }
+
+    private void ClearImportFeedback()
+    {
+        if (CertificateImportMessage is null) return;
+        CertificateImportMessage = null;
+        NotifyCertificateFeedbackChanged();
+    }
+
+    private void NotifyCertificateFeedbackChanged()
+    {
+        OnPropertyChanged(nameof(CertificateFeedbackMessage));
+        OnPropertyChanged(nameof(CertificateFeedbackStateClass));
+        OnPropertyChanged(nameof(CertificateFeedbackIconKey));
+        OnPropertyChanged(nameof(ShowCertificateFeedback));
+    }
+
+    /// <summary>
     /// Re-evaluates the endpoint and the certificate together.
     ///
     /// Both, because the certificate has to speak for the host: changing the host can invalidate a
@@ -327,6 +465,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     private void RefreshHttpsValidation()
     {
+        OnPropertyChanged(nameof(HttpsHostValidationMessage));
+        OnPropertyChanged(nameof(HttpsPortValidationMessage));
+        OnPropertyChanged(nameof(HttpsHostHasError));
+        OnPropertyChanged(nameof(HttpsPortHasError));
+
         if (!HttpsEnabled)
         {
             HttpsEndpoint = AgentHttpsPrefixRules.TryBuildPrefix(HttpsHost, HttpsPort, out var disabledPrefix, out _)
@@ -334,6 +477,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 : string.Empty;
             HttpsValidationMessage = null;
             HttpsIsValid = false;
+            NotifyCertificateFeedbackChanged();
             RefreshApplyState();
             return;
         }
@@ -343,6 +487,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             HttpsEndpoint = string.Empty;
             HttpsValidationMessage = DescribeEndpointProblem();
             HttpsIsValid = false;
+            NotifyCertificateFeedbackChanged();
             RefreshApplyState();
             return;
         }
@@ -353,6 +498,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             HttpsValidationMessage = Strings["Https.Certificate.None"];
             HttpsIsValid = false;
+            NotifyCertificateFeedbackChanged();
             RefreshApplyState();
             return;
         }
@@ -363,17 +509,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ? Strings["Https.Certificate.Valid"]
             : DescribeCertificateProblems(option);
         HttpsIsValid = verdict.IsUsable;
+        NotifyCertificateFeedbackChanged();
         RefreshApplyState();
     }
 
-    /// <summary>
-    /// Why the endpoint is not usable, in the operator's language.
-    ///
-    /// The rules in Core carry English text, which is right for a log and wrong for this window - an
-    /// operator on a pt-BR server was being shown "An explicit host or FQDN is required." The verdict
-    /// still comes from Core; only the sentence is chosen here.
-    /// </summary>
-    private string DescribeEndpointProblem()
+    private string? DescribeHostProblem()
     {
         var host = HttpsHost?.Trim() ?? string.Empty;
 
@@ -384,19 +524,25 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             return Strings["Https.Invalid.Wildcard"];
         }
 
-        if (host.Contains('/', StringComparison.Ordinal) ||
-            host.Contains(':', StringComparison.Ordinal) ||
-            host.Contains(' ', StringComparison.Ordinal))
-        {
-            return Strings["Https.Invalid.HostFormat"];
-        }
+        return AgentHttpsPrefixRules.TryBuildPrefix(host, DefaultHttpsPort, out _, out _)
+            ? null
+            : Strings["Https.Invalid.HostFormat"];
+    }
 
-        if (HttpsPort is < AgentHttpsPrefixRules.MinimumPort or > AgentHttpsPrefixRules.MaximumPort)
-        {
-            return Strings["Https.Invalid.Port"];
-        }
+    private bool IsPortValid() =>
+        HttpsPort is >= AgentHttpsPrefixRules.MinimumPort and <= AgentHttpsPrefixRules.MaximumPort;
 
-        return Strings["Https.Invalid.HostFormat"];
+    /// <summary>
+    /// Why the endpoint is not usable, in the operator's language.
+    ///
+    /// The rules in Core carry English text, which is right for a log and wrong for this window - an
+    /// operator on a pt-BR server was being shown "An explicit host or FQDN is required." The verdict
+    /// still comes from Core; only the sentence is chosen here.
+    /// </summary>
+    private string DescribeEndpointProblem()
+    {
+        return DescribeHostProblem() ??
+               (!IsPortValid() ? Strings["Https.Invalid.Port"] : Strings["Https.Invalid.HostFormat"]);
     }
 
     /// <summary>
@@ -915,6 +1061,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanStartService));
         OnPropertyChanged(nameof(CanStopService));
         OnPropertyChanged(nameof(CanRestartService));
+        OnPropertyChanged(nameof(CanImportCertificate));
         RefreshApplyState();
     }
 
@@ -948,8 +1095,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             var certificates = _certificates.List();
             _machine = await _inventory.DescribeAsync(cancellationToken).ConfigureAwait(true);
 
-            Certificates.Clear();
-            foreach (var certificate in certificates) Certificates.Add(new AgentCertificateOption(certificate, Strings));
+            ReloadCertificates(null, null, certificates);
 
             _confirmed = document;
             LoadDocument(document);
@@ -962,6 +1108,36 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             IsBusy = false;
             RefreshCommandStates();
+        }
+    }
+
+    private void ReloadCertificates(
+        string? selectedThumbprint,
+        AgentCertificateSummary? importedFallback = null,
+        IReadOnlyList<AgentCertificateSummary>? knownCertificates = null)
+    {
+        var certificates = knownCertificates ?? _certificates.List();
+
+        Certificates.Clear();
+        foreach (var certificate in certificates)
+        {
+            Certificates.Add(new AgentCertificateOption(certificate, Strings));
+        }
+
+        if (importedFallback is not null && Certificates.All(option => !string.Equals(
+                option.Thumbprint,
+                importedFallback.Thumbprint,
+                StringComparison.OrdinalIgnoreCase)))
+        {
+            Certificates.Add(new AgentCertificateOption(importedFallback, Strings));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedThumbprint))
+        {
+            SelectedCertificate = Certificates.FirstOrDefault(option => string.Equals(
+                option.Thumbprint,
+                AgentHttpsPrefixRules.NormalizeThumbprint(selectedThumbprint),
+                StringComparison.OrdinalIgnoreCase));
         }
     }
 
@@ -1042,6 +1218,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void RebuildResourceStatus()
     {
         ResourceStatus.Clear();
+
+        if (!HttpsEnabled)
+        {
+            ResourceStatus.Add(DisabledResource(Strings["Resources.SslBinding"], "NutIconTls"));
+            ResourceStatus.Add(DisabledResource(Strings["Resources.UrlReservation"], "NutIconRemote"));
+            ResourceStatus.Add(DisabledResource(Strings["Resources.Firewall"], "NutIconShield"));
+            ResourceStatus.Add(DisabledResource(Strings["Resources.Listener"], "NutIconConnection"));
+            return;
+        }
+
         ResourceStatus.Add(Describe(Strings["Resources.SslBinding"], _resourceState.SslBinding, "NutIconTls"));
         ResourceStatus.Add(Describe(Strings["Resources.UrlReservation"], _resourceState.UrlReservation, "NutIconRemote"));
         // The firewall row names its port when there is one to name, as the reference does.
@@ -1051,6 +1237,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ResourceStatus.Add(Describe(firewall, _resourceState.FirewallRule, "NutIconShield"));
         ResourceStatus.Add(DescribeListener());
     }
+
+    private AgentStatusItemViewModel DisabledResource(string label, string iconKey) =>
+        AgentStatusItemViewModel.From(
+            Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.Disabled"], iconKey);
 
     /// <summary>
     /// Whether the HTTPS listener is actually up.
@@ -1078,7 +1268,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             // sends an administrator to the wrong place, and it is exactly the conflation the
             // diagnostics rules forbid.
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.ServiceMissing"], icon);
+                Strings, label, AgentDiagnosticState.Error, Strings["Resources.Listener.ServiceMissing"], icon);
         }
 
         if (!_serviceState.IsRunning)
@@ -1107,7 +1297,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             // Present but somebody else's: not an error in NutManager, and not something to fix by
             // deleting it. Attention, with the detail saying whose it is.
             AgentResourceOwnership.ForeignOwner => AgentDiagnosticState.Attention,
-            AgentResourceOwnership.Absent => AgentDiagnosticState.NotConfigured,
+            AgentResourceOwnership.Absent => HttpsEnabled ? AgentDiagnosticState.Error : AgentDiagnosticState.NotConfigured,
             _ => AgentDiagnosticState.Error,
         };
 

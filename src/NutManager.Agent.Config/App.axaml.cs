@@ -40,7 +40,8 @@ public sealed class App : Application
                 new WindowsAgentServiceAdministration(),
                 new WindowsAgentHttpsResourceAdministration(),
                 new WindowsAgentCertificateCatalog(),
-                new WindowsAgentRuntimeInventory());
+                new WindowsAgentRuntimeInventory(),
+                certificateImporter: new WindowsAgentCertificateImporter());
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
 

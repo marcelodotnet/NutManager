@@ -64,8 +64,9 @@ public static class AgentConfigIcons
         // these keys of their own keeps the shared catalog untouched.
         ("AgentIconStateReady", MaterialIconKind.CheckCircle),
         ("AgentIconStateAttention", MaterialIconKind.Alert),
-        ("AgentIconStateError", MaterialIconKind.AlertCircle),
-        ("AgentIconStateNotConfigured", MaterialIconKind.CircleOutline),
+        ("AgentIconStateError", MaterialIconKind.CloseCircle),
+        ("AgentIconStateNotConfigured", MaterialIconKind.MinusCircleOutline),
+        ("AgentIconImport", MaterialIconKind.FileImportOutline),
         ("AgentIconProhibit", MaterialIconKind.CancelOutline),
     ];
 

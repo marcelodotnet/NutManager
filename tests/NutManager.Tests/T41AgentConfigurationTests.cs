@@ -183,23 +183,73 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Width=\"800\"", window, StringComparison.Ordinal);
         Assert.Contains("Height=\"600\"", window, StringComparison.Ordinal);
         Assert.Contains("CanResize=\"False\"", window, StringComparison.Ordinal);
+        Assert.Contains("UseLayoutRounding=\"True\"", window, StringComparison.Ordinal);
+        Assert.Contains("Background=\"{DynamicResource NutSurface1Brush}\"", window, StringComparison.Ordinal);
         Assert.Contains("Classes=\"agent-main-card\"", window, StringComparison.Ordinal);
+        Assert.Contains("<Style Selector=\"Border.agent-main-card\">", window, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"Background\" Value=\"Transparent\" />", window, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0\" />", window, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"Padding\" Value=\"0\" />", window, StringComparison.Ordinal);
+        Assert.Contains("<Grid x:Name=\"AgentMainHeader\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Border x:Name=\"AgentMainHeader\"", window, StringComparison.Ordinal);
+        Assert.Contains("RenderOptions.BitmapInterpolationMode=\"HighQuality\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AgentFooter\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ConfigurationSurface\"", window, StringComparison.Ordinal);
         Assert.Contains("ColumnDefinitions=\"0.82*,1.18*\"", window, StringComparison.Ordinal);
         Assert.Contains("Grid.ColumnSpan=\"2\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"NamedPipeTransportRow\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"HttpsTransportRow\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"HttpsEditorFields\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ResourceStatusCard\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ContextualActions\"", window, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanToggleNamedPipe}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding CanToggleHttps}\"", window, StringComparison.Ordinal);
         Assert.Contains("IsEnabled=\"{Binding HttpsEnabled}\"", window, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(window, "ColumnDefinitions=\\\"Auto,Auto,\\*,64\\\"").Count);
+        Assert.Equal(2, Regex.Matches(window, "Classes=\\\"nut-pill agent-transport-status\\\"").Count);
+        Assert.Contains("Classes.critical=\"{Binding !NamedPipeEnabled}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes.critical=\"{Binding !HttpsEnabled}\"", window, StringComparison.Ordinal);
+        Assert.Contains("NutHealthyBrightBrush", window, StringComparison.Ordinal);
+        Assert.Contains("NutCriticalBrightBrush", window, StringComparison.Ordinal);
         Assert.DoesNotContain("agent-disable-https", window, StringComparison.Ordinal);
         Assert.DoesNotContain("agent-reach-badge", window, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentIconLock", window, StringComparison.Ordinal);
-        Assert.Contains("Text=\"{Binding CertificateDetailsButtonText}\"", window, StringComparison.Ordinal);
+        Assert.Contains("AgentIconEye", window, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnImportCertificateClicked\"", window, StringComparison.Ordinal);
+        Assert.Contains("Strings[Https.Import]", window, StringComparison.Ordinal);
         Assert.Contains("Strings[Https.Thumbprint]", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ThumbprintField\" Spacing=\"1\"", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCopyValueClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding ApplicationVersion}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes.invalid=\"{Binding HttpsHostHasError}\"", window, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.HelpText=\"{Binding HttpsHostValidationMessage}\"", window, StringComparison.Ordinal);
+
+        var mainCard = window.IndexOf("Classes=\"agent-main-card\"", StringComparison.Ordinal);
+        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
+        var configuration = window.IndexOf("x:Name=\"ConfigurationSurface\"", StringComparison.Ordinal);
+        var footer = window.IndexOf("x:Name=\"AgentFooter\"", StringComparison.Ordinal);
+        Assert.True(mainCard >= 0 && header > mainCard && configuration > header,
+            "The product header must be the first region inside the main card.");
+        Assert.True(footer >= 0 && footer < mainCard,
+            "The footer must remain a separate DockPanel region outside the main card.");
+
+        var httpsCard = window.IndexOf("x:Name=\"HttpsEditorCard\"", StringComparison.Ordinal);
+        var httpsFields = window.IndexOf("x:Name=\"HttpsEditorFields\"", StringComparison.Ordinal);
+        var httpsHeader = window[httpsCard..httpsFields];
+        Assert.DoesNotContain("HttpsStatusText", httpsHeader, StringComparison.Ordinal);
+        Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"{Binding HttpsValidationMessage}\"", window, StringComparison.Ordinal);
+
+        var thumbprintField = window.IndexOf("x:Name=\"ThumbprintField\"", StringComparison.Ordinal);
+        var certificateFeedback = window.IndexOf("IsVisible=\"{Binding ShowCertificateFeedback}\"", thumbprintField, StringComparison.Ordinal);
+        var thumbprintMarkup = window[thumbprintField..certificateFeedback];
+        Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsVisible=", thumbprintMarkup, StringComparison.Ordinal);
+
+        var icons = Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
+        Assert.Contains("(\"AgentIconStateError\", MaterialIconKind.CloseCircle)", icons, StringComparison.Ordinal);
+        Assert.Contains("(\"AgentIconStateNotConfigured\", MaterialIconKind.MinusCircleOutline)", icons, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.CircleOutline", icons, StringComparison.Ordinal);
 
         var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
         var firstScrollViewer = window.IndexOf("<ScrollViewer", StringComparison.Ordinal);
@@ -251,7 +301,10 @@ public sealed class T41InstallerAndPackagingTests
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentHttpsResourceAdministration.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentConfigurationStore.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentCertificateCatalog.cs",
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentCertificateImporter.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentRuntimeInventory.cs",
+            "src/NutManager.Agent.Config/Views/MainWindow.axaml.cs",
+            "src/NutManager.Agent.Config/Views/CertificatePasswordDialog.cs",
         };
 
         foreach (var file in files)
@@ -260,7 +313,7 @@ public sealed class T41InstallerAndPackagingTests
             foreach (var token in new[]
                      {
                          "Process.Start", "powershell", "pwsh", "cmd.exe", "netsh", "net.exe",
-                         "sc.exe", "net localgroup", "Start-Service", "Restart-Service", "Stop-Service"
+                         "sc.exe", "certutil", "net localgroup", "Start-Service", "Restart-Service", "Stop-Service"
                      })
             {
                 Assert.DoesNotContain(token, source, StringComparison.OrdinalIgnoreCase);
@@ -876,6 +929,7 @@ public sealed class T41AgentConfigViewModelTests
 
         var absentListener = absent.ViewModel.ResourceStatus.Last();
         Assert.Contains("not installed", absentListener.Detail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(AgentDiagnosticState.Error, absentListener.State);
 
         var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
         await stopped.ViewModel.RefreshAsync();
@@ -885,6 +939,26 @@ public sealed class T41AgentConfigViewModelTests
         var stoppedListener = stopped.ViewModel.ResourceStatus.Last();
         Assert.Contains("stopped", stoppedListener.Detail, StringComparison.OrdinalIgnoreCase);
         Assert.NotEqual(absentListener.Detail, stoppedListener.Detail);
+    }
+
+    [Fact]
+    public async Task MissingExpectedResourcesUseRedErrorsWhileDisabledHttpsStaysMuted()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.All(context.ViewModel.ResourceStatus, item =>
+        {
+            Assert.Equal(AgentDiagnosticState.NotConfigured, item.State);
+            Assert.Equal("muted", item.StateClass);
+            Assert.NotEqual("○", item.Glyph);
+        });
+
+        context.ViewModel.HttpsEnabled = true;
+
+        Assert.Equal(AgentDiagnosticState.Error, context.ViewModel.ResourceStatus[0].State);
+        Assert.Equal("critical", context.ViewModel.ResourceStatus[0].StateClass);
+        Assert.Equal("✕", context.ViewModel.ResourceStatus[0].Glyph);
     }
 
     [Fact]
@@ -905,6 +979,97 @@ public sealed class T41AgentConfigViewModelTests
         var message = Assert.IsType<string>(context.ViewModel.HttpsValidationMessage);
         Assert.DoesNotContain(". ", message.TrimEnd('.'), StringComparison.Ordinal);
         Assert.Contains("other.sbra.local", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HostAndPortErrorsUseFieldStateInsteadOfPermanentInlineCopy()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+
+        Assert.True(context.ViewModel.HttpsHostHasError);
+        Assert.NotNull(context.ViewModel.HttpsHostValidationMessage);
+        Assert.False(context.ViewModel.ShowCertificateFeedback);
+
+        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsPort = 0;
+
+        Assert.False(context.ViewModel.HttpsHostHasError);
+        Assert.True(context.ViewModel.HttpsPortHasError);
+        Assert.Contains("65535", context.ViewModel.HttpsPortValidationMessage, StringComparison.Ordinal);
+        Assert.False(context.ViewModel.CanApply);
+    }
+
+    [Fact]
+    public async Task SuccessfulImportRefreshesTheCatalogAndSelectsTheCertificate()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        var imported = new AgentCertificateSummary(
+            "B909502DD82AE41433E6F83886B00D4277A32A7C",
+            "CN=gandalf.sbra.local",
+            "CN=Imported Test CA",
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            HasPrivateKey: true,
+            SupportsServerAuthentication: true,
+            SubjectAlternativeNames: ["gandalf.sbra.local"]);
+        context.Importer.Result = AgentCertificateImportResult.Imported(imported);
+
+        var result = await context.ViewModel.ImportCertificateAsync("certificate.pfx", "transient-password");
+
+        Assert.Equal(AgentCertificateImportOutcome.Imported, result.Outcome);
+        Assert.Equal(imported.Thumbprint, context.ViewModel.CertificateThumbprint);
+        Assert.Contains(context.ViewModel.Certificates, option => option.Thumbprint == imported.Thumbprint);
+        Assert.True(context.ViewModel.HttpsIsValid);
+        Assert.Equal("healthy", context.ViewModel.CertificateImportStateClass);
+        Assert.Contains("imported and selected", context.ViewModel.CertificateImportMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ImportedButIncompatibleCertificateRemainsInspectableAndBlocksApply()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        var imported = new AgentCertificateSummary(
+            "C909502DD82AE41433E6F83886B00D4277A32A7D",
+            "CN=other.sbra.local",
+            "CN=Imported Test CA",
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            HasPrivateKey: true,
+            SupportsServerAuthentication: true,
+            SubjectAlternativeNames: ["other.sbra.local"]);
+        context.Importer.Result = AgentCertificateImportResult.Imported(imported);
+
+        await context.ViewModel.ImportCertificateAsync("certificate.cer", password: null);
+
+        Assert.Equal(imported.Thumbprint, context.ViewModel.CertificateThumbprint);
+        Assert.False(context.ViewModel.HttpsIsValid);
+        Assert.False(context.ViewModel.CanApply);
+        Assert.Equal("warning", context.ViewModel.CertificateImportStateClass);
+        Assert.Contains("does not name", context.ViewModel.CertificateImportMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task IncorrectImportPasswordProducesOneLocalizedFailure()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.Importer.Result = AgentCertificateImportResult.From(
+            AgentCertificateImportOutcome.PasswordIncorrect);
+
+        var result = await context.ViewModel.ImportCertificateAsync("certificate.pfx", "wrong");
+
+        Assert.Equal(AgentCertificateImportOutcome.PasswordIncorrect, result.Outcome);
+        Assert.Equal("critical", context.ViewModel.CertificateImportStateClass);
+        Assert.Equal("Incorrect password.", context.ViewModel.CertificateImportMessage);
     }
 
     [Fact]
@@ -945,11 +1110,13 @@ public sealed class T41AgentConfigViewModelTests
             SupportsServerAuthentication: true,
             SubjectAlternativeNames: ["gandalf.sbra.local"]);
         var certificates = new FakeCertificates(certificate);
+        var importer = new FakeCertificateImporter(certificates);
         var inventory = new FakeInventory();
         var viewModel = new AgentConfigViewModel(
-            store, groups, service, resources, certificates, inventory, UiLanguagePreference.EnUs);
+            store, groups, service, resources, certificates, inventory, UiLanguagePreference.EnUs,
+            certificateImporter: importer);
 
-        return new TestContext(viewModel, store, groups, service, resources, events);
+        return new TestContext(viewModel, store, groups, service, resources, certificates, importer, events);
     }
 
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
@@ -975,6 +1142,8 @@ public sealed class T41AgentConfigViewModelTests
         FakeGroups Groups,
         FakeService Service,
         FakeResources Resources,
+        FakeCertificates Certificates,
+        FakeCertificateImporter Importer,
         List<string> Events);
 
     private sealed class FakeStore(AgentTransportConfigurationDocument document, List<string> events)
@@ -1074,11 +1243,32 @@ public sealed class T41AgentConfigViewModelTests
 
     private sealed class FakeCertificates(params AgentCertificateSummary[] certificates) : IAgentCertificateCatalog
     {
-        public IReadOnlyList<AgentCertificateSummary> List() => certificates;
+        private readonly List<AgentCertificateSummary> _certificates = [.. certificates];
+
+        public IReadOnlyList<AgentCertificateSummary> List() => _certificates;
+
+        public void Add(AgentCertificateSummary certificate)
+        {
+            _certificates.RemoveAll(existing => string.Equals(
+                existing.Thumbprint, certificate.Thumbprint, StringComparison.OrdinalIgnoreCase));
+            _certificates.Add(certificate);
+        }
 
         public AgentCertificateSummary? Find(string thumbprint) =>
-            certificates.FirstOrDefault(certificate =>
+            _certificates.FirstOrDefault(certificate =>
                 string.Equals(certificate.Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class FakeCertificateImporter(FakeCertificates certificates) : IAgentCertificateImporter
+    {
+        public AgentCertificateImportResult Result { get; set; } =
+            AgentCertificateImportResult.From(AgentCertificateImportOutcome.Failed);
+
+        public AgentCertificateImportResult Import(string path, string? password)
+        {
+            if (Result.Certificate is { } certificate) certificates.Add(certificate);
+            return Result;
+        }
     }
 
     private sealed class FakeInventory : IAgentRuntimeInventory
