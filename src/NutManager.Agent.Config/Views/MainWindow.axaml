@@ -37,14 +37,20 @@
           The resource glyph still identifies the row and the state glyph still judges it: a padlock
           says which resource, an amber triangle says how it is. Neither replaces the other.
         -->
-        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="7" RowSpacing="5">
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="7" RowSpacing="10">
+          <!--
+            The resource glyph is green always, and that green is identity rather than health: it says
+            "this row is about the SSL binding", not "the SSL binding is fine". The verdict is the
+            glyph on the line below, which keeps its own semantic colour - so a green padlock over a
+            red cross is not a contradiction, it is the subject over its state.
+          -->
           <PathIcon Grid.Row="0"
                     Grid.Column="0"
                     Data="{Binding IconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
                     Width="20"
                     Height="20"
                     VerticalAlignment="Center"
-                    Foreground="{DynamicResource NutTextSecondaryBrush}" />
+                    Foreground="{DynamicResource NutHealthyBrush}" />
           <TextBlock Grid.Row="0"
                      Grid.Column="1"
                      Classes="nut-body"
@@ -638,12 +644,17 @@
 
                 <Border Classes="agent-info-strip">
                   <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9">
+                    <!--
+                      Centred against the whole paragraph rather than pinned to its first line. The
+                      grid cell is already as tall as the two lines of text, so Center is the whole
+                      change - no offset, no transform.
+                    -->
                     <PathIcon Grid.Column="0"
                               Classes="accent"
                               Data="{DynamicResource NutIconInfo}"
                               Width="17"
                               Height="17"
-                              VerticalAlignment="Top" />
+                              VerticalAlignment="Center" />
                     <TextBlock Grid.Column="1"
                                Classes="hint"
                                Text="{Binding LastTransportNotice}"

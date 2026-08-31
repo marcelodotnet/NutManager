@@ -496,7 +496,20 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// It is an exception type and an HRESULT the adapter composed - never a platform message, which
     /// can name a path, a key container or a store, and never anything derived from a password.
     /// </summary>
-    public string? CertificateFeedbackDetail => CertificateImportDetail;
+    public string? CertificateFeedbackDetail => CertificateImportDetail ?? HttpsValidationDetail;
+
+    /// <summary>
+    /// The specifics behind a validation message, for the tooltip.
+    ///
+    /// The card now says only that the certificate does not match the host. Which host was asked for,
+    /// and which names the certificate actually carries, is what an administrator needs next - so it
+    /// moves here rather than going away. The details panel and Diagnostics still carry it too.
+    /// </summary>
+    [ObservableProperty]
+    private string? _httpsValidationDetail;
+
+    partial void OnHttpsValidationDetailChanged(string? value) =>
+        OnPropertyChanged(nameof(CertificateFeedbackDetail));
 
     public string CertificateFeedbackStateClass => CertificateImportMessage is not null
         ? CertificateImportStateClass
@@ -846,6 +859,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     private string DescribeCertificateProblems(AgentCertificateOption option)
     {
+        // Cleared up front: a detail left over from a previous host would describe a mismatch that has
+        // since been fixed, on a tooltip nobody would think to distrust.
+        HttpsValidationDetail = null;
+
         var certificate = option.Certificate;
         var now = _time.GetUtcNow();
 
@@ -870,7 +887,18 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         var host = HttpsHost?.Trim() ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(host) && !AgentCertificateRules.MatchesHost(certificate, host))
         {
-            return Strings.Format("Https.Cert.HostMismatch", host);
+            // One short sentence on the card. Naming the host and then listing the subject and every
+            // alternative name made the longest message on the screen out of the most common problem,
+            // and it was the message that kept overflowing its card. The same facts are on the
+            // tooltip, in the details panel and in Diagnostics.
+            HttpsValidationDetail = Strings.Format(
+                "Https.Cert.HostMismatch.Detail",
+                host,
+                certificate.SubjectAlternativeNames.Count > 0
+                    ? string.Join(", ", certificate.SubjectAlternativeNames)
+                    : certificate.Subject);
+
+            return Strings["Https.Cert.HostMismatch"];
         }
 
         // Core judged the certificate unusable and every reason above was ruled out. Saying so beats

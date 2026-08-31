@@ -831,6 +831,84 @@ public sealed class T41AgentConfigSurfaceTests
             window, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The transport notice glyph is centred against the whole paragraph, not pinned to its first
+    /// line, and it gets there through alignment rather than through an offset.
+    /// </summary>
+    [Fact]
+    public void TheTransportNoticeGlyphIsCentredAgainstItsParagraph()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var strip = window.IndexOf("Classes=\"agent-info-strip\"", StringComparison.Ordinal);
+        var end = window.IndexOf("</Border>", strip, StringComparison.Ordinal);
+        var markup = window[strip..end];
+
+        Assert.Contains("NutIconInfo", markup, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignment=\"Center\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("VerticalAlignment=\"Top\"", markup, StringComparison.Ordinal);
+
+        // The text still wraps to as many lines as it needs, and is not re-aligned with it.
+        Assert.Contains("TextWrapping=\"Wrap\"", markup, StringComparison.Ordinal);
+
+        // Alignment, not an offset.
+        Assert.DoesNotContain("TranslateTransform", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Canvas", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Margin=\"0,-", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A resource glyph names its row; it never grades it.
+    ///
+    /// Both lines of a status column carry a glyph, and they answer different questions: the first
+    /// says which resource this is and is always green, the second says how that resource is and
+    /// takes the semantic brush. Binding the first one to the state would make a foreign binding turn
+    /// its own padlock red, and the column would then say the same thing twice in two sizes.
+    /// </summary>
+    [Fact]
+    public void TheResourceGlyphIsGreenIdentityWhileTheStateGlyphKeepsItsSemanticColour()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var template = window.IndexOf("x:Key=\"AgentResourceItemTemplate\"", StringComparison.Ordinal);
+        var end = window.IndexOf("</DataTemplate>", template, StringComparison.Ordinal);
+        var markup = window[template..end];
+
+        // The resource glyph: a fixed token, never a converter over the state.
+        var resourceGlyph = markup.IndexOf("Binding IconKey", StringComparison.Ordinal);
+        var resourceEnd = markup.IndexOf("/>", resourceGlyph, StringComparison.Ordinal);
+        var resourceMarkup = markup[resourceGlyph..resourceEnd];
+        Assert.Contains("Foreground=\"{DynamicResource NutHealthyBrush}\"", resourceMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("StateBrush", resourceMarkup, StringComparison.Ordinal);
+
+        // The state glyph keeps its own colour, from the state.
+        var stateGlyph = markup.IndexOf("Binding StateIconKey", StringComparison.Ordinal);
+        var stateEnd = markup.IndexOf("/>", stateGlyph, StringComparison.Ordinal);
+        Assert.Contains("StateBrush", markup[stateGlyph..stateEnd], StringComparison.Ordinal);
+
+        // A shared token, not a colour invented here.
+        Assert.DoesNotContain("Foreground=\"#", markup, StringComparison.Ordinal);
+
+        // One template drives all four columns, so the breathing room between the title and the state
+        // is the same in every one of them by construction.
+        Assert.Contains("RowSpacing=\"10\"", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>The four resources are still four, and still driven by one template.</summary>
+    [Fact]
+    public void TheStatusStripStillDrawsFourResourcesFromOneTemplate()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        Assert.Contains("ItemsSource=\"{Binding ResourceStatus}\"", window, StringComparison.Ordinal);
+        Assert.Contains("<UniformGrid Columns=\"4\" Rows=\"1\" />", window, StringComparison.Ordinal);
+
+        // Exactly one place declares the item, so the four columns cannot drift apart.
+        Assert.Equal(
+            1,
+            window.Split("x:Key=\"AgentResourceItemTemplate\"", StringSplitOptions.None).Length - 1);
+    }
+
     /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
     [Fact]
     public void TheLanguageSelectorSitsBesideDiagnostics()
@@ -2921,7 +2999,18 @@ public sealed class T41AgentConfigViewModelTests
         // operator deciding which to act on first.
         var message = Assert.IsType<string>(context.ViewModel.HttpsValidationMessage);
         Assert.DoesNotContain(". ", message.TrimEnd('.'), StringComparison.Ordinal);
-        Assert.Contains("other.sbra.local", message, StringComparison.Ordinal);
+        Assert.Equal("The certificate does not match the specified host.", message);
+
+        // The card names neither the host nor what the certificate covers - listing a subject and
+        // every alternative name made the most common problem the longest line on the screen. Both
+        // are on the tooltip, which is also where the details panel and Diagnostics point.
+        Assert.DoesNotContain(context.ViewModel.HttpsHost, message, StringComparison.Ordinal);
+        Assert.Contains(
+            context.ViewModel.HttpsHost, context.ViewModel.CertificateFeedbackDetail, StringComparison.Ordinal);
+        Assert.Contains(
+            context.ViewModel.SelectedCertificate!.DisplayName,
+            context.ViewModel.CertificateFeedbackDetail,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2996,7 +3085,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.False(context.ViewModel.HttpsIsValid);
         Assert.False(context.ViewModel.CanApply);
         Assert.Equal("warning", context.ViewModel.CertificateImportStateClass);
-        Assert.Contains("does not name", context.ViewModel.CertificateImportMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("does not match the specified host", context.ViewModel.CertificateImportMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
