@@ -194,7 +194,10 @@ public sealed class NutAgentHttpsTests
             .Select(property => property.Name)
             .ToArray();
 
-        Assert.Equal(["HttpsEnabled", "HttpsPrefix", "CertificateThumbprint"], properties);
+        // Exhaustive on purpose. The list grows only when someone deliberately adds a member and
+        // updates this line, which is the moment a secret-bearing property would have to be argued
+        // for rather than slipped in by habit.
+        Assert.Equal(["NamedPipeEnabled", "HttpsEnabled", "HttpsPrefix", "CertificateThumbprint"], properties);
     }
 
     // ---------------------------------------------------------------- credential boundary

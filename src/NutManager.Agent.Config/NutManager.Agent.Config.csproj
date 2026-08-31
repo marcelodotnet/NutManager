@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!--
+      Framework-dependent, exactly like the agent it ships beside. The two publish into one directory
+      and are installed by one package, so a self-contained utility would drag a private copy of the
+      runtime into a deployment whose whole point is to share the machine's.
+    -->
+    <SelfContained>false</SelfContained>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationIcon>..\NutManager.App\Assets\Branding\NutManager.ico</ApplicationIcon>
+    <!--
+      Elevation is declared, not negotiated at runtime. Everything this utility does is machine-level
+      - a local group, an HTTP.sys binding, a firewall rule, a file under ProgramData that only SYSTEM
+      and Administrators may write - so an unelevated instance could do nothing but display failures.
+      Asking once at launch through the manifest is the documented Windows way, and it keeps the
+      process from ever holding a half-privileged state where some operations work and others do not.
+    -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Avalonia rather than WPF, deliberately. WPF would make Microsoft.WindowsDesktop.App a third
+      shared framework the Agent installer has to detect, offer and download, on a server whose only
+      reason to own a UI stack is this one window. Avalonia ships as ordinary NuGet assemblies in the
+      application directory and adds no shared-framework prerequisite at all.
+    -->
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <!-- The same icon library the desktop draws from, so a shield here is that shield. Already
+         used by the product and already version-managed centrally; nothing new is introduced. -->
+    <PackageReference Include="Material.Icons.Avalonia" />
+  </ItemGroup>
+
+  <!--
+    NutManager's design system, shared as source rather than copied.
+
+    These are links to the desktop application's own theme files, not duplicates of them. Linking
+    rather than referencing NutManager.App is what keeps the boundary clean: this utility gets the
+    palette, the metrics, the typography, the control styles and the icon catalog, and gets none of
+    the desktop's view models, services or shell. And because they are literally the same files, the
+    two products cannot drift into slightly different blues.
+
+    NutShellStyles.axaml is deliberately absent. It is the sidebar, the navigation rail and the
+    window chrome of a full application, it depends on NutManager.App.Presentation.Controls, and it
+    is exactly what a compact administrative utility must not reproduce.
+  -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutColors.axaml"
+                      Link="Presentation\Themes\NutColors.axaml" />
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutMetrics.axaml"
+                      Link="Presentation\Themes\NutMetrics.axaml" />
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutMotion.axaml"
+                      Link="Presentation\Themes\NutMotion.axaml" />
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutIcons.axaml"
+                      Link="Presentation\Themes\NutIcons.axaml" />
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutTypography.axaml"
+                      Link="Presentation\Themes\NutTypography.axaml" />
+    <AvaloniaResource Include="..\NutManager.App\Presentation\Themes\NutControlStyles.axaml"
+                      Link="Presentation\Themes\NutControlStyles.axaml" />
+
+    <!--
+      NutIconLibrary is deliberately *not* linked here, unlike the dictionaries above.
+
+      Linking a .cs file compiles the same type into a second assembly, and the test project
+      references both — so NutManager.App.Presentation.Themes.NutIconLibrary would exist twice and
+      every use of it becomes ambiguous. AgentConfigIcons maps the dozen keys this window actually
+      draws, and a test asserts every one of them resolves to the same Material kind the desktop
+      uses, which catches the drift that copying a table would otherwise hide.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The product mark, shared with the desktop and the installers. -->
+    <AvaloniaResource Include="..\NutManager.App\Assets\Branding\NutManager.ico"
+                      Link="Assets\Branding\NutManager.ico" />
+    <AvaloniaResource Include="..\NutManager.App\Assets\Branding\NutManager.png"
+                      Link="Assets\Branding\NutManager.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Core holds the rules and Infrastructure holds the Windows adapters, which is what keeps this
+      project down to windows and view models. It never references NutManager.App: the desktop client
+      and this utility are different products that happen to share a design language.
+    -->
+    <ProjectReference Include="..\NutManager.Core\NutManager.Core.csproj" />
+    <ProjectReference Include="..\NutManager.Infrastructure\NutManager.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The view models are exercised directly by the regression tests. -->
+    <InternalsVisibleTo Include="NutManager.Tests" />
+  </ItemGroup>
+</Project>

@@ -39,12 +39,21 @@
 
     <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
       <!--
-        Everything except the service executable, which needs a component of its own so the service
-        can be declared against it.
+        Everything except the two executables, which need components of their own: one so the service
+        can be declared against it, the other so the Start Menu shortcut has a keypath to point at.
+
+        NutManager.Agent.Config.exe is published into the same directory as the service and is
+        installed and removed with it. It is a local administrative utility, not a second service —
+        nothing registers it, nothing starts it, and it runs only when an administrator opens it.
       -->
       <Files Include="$(PublishDir)\**">
         <Exclude Files="$(PublishDir)\NutManager.Agent.exe" />
+        <Exclude Files="$(PublishDir)\NutManager.Agent.Config.exe" />
       </Files>
+
+      <Component Id="AgentConfigExecutable" Guid="{1F7A6C38-95D2-4E80-B3A5-6C4907E1D2B8}">
+        <File Id="AgentConfigExecutableFile" Source="$(PublishDir)\NutManager.Agent.Config.exe" KeyPath="yes" />
+      </Component>
 
       <Component Id="AgentExecutable" Guid="{7B3E5D91-8A26-4C7F-9E14-5B08D2A6F730}">
         <File Id="AgentExecutableFile" Source="$(PublishDir)\NutManager.Agent.exe" KeyPath="yes" />
@@ -72,10 +81,22 @@
           Stop and Remove name $(AgentServiceName) explicitly and nothing else. No wildcard, no
           discovered service, no NUT. Upgrade stops this agent to replace its binaries; the NUT
           service is never named here and so is never touched.
+
+          There is deliberately no Start attribute, and its absence is the product rule.
+
+          The agent refuses to run until the NutManager Operators group exists — that is the T35
+          fail-closed design, not a defect. An installer that started it would therefore fail
+          mid-install on every machine where the group has not been created yet, and because this
+          package is Vital that failure would roll back a perfectly good installation over a
+          security principal the installer has no business creating.
+
+          So: files installed, service registered, start type Automatic, and left stopped. It comes
+          up on the next boot, or when an administrator starts it from NutManager Agent Config once
+          the prerequisites are actually in place. Nothing else in this package or the bundle starts
+          it, and nothing may be added that does.
         -->
         <ServiceControl Id="AgentServiceControl"
                         Name="$(AgentServiceName)"
-                        Start="install"
                         Stop="both"
                         Remove="uninstall"
                         Wait="yes" />
@@ -120,9 +141,41 @@
       </Component>
     </ComponentGroup>
 
+    <!--
+      One Start Menu entry, for the configuration utility.
+
+      There is no shortcut to the service executable, because starting it by hand is not a thing an
+      operator should be invited to do — it runs under the SCM as LocalSystem or it does not run at
+      all. There is no desktop shortcut either: this is a server utility used occasionally by an
+      administrator, and the desktop application is the product that earns a desktop icon.
+
+      The shortcut lives in its own component with a registry keypath, which is what lets the
+      installer remove the folder cleanly on uninstall. A shortcut cannot be its own keypath in a
+      perMachine package.
+    -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AgentStartMenuFolder" Name="$(AgentName)">
+        <Component Id="AgentConfigShortcut" Guid="{6D93E4B1-27CA-4F58-9E06-B851F3A7C09D}">
+          <Shortcut Id="AgentConfigStartMenuShortcut"
+                    Name="$(AgentConfigName)"
+                    Description="Configures transports, the operators group and HTTPS for the local NutManager Agent."
+                    Target="[#AgentConfigExecutableFile]"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="RemoveAgentStartMenuFolder" Directory="AgentStartMenuFolder" On="uninstall" />
+          <RegistryValue Root="HKLM"
+                         Key="SOFTWARE\$(Publisher)\$(AgentName)"
+                         Name="StartMenuShortcut"
+                         Type="integer"
+                         Value="1"
+                         KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
     <Feature Id="Main" Title="$(AgentName)" Level="1">
       <ComponentGroupRef Id="AgentFiles" />
       <ComponentGroupRef Id="AgentData" />
+      <ComponentRef Id="AgentConfigShortcut" />
     </Feature>
 
     <!--

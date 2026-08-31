@@ -140,21 +140,22 @@ O Agent é instalado **no servidor**, não na sua estação.
 
 Windows Server 2019 em diante, ou Windows 10/11 x64. Administrador local.
 
-**O Agent requer o Microsoft ASP.NET Core Runtime 10 x64.** Diferente do Desktop, que carrega o
-próprio runtime, o Agent usa o runtime compartilhado da máquina.
+**O Agent requer o Microsoft .NET Runtime 10 x64 e o Microsoft ASP.NET Core Runtime 10 x64.**
+Diferente do Desktop, que carrega o próprio runtime, o Agent e o Agent Config usam os runtimes
+compartilhados da máquina. Não é necessário Hosting Bundle nem IIS.
 
 Isso é deliberado. O Agent é um serviço que fica no ar por meses num servidor; um runtime privado
 dentro da pasta dele significaria que esse servidor só recebe correção de segurança do .NET quando sai
 uma versão do NutManager. Usando o runtime da máquina, a atualização volta para onde o administrador
-já cuida dela — e o instalador cai de cerca de 70 MB para 10 MB.
+já cuida dela.
 
 **Você não precisa instalar o runtime à mão.** O instalador verifica se existe:
 
 | Situação | O que acontece |
 | --- | --- |
-| Runtime compatível já presente | Mostra **Instalado**. Nada é baixado. Funciona sem internet. |
-| Runtime ausente | Mostra **Necessário**, com a opção de instalar já marcada. |
-| Runtime ausente e você desmarca | **Instalar Agent fica desabilitado**, com a explicação na tela. |
+| Os dois runtimes compatíveis já presentes | Mostra **Instalado** para ambos. Nada é baixado. Funciona sem internet. |
+| Um runtime ausente | Mostra **Necessário** para ele, com a opção de instalar já marcada. |
+| Runtime ausente e você desmarca sua opção | **Instalar Agent fica desabilitado**, com a explicação na tela. |
 
 Qualquer versão de manutenção do 10.x serve. Um servidor já com 10.0.7 não baixa nada.
 
@@ -168,31 +169,7 @@ preciso acesso à internet para baixar o pacote da Microsoft, ou instalá-lo man
 **Desinstalar o Agent não remove o runtime.** Ele é um componente compartilhado do Windows, e outros
 programas do servidor podem depender dele.
 
-### Passo 1 — crie o grupo de autorização
-
-**Faça isto antes de instalar.** O Agent autoriza exclusivamente por pertencimento ao grupo
-`NutManager Operators`, e o instalador **não cria o grupo** — criar um grupo é decidir quem pode
-controlar um serviço, e num controlador de domínio seria alterar o Active Directory como efeito
-colateral de um setup.
-
-Em estação ou member server, como administrador:
-
-```powershell
-New-LocalGroup -Name "NutManager Operators" -Description "Pode controlar o servico NUT pelo NutManager Agent"
-Add-LocalGroupMember -Group "NutManager Operators" -Member "DOMINIO\usuario"
-```
-
-Num **controlador de domínio** não existem grupos locais. Crie um grupo de domínio com esse nome pelo
-Active Directory Users and Computers, ou por `New-ADGroup`, e trate como a mudança de diretório que é.
-
-**Sem o grupo o serviço não inicia.** Isso é deliberado e não um defeito: a ACL do named pipe é
-construída a partir do SID do grupo, e sem ele não há principal a quem conceder acesso — um listener
-aberto recusaria todo mundo. O agente registra a falha de inicialização no Log de Eventos e para, em
-vez de ficar de pé aparentando funcionar.
-
-Se o serviço não sobe após instalar, esta é a primeira coisa a verificar.
-
-### Passo 2 — instale
+### Passo 1 — instale
 
 Execute `NutManager-Agent-Setup-x.y.z.exe` como administrador.
 `[CAPTURA PENDENTE: assistente do Agent]`
@@ -203,7 +180,8 @@ O instalador:
 - registra o serviço `NutManagerAgent` como **LocalSystem**, inicialização **Automática**;
 - registra a origem `NutManager Agent` no Log de Eventos;
 - cria `C:\ProgramData\NutManager\Agent`;
-- inicia o serviço.
+- instala **NutManager Agent Config** e seu atalho no menu Iniciar;
+- deixa o serviço parado para a configuração administrativa inicial.
 
 O que ele **não** faz: não instala o NUT, não altera arquivo nenhum do NUT, não inicia nem para o
 serviço do NUT, não abre porta, não cria certificado, não mexe no firewall.
@@ -211,6 +189,32 @@ serviço do NUT, não abre porta, não cria certificado, não mexe no firewall.
 Antes de tudo isso o instalador mostra os **Termos de Uso do NutManager**, que precisam ser aceitos.
 O texto vem dentro do instalador e é legível sem internet. Os Termos são separados da licença: o
 código-fonte continua sob **GNU GPL v2.0**, e os Termos não restringem os direitos dela.
+
+A página final mostra apenas o que o instalador conseguiu comprovar. O estado real do grupo,
+transportes e recursos HTTPS aparece no Agent Config; o instalador não consulta SAM/AD e não inventa
+um resultado verde ou vermelho para `NutManager Operators`.
+
+### Passo 2 — configure no NutManager Agent Config
+
+Abra **NutManager Agent Config** pelo menu Iniciar. O aplicativo pede elevação porque administra
+somente recursos locais pertencentes ao Agent.
+
+1. Em **NutManager Operators**, clique em **Criar grupo** se ele não existir e depois use
+   **Adicionar usuário** para incluir as contas autorizadas. Em estação ou member server o grupo é
+   local. Em controlador de domínio não há SAM local: a criação alcança o diretório e exige uma
+   confirmação separada.
+2. Escolha `SMB (Named Pipe)`, `HTTPS` ou ambos. Pelo menos um transporte precisa permanecer ativo; o
+   último não pode ser desmarcado até o outro ser habilitado.
+3. Se usar HTTPS, informe host/FQDN e porta. Use **Importar...** para adicionar explicitamente um
+   certificado válido ao `LocalMachine\My`; o resumo do certificado é somente leitura.
+4. Clique em **Aplicar**. Salvar não inicia um Agent parado. Se ele já estiver rodando, o aplicativo
+   oferece um reinício explícito e nunca reinicia silenciosamente.
+5. Confira **Diagnóstico** e clique em **Iniciar Agent** quando grupo, transportes e NUT estiverem
+   corretos.
+
+**Sem o grupo o serviço não inicia.** Isso é deliberado: a ACL do Named Pipe é construída a partir do
+SID de `NutManager Operators`, e o Agent nunca cai para Administradores. O utilitário resolve e adiciona
+membros por SID; não executa `net`, PowerShell, `cmd`, `sc.exe` ou `netsh`.
 
 ### Instalação desassistida
 
@@ -257,7 +261,8 @@ Agent em Named Pipe e use Testar conexão.
 
 ### Atualizando
 
-Execute o instalador novo. Ele para o `NutManagerAgent`, troca os binários e inicia de novo.
+Execute o instalador novo. Ele pode parar o `NutManagerAgent` para trocar os próprios binários, mas
+não o inicia nem reinicia. Revise o diagnóstico no Agent Config e inicie-o explicitamente.
 
 **O serviço do NUT não é reiniciado.** O nome dele não aparece em lugar nenhum do pacote.
 
@@ -278,71 +283,43 @@ Preserva: `agent.json`, certificados, bindings SSL, reservas de URL, regras de f
 **Opcional.** O Named Pipe atende a maioria dos casos e não abre porta. Use HTTPS quando o pipe não
 serve — tipicamente um cliente fora do domínio do servidor, que não consegue estabelecer sessão SMB.
 
-Nada aqui é automatizado pelo instalador, e isso é deliberado: configurar HTTPS é decisão
-administrativa explícita.
+Nada disso ocorre durante o MSI. Abra **NutManager Agent Config**, habilite HTTPS e informe o host/FQDN
+e a porta. O resumo do certificado é somente leitura. Para escolher um arquivo, use **Importar...**:
+`.pfx`, `.p12`, `.cer` e `.crt` são importados explicitamente para `LocalMachine\My`.
 
-> Use os valores da **sua** máquina. Os exemplos abaixo são placeholders.
+O certificado precisa ter chave privada, estar dentro da validade, permitir autenticação de servidor
+e cobrir o host no SAN. O aplicativo mostra subject, emissor, validade e thumbprint e explica por que
+uma seleção não pode ser usada. Um CER/CRT sem chave privada continua disponível para inspeção, mas
+não serve ao listener HTTPS. A senha de PFX/P12 existe somente durante a tentativa de importação: não
+é salva em preferência, `agent.json`, log ou ViewModel. A chave privada nunca é exibida ou exportada.
 
-### 1. Certificado
+Ao aplicar, o utilitário configura o binding SSL e a reserva de URL pelo HTTP Server API e a regra de
+entrada pelas APIs do Windows Firewall. Cada recurso recebe uma identidade do NutManager. Recurso de
+outro proprietário ou de propriedade incerta nunca é sobrescrito nem apagado.
 
-Precisa de um certificado de servidor com o FQDN do servidor no SAN, em `LocalMachine\My`, com chave
-privada.
-
-```powershell
-Get-ChildItem Cert:\LocalMachine\My | Format-List Subject, Thumbprint, HasPrivateKey, NotAfter
-```
-
-Anote o thumbprint — é o `<THUMBPRINT>` a seguir.
-
-### 2. `agent.json`
-
-Em `C:\ProgramData\NutManager\Agent\agent.json`:
+O `agent.json` resultante, em `C:\ProgramData\NutManager\Agent`, contém somente seleção de transporte,
+prefixo e thumbprint, por exemplo:
 
 ```json
 {
+  "namedPipeEnabled": true,
   "httpsEnabled": true,
-  "httpsPrefix": "https://servidor.exemplo.local:5199/",
-  "certificateThumbprint": "<THUMBPRINT>"
+  "httpsPrefix": "https://nut-server.example.local:5199/",
+  "certificateThumbprint": "0123456789ABCDEF0123456789ABCDEF01234567"
 }
 ```
 
-O `httpsPrefix` é o prefixo HTTP.sys e **termina em barra**. Não acrescente caminho: as rotas são do
-agente, não da configuração.
+O arquivo é gravado por safe-write com validação, temporário no mesmo volume, flush, ACL de SYSTEM e
+Administradores, releitura e substituição atômica. Se a configuração dos recursos falhar, o arquivo
+não é confirmado.
 
-### 3. Binding SSL
+Para desativar HTTPS, mantenha Named Pipe ativo se necessário e desmarque HTTPS. A confirmação permite
+remover seletivamente apenas regra, binding e reserva comprovadamente pertencentes ao NutManager, ou
+somente desativar o transporte. **Resetar HTTPS** limpa a configuração HTTPS e tenta remover todos os
+recursos comprovadamente pertencentes ao NutManager; recursos estrangeiros ou de propriedade incerta
+são preservados. Nenhum desses fluxos remove o certificado instalado.
 
-```powershell
-netsh http add sslcert ipport=0.0.0.0:5199 certhash=<THUMBPRINT> appid="{00000000-0000-0000-0000-000000000000}"
-```
-
-O `appid` é um GUID qualquer que identifique a reserva; anote o que usar. Confira com:
-
-```powershell
-netsh http show sslcert ipport=0.0.0.0:5199
-```
-
-### 4. Reserva de URL
-
-```powershell
-netsh http add urlacl url=https://servidor.exemplo.local:5199/ user="NT AUTHORITY\SYSTEM"
-```
-
-A URL reservada precisa ser **idêntica** ao `httpsPrefix`, barra final inclusive. Divergir aqui faz o
-listener falhar ao subir sem dizer por quê.
-
-### 5. Firewall
-
-```powershell
-New-NetFirewallRule -DisplayName "NutManager Agent HTTPS" -Direction Inbound -Protocol TCP -LocalPort 5199 -Action Allow
-```
-
-### 6. Reinicie o Agent
-
-```powershell
-Restart-Service NutManagerAgent
-```
-
-### 7. Autenticação
+### Autenticação
 
 O listener exige **Negotiate** e recusa anônimo. Pertencer a `NutManager Operators` continua
 obrigatório. Não há token, nem Basic, nem senha no protocolo.
@@ -362,7 +339,7 @@ No perfil do Desktop, escolha:
 | `Access denied` | conta fora de `NutManager Operators` |
 | Erro de certificado no cliente | FQDN fora do SAN, ou CA não confiável no cliente |
 | Funciona local, falha remoto | regra de firewall ausente |
-| HTTPS desabilitado | `enabled` continua `false` no `agent.json` |
+| HTTPS desabilitado | `httpsEnabled` continua `false` no `agent.json` |
 
 ---
 
@@ -593,8 +570,9 @@ Ver [Packaging and release](../PACKAGING-AND-RELEASE.md).
 Artefatos: `NutManager-Setup-1.0.1.exe`, `NutManager-Agent-Setup-1.0.1.exe`,
 `NutManager-win-x64.zip`, `SHA256SUMS.txt`. Confira os checksums antes de instalar.
 
-O Agent permanece **framework-dependent** e requer o ASP.NET Core Runtime 10 no servidor. O instalador
-pode instalar o runtime oficial da Microsoft quando ele estiver ausente.
+O Agent permanece **framework-dependent** e requer o .NET Runtime 10 e o ASP.NET Core Runtime 10 no
+servidor. O instalador detecta cada um independentemente e pode instalar os pacotes oficiais da
+Microsoft quando estiverem ausentes. O Agent Config vem no mesmo pacote e não adiciona outro runtime.
 
 Compatibilidade: o protocolo do Agent não mudou. Um Desktop novo conversa com um Agent antigo e
 vice-versa; capacidades ausentes são detectadas pelo handshake em vez de assumidas.

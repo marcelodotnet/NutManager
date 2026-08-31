@@ -31,17 +31,14 @@ that it has no authority and refuses every control operation.
 ## Requirements
 
 - Windows x64, with NUT installed and registered as a Windows service.
-- **No .NET runtime**, if you install from `NutManager-Agent-Setup-x.y.z.exe`. Since T39 the agent
-  ships self-contained and carries its own. The cost of that is worth knowing: a runtime security fix
-  now arrives as a NutManager release rather than through whatever patches the machine's runtimes.
-
-  Building the agent by hand with `--self-contained false` still requires the **ASP.NET Core Runtime
-  10** on the server, and that is stricter than the plain .NET runtime: the optional HTTPS transport
-  is hosted on ASP.NET Core's HTTP.sys server, so the published `runtimeconfig.json` requires both
-  `Microsoft.NETCore.App` and `Microsoft.AspNetCore.App`. Installing the ASP.NET Core runtime brings
-  the .NET runtime with it, so it is one download rather than two — but the plain .NET runtime alone
-  is not enough, even
-  when HTTPS stays disabled.
+- **Microsoft .NET Runtime 10 x64** and **Microsoft ASP.NET Core Runtime 10 x64**. The Agent is
+  framework-dependent so the server's shared runtimes receive normal Microsoft servicing. The Agent
+  installer detects each framework independently and installs the pinned official Microsoft package
+  when a compatible 10.x runtime is missing. It does not install the Hosting Bundle and does not use
+  IIS.
+- `NutManager Agent Config`, the elevated local administration utility, is included in the Agent
+  installation. It is framework-dependent too and uses `Microsoft.NETCore.App` already supplied by
+  the same prerequisite chain; it does not introduce `Microsoft.WindowsDesktop.App`.
 - Administrative rights on the server for the installation steps below. The agent itself never
   performs any of them.
 
@@ -110,9 +107,47 @@ hold it.
 
 ## Installation
 
-Run every command in this section from an **elevated** prompt on the server.
+The normal path is `NutManager-Agent-Setup-x.y.z.exe`. It installs the service and
+`NutManager Agent Config`, registers the Event Log source, and registers `NutManagerAgent` as
+LocalSystem with Automatic start type. A fresh installation deliberately leaves the service stopped:
+the installer neither creates the authorization group nor guesses which transports and identities an
+administrator intends to enable.
+
+Open **NutManager Agent Config** from the Start menu after installation. It is the authoritative live
+diagnostic and administration surface for the local Agent installation.
 
 ### 1. Create the operators group
+
+The card identifies whether `NutManager Operators` exists and offers **Criar grupo** only after an
+explicit click. Add authorized accounts with **Adicionar usuário**. Membership is SID-backed; a user
+or a nested group is accepted, while an unresolved or non-addable identity is refused.
+
+On a workstation or member server this is a local group. A domain controller has no independent local
+SAM, so creation changes the directory and Agent Config requires a separate confirmation. An unknown
+machine role is treated with the same caution. The MSI never creates the group.
+
+### 2. Select transports
+
+`SMB (Named Pipe)` and `HTTPS` are independent choices. Named Pipe only, HTTPS only, and both enabled
+are valid. Both disabled is invalid; Agent Config blocks disabling the final transport and the service
+checks the same shared rule at startup. A legacy `agent.json` without `namedPipeEnabled` keeps Named
+Pipe enabled.
+
+### 3. Apply and start explicitly
+
+**Aplicar** configures any explicitly requested HTTPS resources first and commits `agent.json` only
+after those operations succeed. It never starts a stopped Agent. If the Agent is running, the utility
+offers an explicit restart after saving instead of restarting silently. Use **Iniciar Agent** only
+after the group, transports and diagnostics are correct. Nothing in this workflow starts or restarts
+NUT.
+
+### Manual deployment from published files
+
+The commands below document the equivalent low-level registration path for a deployment that does not
+use the installer. Run them from an **elevated** prompt on the server. The supported installer workflow
+above is preferred because it also provisions both runtime prerequisites and Agent Config.
+
+#### Create the operators group
 
 Membership of this local group is the only thing that authorizes control. If the group does not
 exist, the agent refuses to start — it never falls back to Administrators.
@@ -143,7 +178,7 @@ group that happens to share the name: existence is proven against the local grou
 the translation starts at the local system. A domain account is authorized by being a member of the
 group, directly or through a nested group — never by being a domain account.
 
-### 2. Register the Event Log source
+#### Register the Event Log source
 
 Control is refused whenever the audit sink is unusable, so this step is not optional. It is performed
 by an administrator once, and never by the agent.
@@ -152,7 +187,7 @@ by an administrator once, and never by the agent.
 New-EventLog -LogName Application -Source "NutManager Agent"
 ```
 
-### 3. Create the service
+#### Create the service
 
 The agent must run as LocalSystem. It verifies this at startup and refuses to run as any other
 account.
@@ -167,7 +202,7 @@ sc.exe description NutManagerAgent "Controls the local Network UPS Tools service
 
 The spaces after `binPath=`, `obj=`, `start=` and `DisplayName=` are required by `sc.exe`.
 
-### 4. Start it
+#### Start it
 
 ```bash
 sc.exe start NutManagerAgent
@@ -322,80 +357,42 @@ establishing a session first.
 It is **disabled by default**. Installing the agent opens no TCP port. Everything below is a
 deliberate act by an administrator.
 
-### 1. The agent configuration file
+### Configure with NutManager Agent Config
 
-Create `%ProgramData%\NutManager\Agent\agent.json` on the server:
+Enable **HTTPS** and enter the explicit host/FQDN and port. The certificate summary is read-only;
+**Import...** is the explicit file-selection action and accepts `.pfx`, `.p12`, `.cer` and `.crt`
+files into `LocalMachine\My`. A PFX/P12 password is used only for that import attempt and is never
+persisted. The utility shows subject, issuer, expiration and thumbprint and refuses a certificate
+that lacks a private key, is outside its validity window, lacks server-authentication usage, or does
+not cover the host in its SAN (with Common Name used only for a legacy certificate that has no SAN).
+Wildcard matching is limited to one DNS label. A CER/CRT without a private key remains inspectable
+but cannot be used by the HTTPS listener.
+
+Applying HTTPS performs only the requested local administrative actions through documented Windows
+APIs: HTTP Server API for the SSL binding and URL reservation, and Windows Firewall APIs for the
+inbound rule. It does not run `netsh`, PowerShell, `cmd` or `sc.exe`.
+
+Every created resource carries a NutManager ownership marker. Cleanup is offered only after explicit
+confirmation and removes only resources whose ownership can be proven. A foreign or ambiguous
+binding, reservation or firewall rule is left untouched and reported. **Reset HTTPS** clears the
+NutManager-owned HTTPS resources and the saved HTTPS selection, but never removes a certificate.
+Certificates are never exported automatically, and private-key material is never displayed.
+
+The resulting `%ProgramData%\NutManager\Agent\agent.json` contains no secret:
 
 ```json
 {
+  "namedPipeEnabled": true,
   "httpsEnabled": true,
-  "httpsPrefix": "https://gandalf.sbra.local:5199/",
-  "certificateThumbprint": "A909502DD82AE41433E6F83886B00D4277A32A7B"
+  "httpsPrefix": "https://nut-server.example.local:5199/",
+  "certificateThumbprint": "0123456789ABCDEF0123456789ABCDEF01234567"
 }
 ```
 
-The file holds no secret and cannot: there is no password, no PFX and no private key in it. The
-certificate is named by thumbprint and lives in the Windows certificate store, where the private key
-is protected by the operating system.
-
-Restrict the file so that only `SYSTEM` and `Administrators` can modify it — it decides where a
-privileged agent listens:
-
-```powershell
-icacls "C:\ProgramData\NutManager\Agent\agent.json" /inheritance:r /grant "SYSTEM:(R)" /grant "Administrators:(F)"
-```
-
-The prefix must use `https`, must end with a forward slash, and must name an explicit host. A
-wildcard (`https://*:5199/`) is refused: on a privileged agent it would accept requests aimed at any
-name that resolves to the machine. Any of these mistakes stops the HTTPS listener from starting; the
-named pipe keeps working, and the reason is written to the Application event log.
-
-### 2. The certificate
-
-The certificate must be in `LocalMachine\My`, must have a private key on that machine, and its
-subject or SAN must match the host name clients will use. The agent verifies the first two at
-startup and refuses to listen otherwise. It never creates, installs or trusts a certificate.
-
-```powershell
-Get-ChildItem Cert:\LocalMachine\My | Select-Object Thumbprint, Subject, HasPrivateKey, NotAfter
-```
-
-### 3. Bind the certificate to the port
-
-HTTP.sys owns the TLS binding, and it is a deployment step. The agent never runs `netsh`.
-
-```powershell
-netsh http add sslcert ipport=0.0.0.0:5199 certhash=A909502DD82AE41433E6F83886B00D4277A32A7B appid="{00000000-0000-0000-0000-000000000000}"
-```
-
-Use a stable GUID of your own for `appid`. Verify with:
-
-```powershell
-netsh http show sslcert ipport=0.0.0.0:5199
-```
-
-### 4. Reserve the URL
-
-The agent runs as LocalSystem, which can normally bind without a reservation. If your policy
-requires one:
-
-```powershell
-netsh http add urlacl url=https://gandalf.sbra.local:5199/ user="NT AUTHORITY\SYSTEM"
-```
-
-### 5. Firewall
-
-Opening the port is a deliberate administrative act, and the agent never touches firewall rules:
-
-```powershell
-New-NetFirewallRule -DisplayName "NutManager Agent HTTPS" -Direction Inbound -Protocol TCP -LocalPort 5199 -Action Allow
-```
-
-### 6. Restart the agent
-
-```powershell
-Restart-Service NutManagerAgent
-```
+The write validates, writes and flushes a temporary file beside the target, applies an ACL limited to
+SYSTEM and Administrators, reads and validates it again, and atomically replaces the previous file.
+If system-resource configuration fails, the file is not committed. Applying never starts a stopped
+Agent; a running Agent receives an explicit restart offer.
 
 ### Authentication over HTTPS
 
@@ -430,12 +427,11 @@ is the platform default and is never bypassed, so fix the certificate rather tha
 **NutManager reports access denied over HTTPS.** Negotiate failed, or the account is not a member of
 `NutManager Operators` on the server. A 401 and a 403 both arrive here.
 
-**Rolling HTTPS back.** Set `httpsEnabled` to `false` (or delete the file) and restart the service.
-The named pipe is unaffected. To remove the binding as well:
-
-```powershell
-netsh http delete sslcert ipport=0.0.0.0:5199
-```
+**Rolling HTTPS back.** Disable HTTPS to stop using the transport while choosing whether to retain or
+remove its proven NutManager-owned resources. Use **Reset HTTPS** to clear the saved HTTPS selection
+and remove every proven NutManager-owned firewall, SSL-binding and URL-reservation resource. Foreign
+and unknown resources remain untouched, and the certificate is never part of either cleanup. Ensure
+Named Pipe is enabled first if HTTPS is the last active transport.
 
 ## Event log
 

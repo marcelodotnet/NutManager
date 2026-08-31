@@ -14,16 +14,18 @@ dotnet tool install --global wix --version 5.0.2
 The version is pinned. WiX v6 and v7 refuse to build without accepting the Open Source Maintenance Fee
 EULA, which is a licensing decision rather than a build setting.
 
-Two extensions are separate installs, pinned to the toolset's own version. The build script and CI
+Three extensions are separate installs, pinned to the toolset's own version. The build script and CI
 both provision them if missing:
 
 ```bash
 wix extension add --global WixToolset.BootstrapperApplications.wixext/5.0.2
 wix extension add --global WixToolset.Netfx.wixext/5.0.2
+wix extension add --global WixToolset.Util.wixext/5.0.2
 ```
 
-The Netfx extension is what provides `DotNetCoreSearch`, which the agent bundle uses to detect the
-.NET and ASP.NET Core runtimes independently.
+The Netfx extension provides `DotNetCoreSearch`, which the agent bundle uses to detect the .NET and
+ASP.NET Core runtimes independently. Util provides the supported registry searches used by the Agent
+completion summary. All three are build-time inputs and none is packaged at runtime.
 
 ## Building a release
 
@@ -31,8 +33,8 @@ The Netfx extension is what provides `DotNetCoreSearch`, which the agent bundle 
 pwsh ./scripts/build-release.ps1
 ```
 
-The script restores, builds, tests, publishes the desktop self-contained and the agent
-framework-dependent, builds both installers, produces the portable archive and writes the checksums.
+The script restores, builds, tests, publishes the desktop self-contained and the Agent plus Agent
+Config framework-dependent, builds both installers, produces the portable archive and writes the checksums.
 `-SkipTests` shortens the loop while iterating on packaging; `-Version 1.2.0` stamps a version without
 editing `Directory.Build.props`; `-Culture en-US` builds the English installer instead of the
 Portuguese one.
@@ -47,9 +49,9 @@ authoring under `installer/`, where the Windows Installer engine owns it.
 
 ```text
 artifacts/
-  NutManager-Setup-1.0.1.exe          desktop application, ~77 MB
-  NutManager-Agent-Setup-1.0.1.exe    agent service, ~10 MB
-  NutManager-win-x64.zip              portable desktop copy, ~87 MB
+  NutManager-Setup-1.0.1.exe          desktop application, ~56 MB
+  NutManager-Agent-Setup-1.0.1.exe    agent service and Agent Config, ~26 MB
+  NutManager-win-x64.zip              portable desktop copy, ~60 MB
   SHA256SUMS.txt
 ```
 
@@ -59,8 +61,9 @@ The zip survives alongside the installers because it is a genuinely different th
 administrator, installs nothing, registers nothing and leaves no trace beyond the folder it was
 extracted into. That suits a technician working on a machine they do not own.
 
-The desktop installer is large because the desktop publishes self-contained; the agent installer is
-roughly a tenth of the size because it does not — see [The runtime decision](#the-runtime-decision).
+The desktop installer is larger because the desktop publishes self-contained. The Agent installer is
+framework-dependent but also carries the Avalonia-based Agent Config utility — see
+[The runtime decision](#the-runtime-decision).
 
 ### SHA256SUMS.txt
 
@@ -91,12 +94,12 @@ must differ in one of the first three to be recognised as an upgrade.
 
 The two products deploy differently, on purpose.
 
-| | Desktop | Agent |
+| | Desktop | Agent and Agent Config |
 | --- | --- | --- |
 | Deployment | self-contained win-x64 | framework-dependent win-x64 |
-| .NET prerequisite | none | Microsoft ASP.NET Core Runtime 10 x64 |
+| .NET prerequisite | none | Microsoft .NET Runtime 10 x64 and Microsoft ASP.NET Core Runtime 10 x64 |
 | Runtime servicing | needs a NutManager release | independent, by the administrator |
-| Installer size | ~77 MB | ~10 MB |
+| Installer size | ~56 MB | ~26 MB |
 
 **Desktop stays self-contained.** An operator should download one thing and run it. A runtime prompt on
 a workstation buys nothing the payload has not already paid for, and the cost — a runtime security fix
@@ -106,11 +109,18 @@ carries privately — is acceptable for an application someone launches, uses an
 **The Agent is framework-dependent.** That balance is different, and it changed. The agent is a
 long-lived Windows service on a server, and a private runtime inside `C:\Program Files\NutManager Agent`
 means that server stays unpatched until NutManager ships. Sharing the machine's runtime puts servicing
-back where the administrator already manages it, and drops the download from roughly 70 MB to 10.
+back where the administrator already manages it.
 
 The cost moved rather than disappeared: the agent now has a real prerequisite, which is why its
 installer detects the runtime and offers to install the official Microsoft package. What it must never
 do is install an agent that cannot run — see [Agent](#agent-1) below.
+
+`NutManager Agent Config` is published framework-dependent into the same Agent staging directory and
+installed by the same MSI. Its generated runtimeconfig requires only `Microsoft.NETCore.App 10.x`,
+which is already guaranteed by the Agent bundle; Avalonia assemblies are ordinary application files
+and no `Microsoft.WindowsDesktop.App`, WPF/WinForms, Hosting Bundle or IIS prerequisite is introduced.
+The release build reads both runtimeconfigs and fails if this contract drifts. Debug symbols are
+removed from generated staging before package inputs are built.
 
 `Publish-Product` in the build script takes `-SelfContained` as a **mandatory** parameter with no
 default. That is deliberate: a default is exactly how the two products would drift back into being the
@@ -246,6 +256,16 @@ kind (*Aplicativo de administração* against *Componente de servidor*), differe
 (*Instalar* against *Instalar Agent*). Nobody should install the server service believing it is the
 graphical application.
 
+The Agent progress page distinguishes **Baixando/Downloading** from **Instalando/Installing** and uses
+WixStdBA's real cache, execute, ActionData and overall progress controls. Its supported details
+fallback is a checkbox bound to a Burn variable; WixStdBA 5.0.2 cannot implement a dynamically
+changing “show/hide details” link without a custom BA, and no custom BA was introduced. No percentage,
+ETA, transfer rate or file count is fabricated.
+
+The completion page reports only facts Burn/MSI can prove. It does not claim that the Agent is running,
+that HTTPS is configured or that `NutManager Operators` exists. It points to **NutManager Agent Config**
+for authoritative live group and local-configuration diagnostics; Burn does not query SAM/AD.
+
 ## Code signing
 
 **Artifacts are unsigned.** No code-signing certificate is available to this repository, so SmartScreen
@@ -307,13 +327,16 @@ demonstrated. Removing profiles and credentials is done from the application.
 
 ### Agent
 
-Installs to `C:\Program Files\NutManager Agent` and registers the `NutManagerAgent` service as
-LocalSystem with automatic start. Registers the `NutManager Agent` Event Log source. Creates
-`%ProgramData%\NutManager\Agent` and then leaves it alone.
+Installs the framework-dependent `NutManager.Agent.exe` and `NutManager.Agent.Config.exe` to
+`C:\Program Files\NutManager Agent`, adds the **NutManager Agent Config** Start Menu shortcut, and
+registers `NutManagerAgent` as LocalSystem with Automatic start type. Registers the
+`NutManager Agent` Event Log source. Creates `%ProgramData%\NutManager\Agent` and then leaves it alone.
 
-Upgrade stops `NutManagerAgent`, replaces the binaries and starts it again. The NUT service is never
-named in the authoring and is never touched. Repair restores the binaries, the service registration and
-the Event Log source.
+A fresh installation does **not** start the Agent. Upgrade/uninstall may stop `NutManagerAgent` when
+required to replace or remove its own files, but the installer has no start action. Starting or
+restarting the Agent is an explicit action in Agent Config after its prerequisites have been reviewed.
+The NUT service is never named in the authoring and is never touched. Repair restores the binaries,
+the service registration and the Event Log source.
 
 Uninstall stops and removes `NutManagerAgent`, removes the program files and the Event Log source, and
 leaves everything else: `agent.json`, certificates, SSL bindings, URL reservations, firewall rules, the
@@ -329,8 +352,10 @@ that created it would be deciding who may control a service. On a domain control
 changing the directory as a side effect of running setup. The administrator creates the group; the
 agent refuses to authorize anyone until it exists.
 
-Configures HTTPS. No certificate, no SSL binding, no URL reservation, no firewall rule. HTTPS stays an
-explicit administrative decision — see [Windows Agent](WINDOWS-AGENT.md).
+Configures HTTPS. No certificate, SSL binding, URL reservation or firewall rule is created as an
+installer side effect. Those remain explicit administrative actions performed later in Agent Config —
+see [Windows Agent](WINDOWS-AGENT.md). Agent Config can explicitly import a selected certificate file
+into `LocalMachine\My`; its HTTPS reset and the installer uninstall never remove that certificate.
 
 Touches NUT in any way.
 
