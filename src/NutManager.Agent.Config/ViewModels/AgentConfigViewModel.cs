@@ -448,10 +448,34 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// Endpoint errors belong on the fields themselves. The compact line below the certificate area
     /// is reserved for certificate/import feedback, so an empty host never consumes a permanent row.
     /// </summary>
+    /// <summary>
+    /// Whether the line under the thumbprint has anything to add.
+    ///
+    /// With no certificate chosen it does not. The surface above already says "no certificate
+    /// selected", and repeating it here as a warning said the same thing twice, in a row that then
+    /// had to find room inside a card sized for one line. A validation message is for a certificate
+    /// that was chosen and turned out to be unusable - that is the case worth the space.
+    ///
+    /// A working certificate does not need the row either. Confirming that nothing is wrong costs a
+    /// line of a card that has none spare, and the summary above already shows which certificate is
+    /// in use - the row is for the cases where that is not enough.
+    ///
+    /// An import result is the exception to both: it reports an attempt rather than a state, and it
+    /// is worth showing whether or not it ended in a usable certificate.
+    /// </summary>
     public bool ShowCertificateFeedback =>
         HttpsEnabled &&
         !string.IsNullOrWhiteSpace(CertificateFeedbackMessage) &&
-        (CertificateImportMessage is not null || (!HttpsHostHasError && !HttpsPortHasError));
+        (CertificateImportMessage is not null ||
+            (HasSelectedCertificate && !HttpsIsValid && !HttpsHostHasError && !HttpsPortHasError));
+
+    /// <summary>
+    /// The thumbprint block collapses when there is nothing to show.
+    ///
+    /// A label over an empty value is a row of dead space in a card that has none to spare, and it
+    /// invites the reading that a thumbprint exists but could not be read.
+    /// </summary>
+    public bool ShowThumbprint => HasSelectedCertificate;
 
     public string? CertificateFeedbackMessage => CertificateImportMessage ?? HttpsValidationMessage;
 
@@ -557,6 +581,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         ClearImportFeedback();
         OnPropertyChanged(nameof(HasSelectedCertificate));
+        OnPropertyChanged(nameof(ShowThumbprint));
         OnPropertyChanged(nameof(CertificateThumbprint));
         OnPropertyChanged(nameof(CertificateSubject));
         OnPropertyChanged(nameof(CertificateIssuer));
@@ -1318,6 +1343,128 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public bool CanApply => IsDirty && !IsBusy && (!HttpsEnabled || HttpsIsValid);
 
+    /// <summary>
+    /// Why Apply is refused, or null when it is not.
+    ///
+    /// The button being disabled is correct - half-configured HTTPS must not reach agent.json - but a
+    /// disabled control with no explanation leaves an administrator hunting for the field that is
+    /// wrong. The order below is the order the conditions are actually evaluated in, so the reason
+    /// shown is the one that would still be blocking after the operator fixes it.
+    ///
+    /// Nothing is validated here. Every branch reads a state that already exists.
+    /// </summary>
+    public string? ApplyDisabledReason
+    {
+        get
+        {
+            if (CanApply) return null;
+
+            if (IsBusy) return Strings["Apply.Disabled.Busy"];
+
+            // Not dirty comes before the HTTPS checks: a valid saved configuration is not something
+            // to complain about, and "no pending changes" is the honest answer.
+            if (!IsDirty) return Strings["Apply.Disabled.NoChanges"];
+
+            if (!NamedPipeEnabled && !HttpsEnabled) return Strings["Apply.Disabled.NoTransport"];
+
+            // With HTTPS off, a missing certificate is not a problem: it is not needed.
+            if (!HttpsEnabled) return null;
+
+            if (HttpsHostHasError) return Strings["Apply.Disabled.InvalidHost"];
+            if (HttpsPortHasError) return Strings["Apply.Disabled.InvalidPort"];
+            if (!HasSelectedCertificate) return Strings["Apply.Disabled.NoCertificate"];
+
+            // A certificate was chosen and refused. The reason is the validation message that already
+            // explains why, rather than a second sentence that would have to agree with it.
+            return HttpsValidationMessage ?? Strings["Apply.Disabled.NoCertificate"];
+        }
+    }
+
+    public bool HasApplyDisabledReason => ApplyDisabledReason is not null;
+
+    // ---------------------------------------------------------------- choosing an installed certificate
+
+    /// <summary>
+    /// The certificates offered by the selection panel, ordered for this host.
+    ///
+    /// Built when the panel opens rather than kept continuously in step, because the ordering depends
+    /// on the host in the draft and that changes while somebody is typing.
+    /// </summary>
+    public ObservableCollection<AgentCertificateCandidate> CertificateCandidates { get; } = [];
+
+    [ObservableProperty]
+    private bool _isSelectingCertificate;
+
+    /// <summary>Highlighted in the list, and not yet the draft. Confirming is what moves it.</summary>
+    [ObservableProperty]
+    private AgentCertificateCandidate? _pendingCertificate;
+
+    partial void OnPendingCertificateChanged(AgentCertificateCandidate? value) =>
+        OnPropertyChanged(nameof(CanConfirmCertificateSelection));
+
+    public bool CanConfirmCertificateSelection => PendingCertificate is not null;
+
+    public bool HasCertificateCandidates => CertificateCandidates.Count > 0;
+
+    /// <summary>
+    /// Opens the panel over the machine store, reading and nothing else.
+    ///
+    /// This is the answer for a certificate that is already installed: an operator should not have to
+    /// find the PFX again and import a second copy of something Windows already holds. Enumerating is
+    /// all that happens - no import, no export, no key access, no change of any kind to the store.
+    /// </summary>
+    [RelayCommand]
+    private void OpenCertificateSelection()
+    {
+        var host = HttpsHost.Trim();
+        var now = _time.GetUtcNow();
+
+        CertificateCandidates.Clear();
+
+        // Ordered so the ones that would work come first, and never filtered: an operator diagnosing
+        // a refused endpoint needs to see the certificate that is failing, not have it hidden for
+        // failing. Ties fall back to the latest expiry and then to the name, so the order is stable.
+        var candidates = _certificates.List()
+            .Select(certificate => new AgentCertificateCandidate(certificate, host, now, Strings))
+            .OrderByDescending(candidate => candidate.IsUsable)
+            .ThenByDescending(candidate => candidate.MatchesHost)
+            .ThenByDescending(candidate => candidate.HasPrivateKey)
+            .ThenByDescending(candidate => candidate.SupportsServerAuthentication)
+            .ThenByDescending(candidate => candidate.IsCurrentlyValid)
+            .ThenByDescending(candidate => candidate.Certificate.NotAfter)
+            .ThenBy(candidate => candidate.DisplayName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in candidates) CertificateCandidates.Add(candidate);
+
+        // Whatever is already in the draft starts highlighted. Nothing else is preselected: several
+        // certificates here can share a common name and an issuer, and choosing one of those on the
+        // operator's behalf is how the wrong one ends up configured.
+        PendingCertificate = CertificateThumbprint is { } thumbprint
+            ? CertificateCandidates.FirstOrDefault(candidate => string.Equals(
+                candidate.Thumbprint, thumbprint, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        OnPropertyChanged(nameof(HasCertificateCandidates));
+        IsSelectingCertificate = true;
+    }
+
+    /// <summary>
+    /// Puts the highlighted certificate into the draft. Nothing is saved and nothing on the machine is
+    /// touched: the file, the binding, the firewall rule and the service all wait for Apply.
+    /// </summary>
+    [RelayCommand]
+    private void ConfirmCertificateSelection()
+    {
+        if (PendingCertificate is not { } candidate) return;
+
+        IsSelectingCertificate = false;
+        ReloadCertificates(candidate.Thumbprint, candidate.Certificate);
+    }
+
+    /// <summary>Closes the panel and leaves the draft exactly as it was.</summary>
+    [RelayCommand]
+    private void CancelCertificateSelection() => IsSelectingCertificate = false;
+
     [RelayCommand]
     private async Task ApplyAsync(CancellationToken cancellationToken)
     {
@@ -1467,6 +1614,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void RefreshApplyState()
     {
         OnPropertyChanged(nameof(CanApply));
+        OnPropertyChanged(nameof(ApplyDisabledReason));
+        OnPropertyChanged(nameof(HasApplyDisabledReason));
         ApplyCommand.NotifyCanExecuteChanged();
     }
 

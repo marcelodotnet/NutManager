@@ -54,6 +54,20 @@ public static class AgentConfigConverters
             string.IsNullOrWhiteSpace(key) ? null : Resource<Geometry>(key));
 
     /// <summary>
+    /// Whether a certificate in the selection list would actually be accepted.
+    ///
+    /// The glyph carries the answer as well as the colour: the list is deliberately unfiltered, so an
+    /// unusable certificate is present and has to be recognisable without relying on green and red.
+    /// </summary>
+    public static readonly IValueConverter CandidateIcon =
+        new FuncValueConverter<bool, Geometry?>(usable =>
+            Resource<Geometry>(usable ? "AgentIconStateReady" : "AgentIconStateAttention"));
+
+    public static readonly IValueConverter CandidateBrush =
+        new FuncValueConverter<bool, IBrush?>(usable =>
+            Resource<IBrush>(usable ? "NutHealthyBrush" : "NutWarningBrush"));
+
+    /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager
     /// theme files put it. A missing key returns null rather than throwing: an uncoloured glyph is a
     /// cosmetic fault, and taking the window down over one would not be.

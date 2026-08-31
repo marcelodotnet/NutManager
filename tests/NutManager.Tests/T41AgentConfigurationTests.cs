@@ -252,7 +252,9 @@ public sealed class T41InstallerAndPackagingTests
         Assert.Contains("Click=\"OnImportCertificateClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Strings[Https.Import]", window, StringComparison.Ordinal);
         Assert.Contains("Strings[Https.Thumbprint]", window, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ThumbprintField\" Spacing=\"1\"", window, StringComparison.Ordinal);
+        // The field, not its exact one-line spelling: it now also carries the visibility binding
+        // that collapses it when no certificate is selected.
+        Assert.Contains("x:Name=\"ThumbprintField\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"CertificateFeedbackRow\"", window, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnCopyValueClicked\"", window, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding ApplicationVersion}\"", window, StringComparison.Ordinal);
@@ -283,10 +285,18 @@ public sealed class T41InstallerAndPackagingTests
         Assert.True(certificateFeedback > thumbprintField,
             "Certificate validation must occupy its own row below the thumbprint.");
         Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
-        Assert.Contains("<TextBlock Classes=\"nut-code\"", thumbprintMarkup, StringComparison.Ordinal);
+        // Rendered as code rather than as an editable field. The class, not its exact spelling:
+        // the element now also carries a Grid.Column since the label sits beside the value.
+        Assert.Contains("Classes=\"nut-code\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("<TextBox", thumbprintMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("OnCopyValueClicked", thumbprintMarkup, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsVisible=", thumbprintMarkup, StringComparison.Ordinal);
+        // The block collapses as a whole and its parts never do. Exactly one visibility binding, on
+        // the container: hiding the value while keeping the label would leave a heading over nothing,
+        // which is the state that read as a thumbprint that failed to load.
+        Assert.Equal(
+            1,
+            thumbprintMarkup.Split("IsVisible=", StringSplitOptions.None).Length - 1);
+        Assert.Contains("IsVisible=\"{Binding ShowThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
         Assert.Contains("IsVisible=\"{Binding ShowCertificateFeedback}\"", feedbackMarkup, StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding CertificateFeedbackMessage}\"", feedbackMarkup, StringComparison.Ordinal);
 
@@ -602,6 +612,113 @@ public sealed class T41AgentConfigSurfaceTests
         // far right, where it read as unrelated to the words it was judging.
         Assert.Contains("RowDefinitions=\"Auto,Auto\"", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("ColumnDefinitions=\"Auto,*,Auto\"", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Three separate certificate actions, in the order they are offered, and the summary surface is
+    /// still not a picker.
+    /// </summary>
+    [Fact]
+    public void SelectingImportingAndViewingStayThreeSeparateActions()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var start = window.IndexOf("Strings[Https.Certificate]", StringComparison.Ordinal);
+        var end = window.IndexOf("x:Name=\"ThumbprintField\"", start, StringComparison.Ordinal);
+        var markup = window[start..end];
+
+        var select = markup.IndexOf("Command=\"{Binding OpenCertificateSelectionCommand}\"", StringComparison.Ordinal);
+        var import = markup.IndexOf("Click=\"OnImportCertificateClicked\"", StringComparison.Ordinal);
+        var view = markup.IndexOf("Command=\"{Binding ToggleCertificateDetailsCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(select >= 0, "The certificate row must offer selection.");
+        Assert.True(import > select, "Import belongs after Select.");
+        Assert.True(view > import, "View belongs last.");
+
+        // The surface itself never became a picker again.
+        Assert.DoesNotContain("<ComboBox", markup, StringComparison.Ordinal);
+        Assert.Contains("Focusable=\"False\"", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The selection panel is an overlay in this window, reads the catalog, and never sends anybody to
+    /// an external console.
+    /// </summary>
+    [Fact]
+    public void TheCertificateSelectionIsAnInternalPanelOverTheMachineStore()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        Assert.Contains("IsVisible=\"{Binding IsSelectingCertificate}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{Binding CertificateCandidates}\"", window, StringComparison.Ordinal);
+        Assert.Contains("SelectedItem=\"{Binding PendingCertificate}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding ConfirmCertificateSelectionCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding CancelCertificateSelectionCommand}\"", window, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanConfirmCertificateSelection}\"", window, StringComparison.Ordinal);
+
+        // The list scrolls; the window still does not.
+        Assert.Contains("ScrollViewer.VerticalScrollBarVisibility=\"Auto\"", window, StringComparison.Ordinal);
+
+        // Never an external console, and never a shell - in the markup, not in the prose. The
+        // comments deliberately name certlm.msc to say why the panel exists instead of it, so the
+        // scan runs over the file with its comments stripped.
+        var withoutComments = System.Text.RegularExpressions.Regex.Replace(
+            window, "<!--.*?-->", string.Empty, System.Text.RegularExpressions.RegexOptions.Singleline);
+
+        foreach (var forbidden in new[] { "certlm", "certmgr", "Process.Start", "powershell", "cmd.exe" })
+        {
+            Assert.DoesNotContain(forbidden, withoutComments, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// The reason Apply is refused has to be readable while Apply is refused.
+    ///
+    /// A disabled control in Avalonia takes no pointer input, so a tooltip on the button itself would
+    /// be invisible in exactly the state that needs it. The tooltip and the accessible help text
+    /// belong to an enabled wrapper, and the button inside stays genuinely disabled.
+    /// </summary>
+    [Fact]
+    public void TheReasonApplyIsRefusedIsReachableWhileApplyIsDisabled()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var host = window.IndexOf("x:Name=\"ApplyReasonHost\"", StringComparison.Ordinal);
+        Assert.True(host >= 0, "Apply must sit inside a host that can still be pointed at.");
+
+        var end = window.IndexOf("</Border>", host, StringComparison.Ordinal);
+        var markup = window[host..end];
+
+        Assert.Contains("ToolTip.Tip=\"{Binding ApplyDisabledReason}\"", markup, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.HelpText=\"{Binding ApplyDisabledReason}\"", markup, StringComparison.Ordinal);
+
+        // The wrapper carries the explanation; the button is still really disabled.
+        Assert.Contains("IsEnabled=\"{Binding CanApply}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsEnabled=\"True\"", markup, StringComparison.Ordinal);
+
+        // The tooltip is not on the button, where it could never be shown.
+        var button = markup.IndexOf("<Button", StringComparison.Ordinal);
+        Assert.DoesNotContain("ToolTip.Tip", markup[button..], StringComparison.Ordinal);
+    }
+
+    /// <summary>The thumbprint block and its validation row each collapse on their own condition.</summary>
+    [Fact]
+    public void TheThumbprintAndItsValidationRowCollapseIndependently()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        Assert.Contains("IsVisible=\"{Binding ShowThumbprint}\"", window, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowCertificateFeedback}\"", window, StringComparison.Ordinal);
+
+        // No hacks: the rows collapse, they are not pushed out of sight.
+        var card = window.IndexOf("x:Name=\"HttpsEditorCard\"", StringComparison.Ordinal);
+        var status = window.IndexOf("x:Name=\"ResourceStatusCard\"", card, StringComparison.Ordinal);
+        var markup = window[card..status];
+        Assert.DoesNotContain("<Canvas", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ZIndex", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("TranslateTransform", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Margin=\"0,-", markup, StringComparison.Ordinal);
     }
 
     /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
@@ -1511,6 +1628,357 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(AgentConfigConfirmation.RestartService, context.ViewModel.PendingConfirmation);
     }
 
+    // ================================================================ choosing an installed certificate
+
+    /// <summary>
+    /// The panel offers what the machine already holds, and nothing else happens on the way there.
+    ///
+    /// This is the whole point of the feature: a certificate already in the store should be selectable
+    /// without the operator finding the original file and importing a second copy of it.
+    /// </summary>
+    [Fact]
+    public async Task OpeningTheSelectionListsInstalledCertificatesWithoutImportingAnything()
+    {
+        var context = CreateContext();
+        context.Certificates.Add(Certificate("11111111111111111111111111111111111111AA", "CN=nut-server.example.local"));
+        context.Certificates.Add(Certificate("22222222222222222222222222222222222222BB", "CN=backup.example.local"));
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+
+        Assert.True(context.ViewModel.IsSelectingCertificate);
+        Assert.True(context.ViewModel.HasCertificateCandidates);
+        Assert.Equal(3, context.ViewModel.CertificateCandidates.Count);
+
+        // Reading the store is all that happened.
+        Assert.Equal(0, context.Importer.ImportCalls);
+        Assert.Empty(context.Store.Writes);
+        Assert.Empty(context.Resources.RemoveRequests);
+        Assert.Equal(0, context.Resources.ApplyCalls);
+    }
+
+    /// <summary>
+    /// Several certificates can share a common name and an issuer, differing only in dates and
+    /// thumbprint. The list has to let an operator tell those apart before confirming, so each row
+    /// carries an abbreviated thumbprint and they are all distinct.
+    /// </summary>
+    [Fact]
+    public async Task CertificatesSharingANameStayDistinguishable()
+    {
+        const string Subject = "CN=nut-server.example.local";
+
+        var context = CreateContext();
+        context.Certificates.Add(Certificate("AAAAAAAA11111111111111111111111111111111", Subject));
+        context.Certificates.Add(Certificate("BBBBBBBB22222222222222222222222222222222", Subject));
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+
+        var sameName = context.ViewModel.CertificateCandidates
+            .Where(candidate => string.Equals(candidate.Subject, Subject, StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.Equal(2, sameName.Length);
+        Assert.Equal(2, sameName.Select(candidate => candidate.ShortThumbprint).Distinct(StringComparer.Ordinal).Count());
+
+        // Nothing is chosen for the operator when the draft has no certificate yet: picking one of two
+        // look-alikes on their behalf is how the wrong one ends up configured.
+        Assert.Null(context.ViewModel.PendingCertificate);
+        Assert.False(context.ViewModel.CanConfirmCertificateSelection);
+    }
+
+    /// <summary>
+    /// Confirming changes the draft and only the draft. The file, the binding, the firewall rule and
+    /// the service all still wait for Apply.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingASelectionChangesTheDraftAndNothingElse()
+    {
+        const string Chosen = "CCCCCCCC33333333333333333333333333333333";
+
+        var context = CreateContext();
+        context.Certificates.Add(Certificate(Chosen, "CN=nut-server.example.local"));
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        context.ViewModel.PendingCertificate = context.ViewModel.CertificateCandidates
+            .Single(candidate => candidate.Thumbprint == Chosen);
+        context.ViewModel.ConfirmCertificateSelectionCommand.Execute(null);
+
+        Assert.False(context.ViewModel.IsSelectingCertificate);
+        Assert.Equal(Chosen, context.ViewModel.CertificateThumbprint);
+        Assert.True(context.ViewModel.IsDirty);
+
+        Assert.Empty(context.Store.Writes);
+        Assert.Equal(0, context.Importer.ImportCalls);
+        Assert.Equal(0, context.Resources.ApplyCalls);
+        Assert.Empty(context.Resources.RemoveRequests);
+    }
+
+    /// <summary>Cancelling is a full stop: the previous certificate stays, and so does the dirty state.</summary>
+    [Fact]
+    public async Task CancellingTheSelectionLeavesTheDraftAlone()
+    {
+        const string Other = "DDDDDDDD44444444444444444444444444444444";
+
+        var context = CreateContext(document: HttpsDocument());
+        context.Certificates.Add(Certificate(Other, "CN=other.example.local"));
+        await context.ViewModel.RefreshAsync();
+
+        var before = context.ViewModel.CertificateThumbprint;
+        var dirtyBefore = context.ViewModel.IsDirty;
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        context.ViewModel.PendingCertificate = context.ViewModel.CertificateCandidates
+            .Single(candidate => candidate.Thumbprint == Other);
+        context.ViewModel.CancelCertificateSelectionCommand.Execute(null);
+
+        Assert.False(context.ViewModel.IsSelectingCertificate);
+        Assert.Equal(before, context.ViewModel.CertificateThumbprint);
+        Assert.Equal(dirtyBefore, context.ViewModel.IsDirty);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>
+    /// The list is ordered so a usable certificate leads, and never filtered: an operator diagnosing a
+    /// refused endpoint needs to see the one that is failing, not have it hidden for failing.
+    /// </summary>
+    [Fact]
+    public async Task UsableCertificatesLeadTheListAndUnusableOnesStayVisible()
+    {
+        const string Keyless = "EEEEEEEE55555555555555555555555555555555";
+
+        var context = CreateContext();
+        context.Certificates.Add(Certificate(Keyless, "CN=nut-server.example.local", hasPrivateKey: false));
+        context.Certificates.Add(Certificate("FFFFFFFF66666666666666666666666666666666", "CN=nut-server.example.local"));
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+
+        Assert.True(context.ViewModel.CertificateCandidates[0].IsUsable);
+        Assert.Contains(context.ViewModel.CertificateCandidates, candidate => !candidate.IsUsable);
+
+        var keyless = context.ViewModel.CertificateCandidates.Single(candidate => candidate.Thumbprint == Keyless);
+        Assert.False(keyless.IsUsable);
+        Assert.False(keyless.HasPrivateKey);
+    }
+
+    /// <summary>
+    /// The main scenario end to end: a certificate already installed becomes the one the agent will
+    /// use, and Apply unblocks because of it.
+    /// </summary>
+    [Fact]
+    public async Task SelectingAnInstalledCertificateUnblocksApply()
+    {
+        const string Installed = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+        var context = CreateContext();
+        context.Certificates.Add(Certificate(Installed, "CN=nut-server.example.local"));
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+        context.ViewModel.HttpsPort = 5199;
+
+        Assert.False(context.ViewModel.CanApply);
+        Assert.Equal("Select a valid certificate to enable HTTPS.", context.ViewModel.ApplyDisabledReason);
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        context.ViewModel.PendingCertificate = context.ViewModel.CertificateCandidates
+            .Single(candidate => candidate.Thumbprint == Installed);
+        context.ViewModel.ConfirmCertificateSelectionCommand.Execute(null);
+
+        Assert.True(context.ViewModel.CanApply);
+        Assert.Null(context.ViewModel.ApplyDisabledReason);
+        Assert.Equal(0, context.Importer.ImportCalls);
+    }
+
+    /// <summary>An unusable certificate can be chosen, and Apply stays shut with the real reason.</summary>
+    [Fact]
+    public async Task SelectingAnUnusableCertificateKeepsApplyBlockedWithItsRealReason()
+    {
+        const string Keyless = "99999999AAAAAAAA99999999AAAAAAAA99999999";
+
+        var context = CreateContext();
+        context.Certificates.Add(Certificate(Keyless, "CN=nut-server.example.local", hasPrivateKey: false));
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        context.ViewModel.PendingCertificate = context.ViewModel.CertificateCandidates
+            .Single(candidate => candidate.Thumbprint == Keyless);
+        context.ViewModel.ConfirmCertificateSelectionCommand.Execute(null);
+
+        Assert.False(context.ViewModel.CanApply);
+
+        // The reason is the problem this certificate actually has, not the generic "choose one" line.
+        Assert.Contains("private key", context.ViewModel.ApplyDisabledReason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A saved thumbprint whose certificate is gone must not crash, and stays recoverable.</summary>
+    [Fact]
+    public async Task AConfiguredThumbprintMissingFromTheStoreLeavesTheWindowUsable()
+    {
+        var document = new AgentTransportConfigurationDocument
+        {
+            NamedPipeEnabled = true,
+            HttpsEnabled = true,
+            HttpsPrefix = "https://nut-server.example.local:5199/",
+            CertificateThumbprint = "0123456789ABCDEF0123456789ABCDEF01234567",
+        };
+
+        var context = CreateContext(document: document, withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Null(context.ViewModel.SelectedCertificate);
+        Assert.False(context.ViewModel.CanApply);
+
+        // And the way out is available.
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        Assert.True(context.ViewModel.IsSelectingCertificate);
+        Assert.Null(context.ViewModel.PendingCertificate);
+    }
+
+    /// <summary>An empty store says so, rather than showing an empty box.</summary>
+    [Fact]
+    public async Task AnEmptyStoreIsReportedAsSuch()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+
+        Assert.True(context.ViewModel.IsSelectingCertificate);
+        Assert.False(context.ViewModel.HasCertificateCandidates);
+        Assert.Empty(context.ViewModel.CertificateCandidates);
+    }
+
+    // ================================================================ why Apply is refused
+
+    /// <summary>
+    /// Each refusal names its own cause, in the order the conditions are actually evaluated, so the
+    /// reason shown is the one that would still be blocking after the operator fixes it.
+    /// </summary>
+    [Fact]
+    public async Task ApplyExplainsExactlyWhyItIsRefused()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("No pending changes.", context.ViewModel.ApplyDisabledReason);
+
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = string.Empty;
+        Assert.Equal("Enter a valid host or FQDN for HTTPS.", context.ViewModel.ApplyDisabledReason);
+
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+        context.ViewModel.HttpsPort = 0;
+        Assert.Equal("Enter a port between 1 and 65535.", context.ViewModel.ApplyDisabledReason);
+
+        context.ViewModel.HttpsPort = 5199;
+        Assert.Equal("Select a valid certificate to enable HTTPS.", context.ViewModel.ApplyDisabledReason);
+    }
+
+    /// <summary>
+    /// A certificate is only required by the transport that needs one. With HTTPS off, its absence
+    /// must not block a perfectly valid named-pipe configuration.
+    /// </summary>
+    [Fact]
+    public async Task WithHttpsOffAMissingCertificateDoesNotBlockApply()
+    {
+        var context = CreateContext(document: HttpsDocument(), withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.HttpsEnabled = false;
+
+        Assert.True(context.ViewModel.CanApply);
+        Assert.Null(context.ViewModel.ApplyDisabledReason);
+    }
+
+    /// <summary>The reason follows the language, like everything else on the window.</summary>
+    [Fact]
+    public async Task TheApplyReasonIsLocalised()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        Assert.Equal("Select a valid certificate to enable HTTPS.", context.ViewModel.ApplyDisabledReason);
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.PtBr;
+
+        Assert.Equal(
+            "Selecione um certificado válido para habilitar HTTPS.", context.ViewModel.ApplyDisabledReason);
+    }
+
+    /// <summary>
+    /// With no certificate the surface already says so, and the warning row below the thumbprint must
+    /// not repeat it. The thumbprint block collapses with it.
+    /// </summary>
+    [Fact]
+    public async Task WithNoCertificateTheWarningIsNotRepeatedBelowTheThumbprint()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        Assert.False(context.ViewModel.HasSelectedCertificate);
+        Assert.False(context.ViewModel.ShowThumbprint);
+        Assert.False(context.ViewModel.ShowCertificateFeedback);
+    }
+
+    /// <summary>A chosen certificate that is unusable is exactly the case the row exists for.</summary>
+    [Fact]
+    public async Task AnUnusableSelectedCertificateStillShowsItsValidationRow()
+    {
+        const string Keyless = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+        var context = CreateContext(withCertificate: false);
+        context.Certificates.Add(Certificate(Keyless, "CN=nut-server.example.local", hasPrivateKey: false));
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        context.ViewModel.OpenCertificateSelectionCommand.Execute(null);
+        context.ViewModel.PendingCertificate = context.ViewModel.CertificateCandidates
+            .Single(candidate => candidate.Thumbprint == Keyless);
+        context.ViewModel.ConfirmCertificateSelectionCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowThumbprint);
+        Assert.True(context.ViewModel.ShowCertificateFeedback);
+        Assert.Contains("private key", context.ViewModel.CertificateFeedbackMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>A valid certificate shows its thumbprint and nothing more: no empty warning row.</summary>
+    [Fact]
+    public async Task AValidSelectedCertificateShowsTheThumbprintAndNoWarning()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+
+        Assert.True(context.ViewModel.ShowThumbprint);
+        Assert.False(context.ViewModel.ShowCertificateFeedback);
+    }
+
+    private static AgentCertificateSummary Certificate(
+        string thumbprint, string subject, bool hasPrivateKey = true) =>
+        new(
+            thumbprint,
+            subject,
+            "CN=EXAMPLE-CA",
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1),
+            HasPrivateKey: hasPrivateKey,
+            SupportsServerAuthentication: true,
+            SubjectAlternativeNames: [subject.Replace("CN=", string.Empty, StringComparison.Ordinal)]);
+
     // ================================================================ theme
 
     /// <summary>
@@ -2209,7 +2677,8 @@ public sealed class T41AgentConfigViewModelTests
         AgentMachineRole groupRole = AgentMachineRole.StandaloneWorkstation,
         bool groupExists = false,
         FakePreferences? preferences = null,
-        UiLanguagePreference? language = UiLanguagePreference.EnUs)
+        UiLanguagePreference? language = UiLanguagePreference.EnUs,
+        bool withCertificate = true)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
@@ -2225,7 +2694,7 @@ public sealed class T41AgentConfigViewModelTests
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
             SubjectAlternativeNames: ["gandalf.sbra.local"]);
-        var certificates = new FakeCertificates(certificate);
+        var certificates = withCertificate ? new FakeCertificates(certificate) : new FakeCertificates();
         var importer = new FakeCertificateImporter(certificates);
         var inventory = new FakeInventory();
         var uiPreferences = preferences ?? new FakePreferences();
@@ -2384,6 +2853,9 @@ public sealed class T41AgentConfigViewModelTests
 
     private sealed class FakeCertificateImporter(FakeCertificates certificates) : IAgentCertificateImporter
     {
+        /// <summary>Proves that choosing an installed certificate never imports anything.</summary>
+        public int ImportCalls { get; private set; }
+
         public AgentCertificateImportResult Result { get; set; } =
             AgentCertificateImportResult.From(AgentCertificateImportOutcome.Failed);
 
@@ -2395,6 +2867,7 @@ public sealed class T41AgentConfigViewModelTests
 
         public AgentCertificateImportResult Import(string path, string? password)
         {
+            ImportCalls++;
             LastPassword = password;
             if (Failure is not null) throw Failure;
             if (Result.Certificate is { } certificate) certificates.Add(certificate);

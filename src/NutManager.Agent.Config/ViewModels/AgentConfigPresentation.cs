@@ -1,3 +1,4 @@
+using System.Globalization;
 using NutManager.Agent.Config.Localization;
 using NutManager.Core.Agent;
 
@@ -160,8 +161,126 @@ public sealed class AgentCertificateOption
 
     public string ValidityLine { get; }
 
+    /// <summary>
+    /// Issuer and expiry on one line, for the inline summary where a line is expensive.
+    ///
+    /// Both are short, both qualify the same name, and the card has room for two lines rather than
+    /// three now that the certificate actions have a row of their own.
+    /// </summary>
+    public string SummaryLine => $"{IssuerLine}  ·  {ValidityLine}";
+
     /// <summary>What the combo box shows when the list is closed.</summary>
     public override string ToString() => DisplayName;
+}
+
+/// <summary>
+/// One certificate as the selection list shows it.
+///
+/// A wrapper over the summary the catalog already returns, evaluated against the host currently in
+/// the draft. It adds no rule of its own: every judgement here comes from
+/// <see cref="AgentCertificateRules"/>, which is the same code the endpoint validation and the Apply
+/// gate use. A second opinion about what makes a certificate usable is exactly the thing that ends
+/// up disagreeing with the first one.
+///
+/// It holds no key material and no file path - only the summary, which the catalog builds without
+/// ever reading a private key.
+/// </summary>
+public sealed class AgentCertificateCandidate
+{
+    private readonly AgentConfigStrings _strings;
+
+    public AgentCertificateCandidate(
+        AgentCertificateSummary certificate, string host, DateTimeOffset now, AgentConfigStrings strings)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        ArgumentNullException.ThrowIfNull(strings);
+
+        Certificate = certificate;
+        _strings = strings;
+
+        MatchesHost = !string.IsNullOrWhiteSpace(host) && AgentCertificateRules.MatchesHost(certificate, host);
+        IsCurrentlyValid = certificate.IsCurrentlyValid(now);
+        IsUsable = AgentCertificateRules.Evaluate(certificate, host, now).IsUsable;
+    }
+
+    public AgentCertificateSummary Certificate { get; }
+
+    public string Thumbprint => Certificate.Thumbprint;
+
+    public string DisplayName => Certificate.DisplayName;
+
+    public string Subject => Certificate.Subject;
+
+    public string Issuer => Certificate.Issuer;
+
+    public bool HasPrivateKey => Certificate.HasPrivateKey;
+
+    public bool SupportsServerAuthentication => Certificate.SupportsServerAuthentication;
+
+    public bool MatchesHost { get; }
+
+    public bool IsCurrentlyValid { get; }
+
+    /// <summary>Whether this one would be accepted, by the product rules rather than by this class.</summary>
+    public bool IsUsable { get; }
+
+    /// <summary>
+    /// Enough thumbprint to tell two certificates apart at a glance.
+    ///
+    /// Not decoration: the machine this was built for holds several certificates with the same common
+    /// name and the same issuer, differing only in validity dates and thumbprint. A list showing the
+    /// common name alone would ask an operator to choose between identical-looking rows. The full
+    /// value is on the row tooltip and in the detail pane.
+    /// </summary>
+    public string ShortThumbprint => Certificate.Thumbprint.Length <= 16
+        ? Certificate.Thumbprint
+        : $"{Certificate.Thumbprint[..8]}...{Certificate.Thumbprint[^8..]}";
+
+    public string IssuerLine =>
+        $"{_strings["Https.Certificate.Issuer"]}: {AgentCertificateSummaryFormatting.ShortName(Certificate.Issuer)}";
+
+    public string ValidityLine =>
+        $"{_strings["Https.Certificate.ValidUntil"]}: {Certificate.NotAfter:dd/MM/yyyy}";
+
+    public string ValidFromText => Certificate.NotBefore.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+
+    public string ValidUntilText => Certificate.NotAfter.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture);
+
+    public string PrivateKeyText => Present(HasPrivateKey);
+
+    public string ServerAuthenticationText => Present(SupportsServerAuthentication);
+
+    public string HostMatchText => MatchesHost
+        ? _strings["Https.Certificate.Match"]
+        : _strings["Https.Certificate.Mismatch"];
+
+    /// <summary>
+    /// The one line under the name: what is wrong, or that nothing is.
+    ///
+    /// One reason rather than every reason, in the order that decides what an operator does next. A
+    /// list of all the problems would make the rows different heights and bury the difference between
+    /// two similar certificates, which is the whole reason this list exists.
+    /// </summary>
+    public string SummaryText
+    {
+        get
+        {
+            if (IsUsable) return _strings["Https.Select.Usable"];
+
+            if (!HasPrivateKey) return _strings["Https.Select.NoPrivateKey"];
+            if (!IsCurrentlyValid) return _strings["Https.Select.Expired"];
+            if (!SupportsServerAuthentication) return _strings["Https.Select.NoServerAuth"];
+            if (!MatchesHost) return _strings["Https.Select.HostMismatch"];
+
+            return _strings["Https.Cert.Unusable"];
+        }
+    }
+
+    public string AccessibleText => $"{DisplayName}. {SummaryText}. {ShortThumbprint}";
+
+    private string Present(bool value) => value
+        ? _strings["Https.Certificate.Yes"]
+        : _strings["Https.Certificate.No"];
 }
 
 /// <summary>Formatting shared by the picker and the summary line.</summary>
