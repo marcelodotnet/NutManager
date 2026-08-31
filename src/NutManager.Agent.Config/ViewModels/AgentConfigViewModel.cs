@@ -165,6 +165,94 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         RelocalizeSurface();
     }
 
+    // ---------------------------------------------------------------- transient copy feedback
+
+    /// <summary>
+    /// Cancels the toast currently counting down, so a second copy restarts the wait instead of being
+    /// hidden early by the first one's timer.
+    /// </summary>
+    private CancellationTokenSource? _toastLifetime;
+
+    /// <summary>Long enough to read three words, short enough not to sit there.</summary>
+    private static readonly TimeSpan ToastDuration = TimeSpan.FromSeconds(1.8);
+
+    /// <summary>
+    /// A short-lived confirmation, shown over the window and never in its layout.
+    ///
+    /// Deliberately its own state rather than a reuse of the Apply banner: copying a value to the
+    /// clipboard is not a configuration result, and a screen that reported both through one surface
+    /// would let "Endpoint copied" overwrite the reason an Apply was refused.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isToastVisible;
+
+    [ObservableProperty]
+    private string? _toastMessage;
+
+    [ObservableProperty]
+    private AgentToastKind _toastKind;
+
+    /// <summary>
+    /// Reports what the clipboard actually did.
+    ///
+    /// Success is never assumed: the view passes the result of the write, so a clipboard the platform
+    /// refused says so instead of claiming a copy that did not happen.
+    /// </summary>
+    public void ReportEndpointCopy(bool succeeded) => ShowToast(
+        succeeded ? AgentToastKind.Success : AgentToastKind.Error,
+        Strings[succeeded ? "Toast.EndpointCopied" : "Toast.EndpointCopyFailed"]);
+
+    /// <summary>
+    /// One toast at a time, and the newest click owns the clock.
+    ///
+    /// Three quick copies produce one toast that stays for a full period after the last of them,
+    /// rather than three stacked boxes or a box that vanishes while the pointer is still on the
+    /// button. Cancelling the previous token is what makes the earlier timer harmless: it wakes,
+    /// sees it was cancelled, and hides nothing.
+    /// </summary>
+    private void ShowToast(AgentToastKind kind, string message)
+    {
+        var previous = _toastLifetime;
+        _toastLifetime = new CancellationTokenSource();
+        previous?.Cancel();
+        previous?.Dispose();
+
+        ToastKind = kind;
+        ToastMessage = message;
+        IsToastVisible = true;
+
+        HideToastAsync(_toastLifetime.Token);
+    }
+
+    /// <summary>
+    /// The countdown. Deliberately not awaited by the caller - a copy is finished the moment the
+    /// clipboard has the value, and nothing else should wait on a display timer.
+    /// </summary>
+    private async void HideToastAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(ToastDuration, _time, cancellationToken).ConfigureAwait(true);
+            IsToastVisible = false;
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a later copy, or the window closed. Either way the toast this timer was
+            // responsible for is no longer the one on screen, so it hides nothing.
+        }
+    }
+
+    /// <summary>
+    /// Called when the window closes. Without it a pending delay would resume against a view model
+    /// whose window is gone, and the cancellation source would never be disposed.
+    /// </summary>
+    public void CancelTransientFeedback()
+    {
+        _toastLifetime?.Cancel();
+        _toastLifetime?.Dispose();
+        _toastLifetime = null;
+    }
+
     // ---------------------------------------------------------------- theme
 
     /// <summary>

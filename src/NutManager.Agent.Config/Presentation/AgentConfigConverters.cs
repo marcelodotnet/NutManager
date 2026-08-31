@@ -97,6 +97,18 @@ public static class AgentConfigConverters
         new FuncValueConverter<AgentApplyResultKind, bool>(kind => kind is AgentApplyResultKind.Success);
 
     /// <summary>
+    /// The toast's glyph and colour. Only the glyph carries the outcome - the surface behind it stays
+    /// neutral, so a clipboard confirmation does not shout louder than the thing it confirms.
+    /// </summary>
+    public static readonly IValueConverter ToastIcon =
+        new FuncValueConverter<AgentToastKind, Geometry?>(kind => Resource<Geometry>(
+            kind is AgentToastKind.Success ? "AgentIconStateReady" : "AgentIconStateError"));
+
+    public static readonly IValueConverter ToastBrush =
+        new FuncValueConverter<AgentToastKind, IBrush?>(kind => Resource<IBrush>(
+            kind is AgentToastKind.Success ? "NutHealthyBrush" : "NutCriticalBrush"));
+
+    /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager
     /// theme files put it. A missing key returns null rather than throwing: an uncoloured glyph is a
     /// cosmetic fault, and taking the window down over one would not be.

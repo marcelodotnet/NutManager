@@ -263,6 +263,34 @@
       <Setter Property="RenderTransform" Value="scale(0.94)" />
     </Style>
 
+    <!--
+      The toast. An elevated surface with a subtle edge, coloured only by its glyph - a box filled
+      with saturated green for a clipboard write would shout louder than the thing it is confirming.
+
+      Hidden it is transparent and nudged down a few pixels; shown it settles into place. One
+      transition covers both directions at 0.18s, which is inside the range wanted for the entry and
+      for the exit, and CubicEaseOut is the easing the rest of the product moves with.
+    -->
+    <Style Selector="Border.agent-toast">
+      <Setter Property="Background" Value="{DynamicResource NutSurface3Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="12,7" />
+      <Setter Property="Opacity" Value="0" />
+      <Setter Property="RenderTransform" Value="translateY(6px)" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <DoubleTransition Property="Opacity" Duration="0:0:0.18" Easing="CubicEaseOut" />
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Border.agent-toast.visible">
+      <Setter Property="Opacity" Value="1" />
+      <Setter Property="RenderTransform" Value="none" />
+    </Style>
+
     <Style Selector="Border.agent-restart-pending">
       <Setter Property="Background" Value="{DynamicResource NutWarningSoftBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
@@ -1110,6 +1138,43 @@
           </Border>
           </ScrollViewer>
           </Panel>
+
+          <!--
+            ============================================== transient copy feedback
+
+            An overlay on the content region, not a row in it: it appears and disappears without a
+            single card moving, and it sits just above the action bar so it never covers Apply or
+            Cancel. IsHitTestVisible is off, so it cannot intercept a click on whatever is underneath
+            - a confirmation that stole a button press would be worse than no confirmation at all.
+
+            It is always present and animates on opacity rather than on IsVisible: a collapsed element
+            has nothing to fade, so binding visibility directly would make it appear and vanish
+            abruptly. Being in an overlay panel, an invisible toast still contributes nothing to the
+            layout of anything else.
+          -->
+          <Border Grid.Row="1"
+                  x:Name="CopyToast"
+                  Classes="agent-toast"
+                  Classes.visible="{Binding IsToastVisible}"
+                  IsHitTestVisible="False"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,4,6"
+                  AutomationProperties.LiveSetting="Polite"
+                  AutomationProperties.Name="{Binding ToastMessage}">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <PathIcon Width="16"
+                        Height="16"
+                        VerticalAlignment="Center"
+                        Data="{Binding ToastKind, Converter={x:Static converters:AgentConfigConverters.ToastIcon}}"
+                        Foreground="{Binding ToastKind, Converter={x:Static converters:AgentConfigConverters.ToastBrush}}" />
+              <TextBlock Classes="nut-body"
+                         FontSize="12"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource NutTextPrimaryBrush}"
+                         Text="{Binding ToastMessage}" />
+            </StackPanel>
+          </Border>
 
           <!-- ============================================== actions within the main card -->
           <Border Grid.Row="2"

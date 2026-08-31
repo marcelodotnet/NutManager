@@ -308,6 +308,19 @@ internal static class AgentCertificateSummaryFormatting
 }
 
 /// <summary>
+/// What a transient toast is reporting.
+///
+/// Two cases, because there are two: the clipboard took the value or it did not. A third would be a
+/// state nothing produces, and the point of this type is that a toast can only ever say one of the
+/// things the window actually knows.
+/// </summary>
+public enum AgentToastKind
+{
+    Success,
+    Error,
+}
+
+/// <summary>
 /// How the Apply banner reads.
 ///
 /// Separate from <c>ApplyDisabledReason</c> on purpose: that one explains why the button cannot be

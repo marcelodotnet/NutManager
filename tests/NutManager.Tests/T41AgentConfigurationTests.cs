@@ -909,6 +909,64 @@ public sealed class T41AgentConfigSurfaceTests
             window.Split("x:Key=\"AgentResourceItemTemplate\"", StringSplitOptions.None).Length - 1);
     }
 
+    /// <summary>
+    /// The copy confirmation is an overlay, not a row.
+    ///
+    /// It has to appear and disappear without moving a card, and it must never intercept a click on
+    /// what is underneath it - a confirmation that swallowed a button press would be worse than no
+    /// confirmation. It also stays out of the footer and the action bar, which carry persistent
+    /// operational information rather than transient feedback.
+    /// </summary>
+    [Fact]
+    public void TheCopyToastIsAnOverlayThatCannotStealAClick()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var toast = window.IndexOf("x:Name=\"CopyToast\"", StringComparison.Ordinal);
+        Assert.True(toast >= 0, "The window must carry the copy confirmation surface.");
+
+        var end = window.IndexOf("</Border>", toast, StringComparison.Ordinal);
+        var markup = window[toast..end];
+
+        Assert.Contains("IsHitTestVisible=\"False\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Classes.visible=\"{Binding IsToastVisible}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding ToastMessage}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("<PathIcon", markup, StringComparison.Ordinal);
+
+        // Announced without taking focus.
+        Assert.Contains("AutomationProperties.LiveSetting", markup, StringComparison.Ordinal);
+
+        // Positioned over the content region, above the buttons - never in the action bar or footer.
+        var actions = window.IndexOf("x:Name=\"ContextualActions\"", StringComparison.Ordinal);
+        var footer = window.IndexOf("x:Name=\"AgentFooter\"", StringComparison.Ordinal);
+        Assert.True(toast < actions, "The toast belongs above the action bar, not inside it.");
+        Assert.True(toast > footer, "The toast is not part of the operational footer.");
+
+        // Tokens, never a colour of its own.
+        Assert.DoesNotContain("Background=\"#", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Foreground=\"#", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// It fades rather than blinking, and it never loops: a confirmation that kept animating would be
+    /// a permanent distraction on a window somebody leaves open.
+    /// </summary>
+    [Fact]
+    public void TheCopyToastFadesAndDoesNotLoop()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var style = window.IndexOf("Border.agent-toast\"", StringComparison.Ordinal);
+        Assert.True(style >= 0, "The toast must have a style of its own.");
+
+        var markup = window[style..(style + 1600)];
+        Assert.Contains("<DoubleTransition Property=\"Opacity\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Easing=\"CubicEaseOut\"", markup, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"Opacity\" Value=\"0\" />", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("IterationCount", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Animation", markup, StringComparison.Ordinal);
+    }
+
     /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
     [Fact]
     public void TheLanguageSelectorSitsBesideDiagnostics()
@@ -2413,6 +2471,170 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Contains("AppId", context.ViewModel.ResourceStatus[0].TechnicalDetail);
     }
 
+    // ================================================================ copy feedback
+
+    [Fact]
+    public async Task NothingIsAnnouncedBeforeAnythingIsCopied()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.IsToastVisible);
+        Assert.Null(context.ViewModel.ToastMessage);
+    }
+
+    [Fact]
+    public async Task ASuccessfulCopyIsConfirmed()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+
+        Assert.True(context.ViewModel.IsToastVisible);
+        Assert.Equal(AgentToastKind.Success, context.ViewModel.ToastKind);
+        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+    }
+
+    /// <summary>
+    /// A clipboard the platform refused says so. Announcing a copy that did not happen is worse than
+    /// announcing nothing, because the operator then pastes whatever was there before.
+    /// </summary>
+    [Fact]
+    public async Task AFailedCopyIsNotReportedAsSuccess()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: false);
+
+        Assert.True(context.ViewModel.IsToastVisible);
+        Assert.Equal(AgentToastKind.Error, context.ViewModel.ToastKind);
+        Assert.Equal("The Endpoint could not be copied.", context.ViewModel.ToastMessage);
+    }
+
+    [Fact]
+    public async Task TheCopyConfirmationIsLocalised()
+    {
+        var context = CreateContext(language: UiLanguagePreference.PtBr);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+        Assert.Equal("Endpoint copiado", context.ViewModel.ToastMessage);
+
+        context.ViewModel.ReportEndpointCopy(succeeded: false);
+        Assert.Equal("Não foi possível copiar o Endpoint.", context.ViewModel.ToastMessage);
+    }
+
+    /// <summary>
+    /// Copying is a clipboard operation and nothing else. It must not make the configuration dirty,
+    /// enable Apply, change the endpoint, write the file or reach the service.
+    /// </summary>
+    [Fact]
+    public async Task CopyingTouchesNothingBelongingToTheAgent()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        var dirtyBefore = context.ViewModel.IsDirty;
+        var canApplyBefore = context.ViewModel.CanApply;
+        var endpointBefore = context.ViewModel.HttpsEndpoint;
+        var hostBefore = context.ViewModel.HttpsHost;
+        var eventsBefore = context.Events.Count;
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+
+        Assert.Equal(dirtyBefore, context.ViewModel.IsDirty);
+        Assert.Equal(canApplyBefore, context.ViewModel.CanApply);
+        Assert.Equal(endpointBefore, context.ViewModel.HttpsEndpoint);
+        Assert.Equal(hostBefore, context.ViewModel.HttpsHost);
+        Assert.Empty(context.Store.Writes);
+        Assert.Equal(eventsBefore, context.Events.Count);
+        Assert.Equal(0, context.Resources.ApplyCalls);
+    }
+
+    /// <summary>
+    /// The copy confirmation is its own surface. Sharing the Apply banner would let "Endpoint copied"
+    /// overwrite the reason an Apply was refused.
+    /// </summary>
+    [Fact]
+    public async Task TheCopyConfirmationDoesNotDisturbTheApplyBanner()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        var applyMessage = context.ViewModel.ApplyMessage;
+        var applyKind = context.ViewModel.ApplyResultKind;
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+
+        Assert.Equal(applyMessage, context.ViewModel.ApplyMessage);
+        Assert.Equal(applyKind, context.ViewModel.ApplyResultKind);
+        Assert.NotEqual(context.ViewModel.ApplyMessage, context.ViewModel.ToastMessage);
+    }
+
+    /// <summary>
+    /// Three quick copies leave one toast, and the newest one owns the clock: the timer the first
+    /// copy started must not hide the toast the third copy put up.
+    /// </summary>
+    [Fact]
+    public async Task RepeatedCopiesKeepOneToastAndTheNewestClockWins()
+    {
+        var clock = new ManualClock();
+        var context = CreateContext(clock: clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+
+        Assert.True(context.ViewModel.IsToastVisible);
+        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+
+        // The first copy's timer comes due. It was superseded, so it must hide nothing.
+        clock.Fire(0);
+        await Task.Delay(60);
+
+        Assert.True(context.ViewModel.IsToastVisible);
+    }
+
+    /// <summary>The live timer does hide it, so the toast goes away on its own.</summary>
+    [Fact]
+    public async Task TheToastHidesItselfWhenItsOwnTimerComesDue()
+    {
+        var clock = new ManualClock();
+        var context = CreateContext(clock: clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+        Assert.True(context.ViewModel.IsToastVisible);
+
+        clock.Fire(clock.TimerCount - 1);
+        await Task.Delay(60);
+
+        Assert.False(context.ViewModel.IsToastVisible);
+    }
+
+    /// <summary>Closing the window while a toast is counting down must not leave a timer behind.</summary>
+    [Fact]
+    public async Task ClosingWhileAToastIsPendingCancelsItCleanly()
+    {
+        var clock = new ManualClock();
+        var context = CreateContext(clock: clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.ReportEndpointCopy(succeeded: true);
+        context.ViewModel.CancelTransientFeedback();
+
+        clock.Fire(0);
+        await Task.Delay(60);
+
+        // Cancelling twice is what a close after a cancel would do, and it must not throw.
+        context.ViewModel.CancelTransientFeedback();
+    }
+
     // ================================================================ theme
 
     /// <summary>
@@ -3128,7 +3350,8 @@ public sealed class T41AgentConfigViewModelTests
         bool groupExists = false,
         FakePreferences? preferences = null,
         UiLanguagePreference? language = UiLanguagePreference.EnUs,
-        bool withCertificate = true)
+        bool withCertificate = true,
+        TimeProvider? clock = null)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
@@ -3150,6 +3373,7 @@ public sealed class T41AgentConfigViewModelTests
         var uiPreferences = preferences ?? new FakePreferences();
         var viewModel = new AgentConfigViewModel(
             store, groups, service, resources, certificates, inventory, language,
+            timeProvider: clock,
             certificateImporter: importer,
             preferences: uiPreferences);
 
@@ -3322,6 +3546,50 @@ public sealed class T41AgentConfigViewModelTests
             if (Failure is not null) throw Failure;
             if (Result.Certificate is { } certificate) certificates.Add(certificate);
             return Result;
+        }
+    }
+
+    /// <summary>
+    /// A clock whose timers only fire when a test says so.
+    ///
+    /// Hand-written rather than pulled from a package: one feature needs a controllable delay, and a
+    /// new dependency for fifteen lines would be the worse trade. Timers are kept in creation order
+    /// so a test can fire the stale one and prove it does nothing.
+    /// </summary>
+    private sealed class ManualClock : TimeProvider
+    {
+        private readonly List<ManualTimer> _timers = [];
+
+        public int TimerCount => _timers.Count;
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new ManualTimer(callback, state);
+            _timers.Add(timer);
+            return timer;
+        }
+
+        /// <summary>Fires one timer by creation order, whether or not it still matters.</summary>
+        public void Fire(int index) => _timers[index].Fire();
+
+        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
+        {
+            private bool _disposed;
+
+            public void Fire()
+            {
+                if (!_disposed) callback(state);
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) => true;
+
+            public void Dispose() => _disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                _disposed = true;
+                return ValueTask.CompletedTask;
+            }
         }
     }
 

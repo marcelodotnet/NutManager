@@ -29,6 +29,10 @@ public sealed partial class MainWindow : Window
         ActualThemeVariantChanged += (_, _) => PublishEffectiveTheme();
 
         DataContextChanged += OnDataContextChanged;
+
+        // A toast counts down on a task. Closing the window while one is in flight would leave that
+        // delay to resume against a view model whose window is gone.
+        Closed += (_, _) => (DataContext as AgentConfigViewModel)?.CancelTransientFeedback();
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
@@ -76,18 +80,44 @@ public sealed partial class MainWindow : Window
         if (DataContext is AgentConfigViewModel viewModel) viewModel.SelectedLanguage = language;
     }
 
+    /// <summary>
+    /// Copies the value the button carries, and reports what actually happened.
+    ///
+    /// The result is passed to the view model rather than assumed: a clipboard the platform refuses -
+    /// locked by another process, or absent entirely on a session with no top level - has to say so.
+    /// Announcing a copy that did not happen is worse than announcing nothing, because the operator
+    /// then pastes whatever was there before.
+    /// </summary>
     private async void OnCopyValueClicked(object? sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: string value } || string.IsNullOrWhiteSpace(value)) return;
 
+        var viewModel = DataContext as AgentConfigViewModel;
         var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard is null) return;
 
-        var item = new DataTransferItem();
-        item.Set(DataFormat.Text, value);
-        var data = new DataTransfer();
-        data.Add(item);
-        await clipboard.SetDataAsync(data);
+        if (clipboard is null)
+        {
+            viewModel?.ReportEndpointCopy(succeeded: false);
+            return;
+        }
+
+        try
+        {
+            var item = new DataTransferItem();
+            item.Set(DataFormat.Text, value);
+            var data = new DataTransfer();
+            data.Add(item);
+            await clipboard.SetDataAsync(data);
+
+            viewModel?.ReportEndpointCopy(succeeded: true);
+        }
+        catch (Exception)
+        {
+            // The clipboard is shared with every other process on the desktop and can be held by one
+            // of them. That is a transient failure of a convenience, reported in the same transient
+            // way the success is - never a dialog, and never a stack trace on screen.
+            viewModel?.ReportEndpointCopy(succeeded: false);
+        }
     }
 
     private async void OnImportCertificateClicked(object? sender, RoutedEventArgs e)
