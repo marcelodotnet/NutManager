@@ -57,6 +57,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>The endpoint whose resources were last described, so cleanup targets what exists.</summary>
     private AgentHttpsBinding? _appliedBinding;
 
+    /// <summary>
+    /// Whether the resource snapshot came from actually asking Windows.
+    ///
+    /// It does not, while the draft is incomplete: there is no endpoint to query for. Without this
+    /// flag the status strip reported every resource as Absent in that case, which reads as "we
+    /// looked and there is nothing there" - and that is how a screen came to say the SSL binding was
+    /// not configured while Apply, which does query, found another application already bound to the
+    /// port. Never-queried and queried-and-absent are different facts and now say different things.
+    /// </summary>
+    private bool _resourceStateWasQueried;
+
     public AgentConfigViewModel(
         IAgentConfigurationStore store,
         IAgentOperatorsGroupAdministration groups,
@@ -248,8 +259,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // Transient results — "Configuration saved.", a membership outcome, a failed import — were
         // written in the previous language and cannot be re-derived. Clearing them is honest;
         // leaving them would put two languages on screen at once.
-        ApplyMessage = null;
-        ApplyFailed = false;
+        ClearApplyResult();
         OperatorsMessage = null;
         ServiceMessage = null;
         CertificateImportMessage = null;
@@ -456,18 +466,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// had to find room inside a card sized for one line. A validation message is for a certificate
     /// that was chosen and turned out to be unusable - that is the case worth the space.
     ///
-    /// A working certificate does not need the row either. Confirming that nothing is wrong costs a
-    /// line of a card that has none spare, and the summary above already shows which certificate is
-    /// in use - the row is for the cases where that is not enough.
+    /// A working certificate keeps the row too, in green. Silence would be ambiguous at the exact
+    /// moment an operator wants confirmation: a chosen certificate with nothing said about it reads
+    /// as one that has not been checked yet, and the whole point of this line is to say that the
+    /// certificate and the host agree before anybody presses Apply.
     ///
-    /// An import result is the exception to both: it reports an attempt rather than a state, and it
-    /// is worth showing whether or not it ended in a usable certificate.
+    /// An import result is the exception to the "certificate selected" condition: it reports an
+    /// attempt rather than a state, and it is worth showing whether or not one ended up selected.
     /// </summary>
     public bool ShowCertificateFeedback =>
         HttpsEnabled &&
         !string.IsNullOrWhiteSpace(CertificateFeedbackMessage) &&
         (CertificateImportMessage is not null ||
-            (HasSelectedCertificate && !HttpsIsValid && !HttpsHostHasError && !HttpsPortHasError));
+            (HasSelectedCertificate && !HttpsHostHasError && !HttpsPortHasError));
 
     /// <summary>
     /// The thumbprint block collapses when there is nothing to show.
@@ -777,6 +788,20 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         HttpsIsValid = verdict.IsUsable;
         NotifyCertificateFeedbackChanged();
         RefreshApplyState();
+
+        // The status strip reports on an endpoint, so it has to be re-read when the endpoint appears
+        // or changes. It was only read when the window opened and after an Apply, which is how the
+        // strip came to say the SSL binding was absent on a machine where Apply then found another
+        // application already bound to the port: the strip was describing a draft that had since
+        // become something else.
+        //
+        // Guarded on the binding actually changing, so this is one query per distinct endpoint and
+        // not one per keystroke - an incomplete host does not reach here at all, because it does not
+        // pass validation.
+        if (!HttpsIsValid || CertificateThumbprint is not { } thumbprint) return;
+
+        var candidate = new AgentHttpsBinding(HttpsHost.Trim(), HttpsPort, thumbprint);
+        if (!_resourceStateWasQueried || candidate != _appliedBinding) RefreshResourceState();
     }
 
     private string? DescribeHostProblem()
@@ -1191,8 +1216,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private async Task ResetHttpsCoreAsync(CancellationToken cancellationToken)
     {
         IsBusy = true;
-        ApplyFailed = false;
-        ApplyMessage = null;
+        ClearApplyResult();
         RefreshCommandStates();
 
         try
@@ -1210,9 +1234,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                     // Some resources may already be gone. Saying so, and naming what was removed
                     // before the failure, beats writing a configuration that claims HTTPS was reset on
                     // a machine that still has a live binding on it.
-                    ApplyFailed = true;
-
-                    var failure = new List<string> { Strings["Https.Reset.Failed"] };
+                    var failure = new List<string>();
                     if (!string.IsNullOrWhiteSpace(removed.Failure)) failure.Add(removed.Failure);
                     if (removed.Applied.Count > 0)
                     {
@@ -1220,7 +1242,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                             "Https.Reset.PartiallyRemoved", string.Join(", ", removed.Applied)));
                     }
 
-                    ApplyMessage = string.Join(" ", failure);
+                    SetApplyResult(
+                        AgentApplyResultKind.Error,
+                        Strings["Https.Reset.Failed"],
+                        failure.Count > 0 ? string.Join(" ", failure) : null);
                     RefreshResourceState();
                     return;
                 }
@@ -1252,8 +1277,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 // The resources are gone and the file still names them. The screen keeps the reset
                 // state rather than claiming an endpoint whose binding no longer exists, and the
                 // operator is told that the file is the part that failed.
-                ApplyFailed = true;
-                ApplyMessage = write.Failure;
+                SetApplyResult(
+                    AgentApplyResultKind.Error, Strings["Apply.Result.ConfigurationFailed"], write.Failure);
                 RefreshDirty();
                 RefreshResourceState();
                 return;
@@ -1271,12 +1296,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             if (_serviceState.IsRunning)
             {
                 RestartRequired = true;
-                ApplyMessage = string.Join(" ", notes);
+                SetApplyResult(AgentApplyResultKind.Success, notes[0], BuildDetail(notes));
                 PendingConfirmation = AgentConfigConfirmation.RestartService;
                 return;
             }
 
-            ApplyMessage = string.Join(" ", notes);
+            SetApplyResult(AgentApplyResultKind.Success, notes[0], BuildDetail(notes));
         }
         finally
         {
@@ -1340,6 +1365,67 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _applyFailed;
+
+    /// <summary>
+    /// What the adapter actually said, kept off the banner and put on its tooltip.
+    ///
+    /// The infrastructure describes a refusal precisely and in English - "An SSL certificate is
+    /// already bound to port 5199 by another application..." - and that sentence appeared verbatim in
+    /// the Portuguese window, in the strip beside the buttons, where it ran underneath them. The
+    /// short line above it is localised and says the same thing; this keeps the original for whoever
+    /// needs the detail.
+    /// </summary>
+    [ObservableProperty]
+    private string? _applyResultDetail;
+
+    /// <summary>How the banner should read: nothing, a success, a caution, or a refusal.</summary>
+    [ObservableProperty]
+    private AgentApplyResultKind _applyResultKind;
+
+    public bool HasApplyResult => ApplyResultKind is not AgentApplyResultKind.None;
+
+    partial void OnApplyResultKindChanged(AgentApplyResultKind value) =>
+        OnPropertyChanged(nameof(HasApplyResult));
+
+    /// <summary>
+    /// Turns a failed resource operation into one localised line.
+    ///
+    /// The mapping reads the ownership this window already queried rather than matching on the
+    /// adapter's English: a foreign SSL binding and a foreign reservation are the two refusals an
+    /// operator actually meets, and both are already classified. Anything else gets the honest
+    /// generic line - inventing a cause from an unrecognised message would be worse than admitting
+    /// the operation failed and handing over the detail.
+    /// </summary>
+    private void SetHttpsFailure(string? detail)
+    {
+        ApplyResultDetail = detail;
+
+        var message = _resourceState.SslBinding.Ownership is AgentResourceOwnership.ForeignOwner
+            ? Strings.Format("Apply.Result.SslBindingConflict", HttpsPort)
+            : _resourceState.UrlReservation.Ownership is AgentResourceOwnership.ForeignOwner
+                ? Strings["Apply.Result.UrlReservationConflict"]
+                : Strings["Apply.Result.HttpsFailed"];
+
+        ApplyFailed = true;
+        ApplyResultKind = AgentApplyResultKind.Error;
+        ApplyMessage = message;
+    }
+
+    private void SetApplyResult(AgentApplyResultKind kind, string message, string? detail = null)
+    {
+        ApplyFailed = kind is AgentApplyResultKind.Error;
+        ApplyResultKind = kind;
+        ApplyMessage = message;
+        ApplyResultDetail = detail;
+    }
+
+    private void ClearApplyResult()
+    {
+        ApplyFailed = false;
+        ApplyResultKind = AgentApplyResultKind.None;
+        ApplyMessage = null;
+        ApplyResultDetail = null;
+    }
 
     public bool CanApply => IsDirty && !IsBusy && (!HttpsEnabled || HttpsIsValid);
 
@@ -1499,8 +1585,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private async Task ApplyCoreAsync(AgentHttpsCleanupRequest cleanup, CancellationToken cancellationToken)
     {
         IsBusy = true;
-        ApplyFailed = false;
-        ApplyMessage = null;
+        ClearApplyResult();
         RefreshCommandStates();
 
         try
@@ -1511,8 +1596,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             {
                 if (!HttpsIsValid)
                 {
-                    ApplyFailed = true;
-                    ApplyMessage = HttpsValidationMessage;
+                    SetApplyResult(
+                        AgentApplyResultKind.Error,
+                        HttpsValidationMessage ?? Strings["Apply.Result.HttpsFailed"]);
                     return;
                 }
 
@@ -1521,8 +1607,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
                 if (!applied.Succeeded)
                 {
-                    ApplyFailed = true;
-                    ApplyMessage = applied.Failure;
+                    SetHttpsFailure(applied.Failure);
                     return;
                 }
 
@@ -1540,8 +1625,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
             if (!write.Succeeded)
             {
-                ApplyFailed = true;
-                ApplyMessage = write.Failure;
+                SetApplyResult(
+                    AgentApplyResultKind.Error, Strings["Apply.Result.ConfigurationFailed"], write.Failure);
                 return;
             }
 
@@ -1557,14 +1642,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             if (_serviceState.IsRunning)
             {
                 RestartRequired = true;
-                ApplyMessage = string.Join(" ", notes);
+                SetApplyResult(AgentApplyResultKind.Success, notes[0], BuildDetail(notes));
                 PendingConfirmation = AgentConfigConfirmation.RestartService;
                 return;
             }
 
             if (_serviceState.IsInstalled) notes.Add(Strings["Service.StoppedAfterApply"]);
 
-            ApplyMessage = string.Join(" ", notes);
+            SetApplyResult(AgentApplyResultKind.Success, notes[0], BuildDetail(notes));
         }
         finally
         {
@@ -1573,19 +1658,28 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// The follow-up notes, as one line for the tooltip.
+    ///
+    /// The banner shows the headline - saved, or reset - because that is what an operator needs at a
+    /// glance in the strip above the buttons. What the machine refused to touch, and what happens
+    /// next, is the part they read when it matters.
+    /// </summary>
+    private static string? BuildDetail(IReadOnlyList<string> notes) =>
+        notes.Count > 1 ? string.Join(" ", notes.Skip(1)) : null;
+
     /// <summary>Restores every field to the last saved document. Nothing on the machine is touched.</summary>
     [RelayCommand]
     private void Cancel()
     {
         if (!IsDirty)
         {
-            ApplyMessage = Strings["Message.NoChanges"];
+            SetApplyResult(AgentApplyResultKind.Info, Strings["Message.NoChanges"]);
             return;
         }
 
         LoadDocument(_confirmed);
-        ApplyFailed = false;
-        ApplyMessage = Strings["Message.Discarded"];
+        SetApplyResult(AgentApplyResultKind.Info, Strings["Message.Discarded"]);
     }
 
     private AgentTransportConfigurationDocument BuildDocument() => new()
@@ -1645,8 +1739,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         var inner = failure?.GetBaseException();
         if (inner is null) return;
 
-        ApplyFailed = true;
-        ApplyMessage = $"{Strings["Message.RefreshFailed"]} ({inner.GetType().Name}: {inner.Message})";
+        SetApplyResult(
+            AgentApplyResultKind.Error,
+            Strings["Message.RefreshFailed"],
+            $"{inner.GetType().Name}: {inner.Message}");
     }
 
     /// <summary>Reads everything the window shows. Safe to call again at any time: nothing here writes.</summary>
@@ -1761,14 +1857,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             var binding = new AgentHttpsBinding(HttpsHost.Trim(), HttpsPort, thumbprint);
             _appliedBinding = binding;
             _resourceState = _resources.Describe(binding);
+            _resourceStateWasQueried = true;
         }
         else if (_appliedBinding is { } previous)
         {
             _resourceState = _resources.Describe(previous);
+            _resourceStateWasQueried = true;
         }
         else
         {
             _resourceState = AgentHttpsResourceSnapshot.None;
+            _resourceStateWasQueried = false;
         }
 
         RebuildResourceStatus();
@@ -1794,6 +1893,20 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             return;
         }
 
+        if (!_resourceStateWasQueried)
+        {
+            // HTTPS is on but the draft does not yet name an endpoint, so nothing has been asked of
+            // Windows. Saying "not configured" here would be a claim about the machine this window
+            // has not made - and on a server that already had a foreign binding on the port, the
+            // claim was wrong.
+            ResourceStatus.Add(UncheckedResource(Strings["Resources.SslBinding"], "NutIconTls"));
+            ResourceStatus.Add(UncheckedResource(Strings["Resources.UrlReservation"], "NutIconRemote"));
+            ResourceStatus.Add(UncheckedResource(
+                Strings.Format("Resources.Firewall.Port", HttpsPort), "NutIconShield"));
+            ResourceStatus.Add(UncheckedResource(Strings["Resources.Listener"], "NutIconConnection"));
+            return;
+        }
+
         ResourceStatus.Add(Describe(
             Strings["Resources.SslBinding"], _resourceState.SslBinding, "NutIconTls", AgentResourceGender.Masculine));
         ResourceStatus.Add(Describe(
@@ -1806,6 +1919,21 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             firewall, _resourceState.FirewallRule, "NutIconShield", AgentResourceGender.Masculine, isRule: true));
         ResourceStatus.Add(DescribeListener());
     }
+
+    /// <summary>
+    /// Present, but reporting that nothing has been asked rather than that nothing is there.
+    ///
+    /// NotConfigured rather than Error: an incomplete draft is a normal state on the way to a
+    /// complete one, and the tooltip says what would make the query happen.
+    /// </summary>
+    private AgentStatusItemViewModel UncheckedResource(string label, string iconKey) =>
+        AgentStatusItemViewModel.From(
+            Strings,
+            label,
+            AgentDiagnosticState.NotConfigured,
+            Strings["Resources.State.NotChecked"],
+            iconKey,
+            Strings["Resources.NotChecked.Detail"]);
 
     private AgentStatusItemViewModel DisabledResource(string label, string iconKey) =>
         AgentStatusItemViewModel.From(

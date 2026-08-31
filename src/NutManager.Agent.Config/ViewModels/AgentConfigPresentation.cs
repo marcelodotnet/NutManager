@@ -308,6 +308,22 @@ internal static class AgentCertificateSummaryFormatting
 }
 
 /// <summary>
+/// How the Apply banner reads.
+///
+/// Separate from <c>ApplyDisabledReason</c> on purpose: that one explains why the button cannot be
+/// pressed, this one reports what happened when it was. Merging them would mean a screen that
+/// cannot tell "you have not finished" apart from "it did not work".
+/// </summary>
+public enum AgentApplyResultKind
+{
+    None,
+    Success,
+    Warning,
+    Error,
+    Info,
+}
+
+/// <summary>
 /// Which confirmation the window is waiting on, if any.
 ///
 /// The same shape the desktop application uses for service control: a pending value on the view model,

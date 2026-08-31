@@ -2,6 +2,8 @@ using Avalonia;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
 
+using NutManager.Agent.Config.ViewModels;
+
 namespace NutManager.Agent.Config.Presentation;
 
 /// <summary>
@@ -66,6 +68,33 @@ public static class AgentConfigConverters
     public static readonly IValueConverter CandidateBrush =
         new FuncValueConverter<bool, IBrush?>(usable =>
             Resource<IBrush>(usable ? "NutHealthyBrush" : "NutWarningBrush"));
+
+    /// <summary>
+    /// The apply banner's glyph and colour, from the kind of result rather than from a bare boolean.
+    ///
+    /// Four states rather than two, because "saved" and "nothing to save" are not the same news and
+    /// neither is a failure. The brushes are the product's semantic ones.
+    /// </summary>
+    public static readonly IValueConverter ApplyResultIcon =
+        new FuncValueConverter<AgentApplyResultKind, Geometry?>(kind => Resource<Geometry>(kind switch
+        {
+            AgentApplyResultKind.Success => "AgentIconStateReady",
+            AgentApplyResultKind.Warning => "AgentIconStateAttention",
+            AgentApplyResultKind.Error => "AgentIconStateError",
+            _ => "NutIconInfo",
+        }));
+
+    public static readonly IValueConverter ApplyResultBrush =
+        new FuncValueConverter<AgentApplyResultKind, IBrush?>(kind => Resource<IBrush>(kind switch
+        {
+            AgentApplyResultKind.Success => "NutHealthyBrush",
+            AgentApplyResultKind.Warning => "NutWarningBrush",
+            AgentApplyResultKind.Error => "NutCriticalBrush",
+            _ => "NutTextSecondaryBrush",
+        }));
+
+    public static readonly IValueConverter IsSuccessResult =
+        new FuncValueConverter<AgentApplyResultKind, bool>(kind => kind is AgentApplyResultKind.Success);
 
     /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager

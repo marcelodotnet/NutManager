@@ -37,19 +37,19 @@
           The resource glyph still identifies the row and the state glyph still judges it: a padlock
           says which resource, an amber triangle says how it is. Neither replaces the other.
         -->
-        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="6" RowSpacing="3">
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="7" RowSpacing="5">
           <PathIcon Grid.Row="0"
                     Grid.Column="0"
                     Data="{Binding IconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                    Width="18"
-                    Height="18"
+                    Width="20"
+                    Height="20"
                     VerticalAlignment="Center"
                     Foreground="{DynamicResource NutTextSecondaryBrush}" />
           <TextBlock Grid.Row="0"
                      Grid.Column="1"
                      Classes="nut-body"
                      FontWeight="SemiBold"
-                     FontSize="11.5"
+                     FontSize="13"
                      VerticalAlignment="Center"
                      Foreground="{DynamicResource NutTextPrimaryBrush}"
                      Text="{Binding Label}"
@@ -58,14 +58,15 @@
                      TextTrimming="CharacterEllipsis" />
           <PathIcon Grid.Row="1"
                     Grid.Column="0"
-                    Width="17"
-                    Height="17"
+                    Width="19"
+                    Height="19"
                     VerticalAlignment="Center"
                     Data="{Binding StateIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
                     Foreground="{Binding StateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
           <TextBlock Grid.Row="1"
                      Grid.Column="1"
                      Classes="nut-metadata"
+                     FontSize="12"
                      VerticalAlignment="Center"
                      Text="{Binding Detail}"
                      IsVisible="{Binding HasDetail}"
@@ -122,7 +123,7 @@
       <Setter Property="Padding" Value="10" />
     </Style>
     <Style Selector="Border.agent-transport-row">
-      <Setter Property="Padding" Value="2,7" />
+      <Setter Property="Padding" Value="2,6" />
       <Setter Property="CornerRadius" Value="10" />
       <Setter Property="Background" Value="Transparent" />
     </Style>
@@ -161,7 +162,7 @@
     </Style>
     <Style Selector="Border.agent-static-field">
       <Setter Property="MinHeight" Value="30" />
-      <Setter Property="Padding" Value="9,5" />
+      <Setter Property="Padding" Value="9,3" />
       <Setter Property="CornerRadius" Value="8" />
       <Setter Property="Background" Value="{DynamicResource NutSurface2Brush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
@@ -229,6 +230,33 @@
       <Setter Property="Padding" Value="9,7" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
+    <!--
+      The eye answers the pointer, using the desktop application's own icon motion: the same
+      RenderTransformOrigin, the same CubicEaseOut, the same 1.14 hover scale its metric-card glyphs
+      use. Only the press is new, because the desktop has no icon that is pressed - and it rides the
+      same transition, so it introduces no timing of its own.
+
+      The transform is on the glyph, never on the button, so the control keeps its measured size and
+      nothing around it moves.
+    -->
+    <Style Selector="PathIcon.agent-eye-glyph">
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.18" Easing="CubicEaseOut" />
+          <BrushTransition Property="Foreground" Duration="0:0:0.2" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-eye-button:pointerover PathIcon.agent-eye-glyph">
+      <Setter Property="RenderTransform" Value="scale(1.14)" />
+      <Setter Property="Foreground" Value="{DynamicResource NutAccentBrightBrush}" />
+    </Style>
+    <Style Selector="Button.agent-eye-button:pressed PathIcon.agent-eye-glyph">
+      <Setter Property="RenderTransform" Value="scale(0.94)" />
+    </Style>
+
     <Style Selector="Border.agent-restart-pending">
       <Setter Property="Background" Value="{DynamicResource NutWarningSoftBrush}" />
       <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
@@ -311,8 +339,8 @@
       <Setter Property="Foreground" Value="{DynamicResource NutWarningBrush}" />
     </Style>
     <Style Selector="Border.agent-resource-item">
-      <Setter Property="Padding" Value="7,4" />
-      <Setter Property="MinHeight" Value="42" />
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="MinHeight" Value="48" />
     </Style>
     <Style Selector="TextBox.agent-validation-input.invalid">
       <Setter Property="BorderBrush" Value="{DynamicResource NutCriticalBrush}" />
@@ -354,15 +382,37 @@
                    Text="{Binding ServiceMessage}"
                    IsVisible="{Binding ServiceMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    TextTrimming="CharacterEllipsis" />
-        <Button Grid.Column="3"
-                Classes="nut-ghost"
-                Padding="6,2"
-                Command="{Binding ToggleDiagnosticsCommand}">
-          <StackPanel Orientation="Horizontal" Spacing="7">
-            <PathIcon Data="{DynamicResource NutIconLogs}" Width="13" Height="13" />
-            <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Action.ViewLogs]}" />
-          </StackPanel>
-        </Button>
+        <!--
+          The result of an Apply lives here, in the footer, rather than anywhere inside the main card.
+
+          It began beside the buttons, where a long refusal was drawn underneath them. A row of its own
+          above the action bar fixed that but took its height out of the cards, which pushed the HTTPS
+          card's validation message past its own edge - one overflow traded for another. The footer is
+          the one strip whose height nothing else competes for, so the message can appear and disappear
+          without a single control above it moving.
+
+          It replaced the logs button, which only led where the Diagnostics button already leads.
+        -->
+        <Grid Grid.Column="3"
+              x:Name="ApplyResultBanner"
+              ColumnDefinitions="Auto,Auto"
+              ColumnSpacing="7"
+              IsVisible="{Binding HasApplyResult}"
+              ToolTip.Tip="{Binding ApplyResultDetail}">
+          <PathIcon Grid.Column="0"
+                    Width="14"
+                    Height="14"
+                    VerticalAlignment="Center"
+                    Data="{Binding ApplyResultKind, Converter={x:Static converters:AgentConfigConverters.ApplyResultIcon}}"
+                    Foreground="{Binding ApplyResultKind, Converter={x:Static converters:AgentConfigConverters.ApplyResultBrush}}" />
+          <TextBlock Grid.Column="1"
+                     Classes="nut-metadata"
+                     VerticalAlignment="Center"
+                     MaxWidth="420"
+                     TextTrimming="CharacterEllipsis"
+                     Text="{Binding ApplyMessage}"
+                     Foreground="{Binding ApplyResultKind, Converter={x:Static converters:AgentConfigConverters.ApplyResultBrush}}" />
+        </Grid>
       </Grid>
     </Border>
 
@@ -609,6 +659,7 @@
                     Grid.Column="1"
                     x:Name="HttpsEditorCard"
                     Classes="agent-shell-card"
+                    ClipToBounds="True"
                     VerticalAlignment="Stretch">
               <!--
                 A DockPanel, not a stack.
@@ -655,6 +706,37 @@
                                  Text="{Binding Strings[Https.Reset]}" />
                     </StackPanel>
                   </Button>
+                </Grid>
+
+                <!--
+                  The validation row is docked to the bottom of the card, not left at the end of the
+                  field stack.
+
+                  Docked, it is measured and given its height before the fields take what is left, so
+                  a two-line message about a host mismatch cannot push itself past the card and into
+                  the status card below. Inside the stack it was simply the last thing in a column
+                  that had already run out of room. It still collapses to nothing when there is no
+                  problem to report.
+                -->
+                <Grid DockPanel.Dock="Bottom"
+                      x:Name="CertificateFeedbackRow"
+                      ColumnDefinitions="Auto,*"
+                      ColumnSpacing="8"
+                      Margin="0,6,0,0"
+                      IsVisible="{Binding ShowCertificateFeedback}">
+                  <PathIcon Grid.Column="0"
+                            Width="16"
+                            Height="16"
+                            VerticalAlignment="Top"
+                            Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
+                            Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
+                  <TextBlock Grid.Column="1"
+                             Classes="hint"
+                             Text="{Binding CertificateFeedbackMessage}"
+                             ToolTip.Tip="{Binding CertificateFeedbackDetail}"
+                             TextWrapping="Wrap"
+                             MaxLines="2"
+                             TextTrimming="CharacterEllipsis" />
                 </Grid>
 
                 <StackPanel x:Name="HttpsEditorFields"
@@ -823,12 +905,16 @@
                           <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Https.Import]}" />
                         </StackPanel>
                       </Button>
-                      <Button Classes="nut-ghost"
+                      <Button x:Name="ViewCertificateButton"
+                              Classes="nut-ghost agent-eye-button"
                               Command="{Binding ToggleCertificateDetailsCommand}"
                               IsEnabled="{Binding SelectedCertificate, Converter={x:Static ObjectConverters.IsNotNull}}"
-                              ToolTip.Tip="{Binding Strings[Https.Certificate.View]}"
-                              AutomationProperties.Name="{Binding Strings[Https.Certificate.View]}">
-                        <PathIcon Data="{DynamicResource AgentIconEye}" Width="17" Height="17" />
+                              ToolTip.Tip="{Binding Strings[Https.Certificate.ViewTooltip]}"
+                              AutomationProperties.Name="{Binding Strings[Https.Certificate.ViewTooltip]}">
+                        <PathIcon Classes="agent-eye-glyph"
+                                  Data="{DynamicResource AgentIconEye}"
+                                  Width="17"
+                                  Height="17" />
                       </Button>
                       </StackPanel>
                     </Grid>
@@ -861,23 +947,6 @@
                                TextTrimming="CharacterEllipsis"
                                AutomationProperties.Name="{Binding Strings[Https.Thumbprint]}" />
                   </Grid>
-                  <Grid x:Name="CertificateFeedbackRow"
-                        ColumnDefinitions="Auto,*"
-                        ColumnSpacing="8"
-                        Margin="0,3,0,0"
-                        IsVisible="{Binding ShowCertificateFeedback}">
-                    <PathIcon Grid.Column="0"
-                              Width="18"
-                              Height="18"
-                              VerticalAlignment="Top"
-                              Data="{Binding CertificateFeedbackIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                              Foreground="{Binding CertificateFeedbackStateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
-                    <TextBlock Grid.Column="1"
-                               Classes="hint"
-                               Text="{Binding CertificateFeedbackMessage}"
-                               ToolTip.Tip="{Binding CertificateFeedbackDetail}"
-                               TextWrapping="Wrap" />
-                  </Grid>
                 </StackPanel>
               </DockPanel>
             </Border>
@@ -887,8 +956,9 @@
                     Grid.Column="0"
                     Grid.ColumnSpan="2"
                     x:Name="ResourceStatusCard"
-                    Classes="agent-shell-card">
-              <StackPanel Spacing="8">
+                    Classes="agent-shell-card"
+                    Padding="10,10">
+              <StackPanel Spacing="9">
                 <StackPanel Orientation="Horizontal" Spacing="7">
                   <PathIcon Classes="agent-section-icon" Data="{DynamicResource NutIconShield}" />
                   <TextBlock Classes="nut-card-title"
@@ -909,7 +979,7 @@
                 -->
                 <ItemsControl Classes="agent-resource-strip"
                               ItemsSource="{Binding ResourceStatus}"
-                              MinHeight="62"
+                              MinHeight="64"
                               IsEnabled="{Binding HttpsEnabled}">
                   <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -1035,7 +1105,7 @@
                   x:Name="ContextualActions"
                   BorderBrush="{DynamicResource NutBorderSubtleBrush}"
                   BorderThickness="0,1,0,0"
-                  Padding="0,10,0,0">
+                  Padding="0,8,0,0">
             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
               <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
                 <Grid>
@@ -1114,16 +1184,6 @@
                                Text="{Binding Strings[Service.RestartPending]}" />
                   </StackPanel>
                 </Border>
-                <TextBlock Classes="nut-metadata"
-                           VerticalAlignment="Center"
-                           TextAlignment="Right"
-                           TextWrapping="Wrap"
-                           MaxLines="2"
-                           TextTrimming="CharacterEllipsis"
-                           Text="{Binding ApplyMessage}"
-                           ToolTip.Tip="{Binding ApplyMessage}"
-                           IsVisible="{Binding ApplyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                           Foreground="{Binding ApplyFailed, Converter={x:Static converters:AgentConfigConverters.MessageBrush}}" />
               </StackPanel>
               <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                 <!--

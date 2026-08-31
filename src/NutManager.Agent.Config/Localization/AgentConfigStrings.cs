@@ -62,6 +62,7 @@ public sealed class AgentConfigStrings
         ["Https.Cert.NoServerAuth"] = "O certificado não permite autenticação de servidor.",
         ["Https.Cert.HostMismatch"] = "O certificado não contempla \"{0}\" no titular nem nos nomes alternativos.",
         ["Https.Certificate.View"] = "Visualizar",
+        ["Https.Certificate.ViewTooltip"] = "Visualizar certificado",
         ["Https.Certificate.Hide"] = "Ocultar",
         ["Https.Select"] = "Selecionar...",
         ["Https.Select.Tooltip"] = "Selecionar certificado instalado",
@@ -84,6 +85,18 @@ public sealed class AgentConfigStrings
         ["Apply.Disabled.InvalidPort"] = "Informe uma porta entre 1 e 65535.",
         ["Apply.Disabled.NoCertificate"] = "Selecione um certificado válido para habilitar HTTPS.",
         ["Apply.Disabled.Busy"] = "Aguarde a operação em andamento terminar.",
+
+        // What Apply reports after an attempt. Deliberately separate from the reasons above: one
+        // explains why the button cannot be pressed, the other what happened when it was.
+        ["Apply.Result.Saved"] = "Configuração salva.",
+        ["Apply.Result.SslBindingConflict"] = "A porta {0} já possui um certificado SSL vinculado.",
+        ["Apply.Result.UrlReservationConflict"] = "A URL reservation desta porta pertence a outro aplicativo.",
+        ["Apply.Result.HttpsFailed"] = "Não foi possível aplicar a configuração HTTPS.",
+        ["Apply.Result.ConfigurationFailed"] = "Não foi possível gravar a configuração do Agent.",
+
+        ["Resources.State.NotChecked"] = "Não verificado",
+        ["Resources.NotChecked.Detail"] =
+            "Os recursos do Windows só são consultados depois que host, porta e certificado formam um endpoint válido.",
 
         ["Https.Import"] = "Importar...",
         ["Https.Import.DialogTitle"] = "Importar certificado",
@@ -305,6 +318,7 @@ public sealed class AgentConfigStrings
         ["Https.Cert.NoServerAuth"] = "The certificate is not marked for server authentication.",
         ["Https.Cert.HostMismatch"] = "The certificate does not name \"{0}\" in its subject or subject alternative names.",
         ["Https.Certificate.View"] = "View",
+        ["Https.Certificate.ViewTooltip"] = "View certificate",
         ["Https.Certificate.Hide"] = "Hide",
         ["Https.Select"] = "Select...",
         ["Https.Select.Tooltip"] = "Select installed certificate",
@@ -327,6 +341,16 @@ public sealed class AgentConfigStrings
         ["Apply.Disabled.InvalidPort"] = "Enter a port between 1 and 65535.",
         ["Apply.Disabled.NoCertificate"] = "Select a valid certificate to enable HTTPS.",
         ["Apply.Disabled.Busy"] = "Wait for the operation in progress to finish.",
+
+        ["Apply.Result.Saved"] = "Configuration saved.",
+        ["Apply.Result.SslBindingConflict"] = "Port {0} already has an SSL certificate binding.",
+        ["Apply.Result.UrlReservationConflict"] = "The URL reservation for this port belongs to another application.",
+        ["Apply.Result.HttpsFailed"] = "The HTTPS configuration could not be applied.",
+        ["Apply.Result.ConfigurationFailed"] = "The Agent configuration could not be written.",
+
+        ["Resources.State.NotChecked"] = "Not checked",
+        ["Resources.NotChecked.Detail"] =
+            "Windows resources are only queried once the host, port and certificate form a valid endpoint.",
 
         ["Https.Import"] = "Import...",
         ["Https.Import.DialogTitle"] = "Import certificate",

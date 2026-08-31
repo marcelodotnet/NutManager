@@ -277,13 +277,20 @@ public sealed class T41InstallerAndPackagingTests
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"{Binding HttpsValidationMessage}\"", window, StringComparison.Ordinal);
 
+        // Source order is no longer visual order: the validation row is declared before the field
+        // stack and docked to the bottom of the card, which is what stops a two-line message pushing
+        // itself past the card edge. Each block is therefore located on its own.
         var thumbprintField = window.IndexOf("x:Name=\"ThumbprintField\"", StringComparison.Ordinal);
-        var certificateFeedback = window.IndexOf("x:Name=\"CertificateFeedbackRow\"", thumbprintField, StringComparison.Ordinal);
-        var fieldsEnd = window.IndexOf("</StackPanel>", certificateFeedback, StringComparison.Ordinal);
-        var thumbprintMarkup = window[thumbprintField..certificateFeedback];
-        var feedbackMarkup = window[certificateFeedback..fieldsEnd];
-        Assert.True(certificateFeedback > thumbprintField,
-            "Certificate validation must occupy its own row below the thumbprint.");
+        var thumbprintEnd = window.IndexOf("</Grid>", thumbprintField, StringComparison.Ordinal);
+        var thumbprintMarkup = window[thumbprintField..thumbprintEnd];
+
+        var certificateFeedback = window.IndexOf("x:Name=\"CertificateFeedbackRow\"", StringComparison.Ordinal);
+        var feedbackEnd = window.IndexOf("</Grid>", certificateFeedback, StringComparison.Ordinal);
+        var feedbackMarkup = window[certificateFeedback..feedbackEnd];
+
+        Assert.True(certificateFeedback >= 0, "Certificate validation must occupy its own row.");
+        Assert.Contains("DockPanel.Dock=\"Bottom\"",
+            window[(certificateFeedback - 200)..certificateFeedback], StringComparison.Ordinal);
         Assert.Contains("Text=\"{Binding CertificateThumbprint}\"", thumbprintMarkup, StringComparison.Ordinal);
         // Rendered as code rather than as an editable field. The class, not its exact spelling:
         // the element now also carries a Grid.Column since the label sits beside the value.
@@ -721,6 +728,109 @@ public sealed class T41AgentConfigSurfaceTests
         Assert.DoesNotContain("Margin=\"0,-", markup, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The apply result lives in the footer, outside the main card entirely.
+    ///
+    /// It began beside the buttons, where a long refusal was drawn underneath them. Giving it a row
+    /// above the action bar stopped that but took the row's height out of the cards, which pushed the
+    /// HTTPS card's validation message past its own edge - one overflow traded for another. The
+    /// footer is the one strip nothing else competes with, so showing and hiding the message moves
+    /// no control above it.
+    /// </summary>
+    [Fact]
+    public void TheApplyResultLivesInTheFooterAndNeverBesideTheButtons()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var footer = window.IndexOf("x:Name=\"AgentFooter\"", StringComparison.Ordinal);
+        var mainCard = window.IndexOf("Classes=\"agent-main-card\"", StringComparison.Ordinal);
+        var banner = window.IndexOf("x:Name=\"ApplyResultBanner\"", StringComparison.Ordinal);
+
+        Assert.True(banner >= 0, "The window must carry the apply result surface.");
+        Assert.True(banner > footer && banner < mainCard,
+            "The apply result belongs to the footer, not to the main card.");
+
+        Assert.Contains("IsVisible=\"{Binding HasApplyResult}\"", window, StringComparison.Ordinal);
+        Assert.Contains("ToolTip.Tip=\"{Binding ApplyResultDetail}\"", window, StringComparison.Ordinal);
+
+        // The action bar carries buttons and nothing else.
+        var actions = window.IndexOf("x:Name=\"ContextualActions\"", StringComparison.Ordinal);
+        var actionMarkup = window[actions..];
+        Assert.DoesNotContain("Text=\"{Binding ApplyMessage}\"", actionMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplyResultBanner", actionMarkup, StringComparison.Ordinal);
+
+        // Apply and Cancel keep the size they were given.
+        Assert.Contains("Width=\"116\"", actionMarkup, StringComparison.Ordinal);
+        Assert.Contains("Height=\"34\"", actionMarkup, StringComparison.Ordinal);
+
+        // The logs button it replaced only led where Diagnostics already leads.
+        Assert.DoesNotContain("Action.ViewLogs", window, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The certificate validation row lives inside the HTTPS card, wraps rather than overflowing, and
+    /// is not pushed out of sight by a transform.
+    /// </summary>
+    [Fact]
+    public void TheCertificateWarningStaysInsideTheHttpsCard()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var card = window.IndexOf("x:Name=\"HttpsEditorCard\"", StringComparison.Ordinal);
+        var status = window.IndexOf("x:Name=\"ResourceStatusCard\"", card, StringComparison.Ordinal);
+        var markup = window[card..status];
+
+        var feedback = markup.IndexOf("IsVisible=\"{Binding ShowCertificateFeedback}\"", StringComparison.Ordinal);
+        Assert.True(feedback >= 0, "The validation row belongs to the HTTPS card.");
+
+        // It is docked so it reserves its height before the fields take the rest, and it wraps.
+        Assert.Contains("DockPanel.Dock=\"Bottom\"", markup, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"Wrap\"", markup[feedback..], StringComparison.Ordinal);
+
+        // None of the shortcuts that hide an overflow rather than fixing it.
+        Assert.DoesNotContain("<Canvas", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ZIndex", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("TranslateTransform", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Margin=\"0,-", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The eye answers the pointer with the desktop application's own icon motion, and only the glyph
+    /// moves - so the button keeps its measured size and nothing around it shifts.
+    /// </summary>
+    [Fact]
+    public void TheCertificateEyeAnimatesOnHoverAndPress()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var shell = Read("src/NutManager.App/Presentation/Themes/NutControlStyles.axaml");
+
+        Assert.Contains("x:Name=\"ViewCertificateButton\"", window, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-eye-glyph\"", window, StringComparison.Ordinal);
+
+        Assert.Contains(
+            "Button.agent-eye-button:pointerover PathIcon.agent-eye-glyph", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "Button.agent-eye-button:pressed PathIcon.agent-eye-glyph", window, StringComparison.Ordinal);
+
+        // The hover scale and the easing are the desktop's, not invented here.
+        Assert.Contains("scale(1.14)", shell, StringComparison.Ordinal);
+        Assert.Contains("scale(1.14)", window, StringComparison.Ordinal);
+        Assert.Contains("scale(0.94)", window, StringComparison.Ordinal);
+        Assert.Contains("Easing=\"CubicEaseOut\"", window, StringComparison.Ordinal);
+
+        // Transitions only: nothing loops, so the control costs nothing while nobody points at it.
+        var eyeStyle = window.IndexOf("PathIcon.agent-eye-glyph\"", StringComparison.Ordinal);
+        var eyeMarkup = window[eyeStyle..(eyeStyle + 1400)];
+        Assert.Contains("<TransformOperationsTransition", eyeMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("IterationCount", eyeMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Animation", eyeMarkup, StringComparison.Ordinal);
+
+        // And it stays reachable without a pointer.
+        Assert.Contains(
+            "AutomationProperties.Name=\"{Binding Strings[Https.Certificate.ViewTooltip]}\"",
+            window, StringComparison.Ordinal);
+    }
+
     /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
     [Fact]
     public void TheLanguageSelectorSitsBesideDiagnostics()
@@ -874,6 +984,73 @@ public sealed class T41AgentTransportAndCertificateTests
         Assert.Equal(expected, AgentCertificateRules.MatchesHost(Certificate(names: [certificateName]), host));
     }
 
+    /// <summary>
+    /// Host matching, in the cases an operator actually meets. Written after a report that a
+    /// certificate whose name was on screen was refused for the host that was also on screen.
+    ///
+    /// The audit found no defect here: the name on screen is the common name, and the common name is
+    /// only consulted when the certificate carries no SAN extension. A certificate that has a SAN is
+    /// judged by it alone - which is what RFC 6125 requires, and what stops a certificate speaking
+    /// for a name it does not actually cover.
+    /// </summary>
+    [Theory]
+    [InlineData("nut-server.example.local", "nut-server.example.local", true)]
+    [InlineData("NUT-SERVER.EXAMPLE.LOCAL", "nut-server.example.local", true)]
+    [InlineData("nut-server.example.local", "NUT-SERVER.EXAMPLE.LOCAL", true)]
+    [InlineData("nut-server.example.local.", "nut-server.example.local", true)]
+    [InlineData("nut-server.example.local", "nut-server.example.local.", true)]
+    [InlineData("  nut-server.example.local  ", "nut-server.example.local", true)]
+    [InlineData("other.example.local", "nut-server.example.local", false)]
+    public void SubjectAlternativeNameMatchingIsCaseAndTrailingDotInsensitive(
+        string certificateName, string host, bool expected)
+    {
+        Assert.Equal(expected, AgentCertificateRules.MatchesHost(Certificate(names: [certificateName]), host));
+    }
+
+    /// <summary>
+    /// A SAN extension is authoritative. A certificate whose common name is the host but whose SAN
+    /// names something else does not speak for that host, and accepting it because the name looked
+    /// right on screen is the mistake this rule exists to prevent.
+    /// </summary>
+    [Fact]
+    public void ASubjectAlternativeNameOverridesAMatchingCommonName()
+    {
+        var certificate = Certificate(
+            subject: "CN=nut-server.example.local, O=Example, C=BR",
+            names: ["other.example.local"]);
+
+        Assert.False(AgentCertificateRules.MatchesHost(certificate, "nut-server.example.local"));
+        Assert.True(AgentCertificateRules.MatchesHost(certificate, "other.example.local"));
+    }
+
+    /// <summary>
+    /// The common name is the fallback, and it is read out of a realistic distinguished name rather
+    /// than assumed to be the whole subject.
+    /// </summary>
+    [Theory]
+    [InlineData("CN=nut-server.example.local", true)]
+    [InlineData("CN=nut-server.example.local, O=Example, C=BR", true)]
+    [InlineData("CN=NUT-SERVER.EXAMPLE.LOCAL, O=Example", true)]
+    [InlineData("O=Example, CN=nut-server.example.local, C=BR", true)]
+    [InlineData("CN=EXAMPLE-CA, DC=example, DC=local", false)]
+    [InlineData("O=Example, C=BR", false)]
+    public void TheCommonNameIsUsedOnlyWhenNoSubjectAlternativeNameExists(string subject, bool expected)
+    {
+        var certificate = Certificate(subject: subject, names: []);
+
+        Assert.Equal(expected, AgentCertificateRules.MatchesHost(certificate, "nut-server.example.local"));
+    }
+
+    /// <summary>Nothing matches an empty host: a blank draft never earns a certificate.</summary>
+    [Fact]
+    public void AnEmptyHostNeverMatches()
+    {
+        var certificate = Certificate(names: ["nut-server.example.local"]);
+
+        Assert.False(AgentCertificateRules.MatchesHost(certificate, string.Empty));
+        Assert.False(AgentCertificateRules.MatchesHost(certificate, "   "));
+    }
+
     [Fact]
     public void CleanupContractHasNoCertificateDeletionCapability()
     {
@@ -941,10 +1118,11 @@ public sealed class T41AgentTransportAndCertificateTests
         bool supportsServerAuthentication = true,
         DateTimeOffset? notBefore = null,
         DateTimeOffset? notAfter = null,
-        IReadOnlyList<string>? names = null) =>
+        IReadOnlyList<string>? names = null,
+        string? subject = null) =>
         new(
             Thumbprint,
-            $"CN={Host}",
+            subject ?? $"CN={Host}",
             "CN=NutManager Test CA",
             notBefore ?? Now.AddDays(-1),
             notAfter ?? Now.AddDays(30),
@@ -1317,7 +1495,13 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.Empty(context.Store.Writes);
         Assert.True(context.ViewModel.ApplyFailed);
-        Assert.Contains("binding failed", context.ViewModel.ApplyMessage, StringComparison.Ordinal);
+        Assert.Equal(AgentApplyResultKind.Error, context.ViewModel.ApplyResultKind);
+
+        // The banner says something an operator can read; the adapter sentence is kept whole on the
+        // tooltip rather than being the thing drawn beside the buttons.
+        Assert.Equal("The HTTPS configuration could not be applied.", context.ViewModel.ApplyMessage);
+        Assert.Equal("binding failed", context.ViewModel.ApplyResultDetail);
+        Assert.NotEqual(context.ViewModel.ApplyMessage, context.ViewModel.ApplyResultDetail);
     }
 
     [Fact]
@@ -1537,9 +1721,10 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(request.RemoveFirewallRule);
 
         // What the adapter refused is reported, not retried and not hidden.
-        Assert.Contains("another product", context.ViewModel.ApplyMessage);
-        Assert.Contains("owner is unknown", context.ViewModel.ApplyMessage);
+        Assert.Contains("another product", context.ViewModel.ApplyResultDetail);
+        Assert.Contains("owner is unknown", context.ViewModel.ApplyResultDetail);
         Assert.False(context.ViewModel.ApplyFailed);
+        Assert.Equal(AgentApplyResultKind.Success, context.ViewModel.ApplyResultKind);
     }
 
     /// <summary>
@@ -1564,11 +1749,11 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.ApplyFailed);
         Assert.Empty(context.Store.Writes);
         Assert.True(context.ViewModel.HttpsEnabled);
-        Assert.Contains("could not be removed", context.ViewModel.ApplyMessage);
+        Assert.Contains("could not be removed", context.ViewModel.ApplyResultDetail);
 
         // What did come off before the failure is named, so the operator knows the machine is now
         // between two states rather than in the one it started from.
-        Assert.Contains("url reservation", context.ViewModel.ApplyMessage);
+        Assert.Contains("url reservation", context.ViewModel.ApplyResultDetail);
     }
 
     /// <summary>
@@ -1955,16 +2140,25 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Contains("private key", context.ViewModel.CertificateFeedbackMessage, StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>A valid certificate shows its thumbprint and nothing more: no empty warning row.</summary>
+    /// <summary>
+    /// A valid certificate is confirmed rather than passed over in silence.
+    ///
+    /// Saying nothing at the moment an operator wants reassurance reads as "not checked yet", which
+    /// is the one thing this line exists to rule out. Green, and in the same row a problem would use.
+    /// </summary>
     [Fact]
-    public async Task AValidSelectedCertificateShowsTheThumbprintAndNoWarning()
+    public async Task AValidSelectedCertificateIsConfirmedInGreen()
     {
         var context = CreateContext();
         await context.ViewModel.RefreshAsync();
         EnableValidHttps(context.ViewModel);
 
         Assert.True(context.ViewModel.ShowThumbprint);
-        Assert.False(context.ViewModel.ShowCertificateFeedback);
+        Assert.True(context.ViewModel.ShowCertificateFeedback);
+        Assert.Equal("healthy", context.ViewModel.CertificateFeedbackStateClass);
+        Assert.Equal("AgentIconStateReady", context.ViewModel.CertificateFeedbackIconKey);
+        Assert.Equal(
+            "Certificate is valid and matches the host.", context.ViewModel.CertificateFeedbackMessage);
     }
 
     private static AgentCertificateSummary Certificate(
@@ -1978,6 +2172,168 @@ public sealed class T41AgentConfigViewModelTests
             HasPrivateKey: hasPrivateKey,
             SupportsServerAuthentication: true,
             SubjectAlternativeNames: [subject.Replace("CN=", string.Empty, StringComparison.Ordinal)]);
+
+    // ================================================================ the apply banner
+
+    /// <summary>With nothing attempted there is no banner, so the action bar keeps its own layout.</summary>
+    [Fact]
+    public async Task NoAttemptMeansNoBanner()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal(AgentApplyResultKind.None, context.ViewModel.ApplyResultKind);
+        Assert.False(context.ViewModel.HasApplyResult);
+        Assert.Null(context.ViewModel.ApplyMessage);
+        Assert.Null(context.ViewModel.ApplyResultDetail);
+    }
+
+    [Fact]
+    public async Task ASavedConfigurationReportsSuccess()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentApplyResultKind.Success, context.ViewModel.ApplyResultKind);
+        Assert.True(context.ViewModel.HasApplyResult);
+        Assert.False(context.ViewModel.ApplyFailed);
+        Assert.Equal("Configuration saved.", context.ViewModel.ApplyMessage);
+    }
+
+    /// <summary>
+    /// The refusal an operator actually meets: another application is already bound to the port.
+    ///
+    /// The short line is localised and derived from the ownership this window already queried, not
+    /// from matching English words in the adapter sentence. That sentence is kept, whole, as the
+    /// detail - it names the AppId, and discarding it to make the banner short would trade one bad
+    /// outcome for another.
+    /// </summary>
+    [Fact]
+    public async Task AForeignSslBindingIsReportedInOneLocalisedLineWithTheDetailKept()
+    {
+        const string Adapter =
+            "An SSL certificate is already bound to port 5199 by another application. " +
+            "Choose a different port, or remove that binding with the tool that created it.";
+
+        var context = CreateContext();
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.ForeignOwner, "AppId {00000000-0000-0000-0000-000000000001}"),
+            AgentResourceState.Absent,
+            AgentResourceState.Absent);
+        context.Resources.ApplyResult = AgentHttpsResourceResult.Failed(Adapter);
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentApplyResultKind.Error, context.ViewModel.ApplyResultKind);
+        Assert.Equal("Port 5199 already has an SSL certificate binding.", context.ViewModel.ApplyMessage);
+        Assert.Equal(Adapter, context.ViewModel.ApplyResultDetail);
+        Assert.NotEqual(context.ViewModel.ApplyMessage, context.ViewModel.ApplyResultDetail);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    [Fact]
+    public async Task TheForeignBindingLineIsLocalised()
+    {
+        var context = CreateContext(language: UiLanguagePreference.PtBr);
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.ForeignOwner),
+            AgentResourceState.Absent,
+            AgentResourceState.Absent);
+        context.Resources.ApplyResult = AgentHttpsResourceResult.Failed("An SSL certificate is already bound...");
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal("A porta 5199 já possui um certificado SSL vinculado.", context.ViewModel.ApplyMessage);
+        Assert.DoesNotContain("SSL certificate is already", context.ViewModel.ApplyMessage, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A failure with no recognised cause gets the honest generic line rather than an invented one,
+    /// and the platform text still travels with it.
+    /// </summary>
+    [Fact]
+    public async Task AnUnrecognisedFailureGetsTheGenericLineAndKeepsItsDetail()
+    {
+        var context = CreateContext();
+        context.Resources.ApplyResult = AgentHttpsResourceResult.Failed("Something nobody mapped (0x80004005).");
+        await context.ViewModel.RefreshAsync();
+        EnableValidHttps(context.ViewModel);
+
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Equal("The HTTPS configuration could not be applied.", context.ViewModel.ApplyMessage);
+        Assert.Equal("Something nobody mapped (0x80004005).", context.ViewModel.ApplyResultDetail);
+    }
+
+    /// <summary>
+    /// The banner and the disabled reason answer different questions and must not merge: one says why
+    /// the button cannot be pressed, the other what happened when it was.
+    /// </summary>
+    [Fact]
+    public async Task TheApplyBannerAndTheDisabledReasonStaySeparate()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+        context.ViewModel.HttpsHost = "nut-server.example.local";
+
+        Assert.NotNull(context.ViewModel.ApplyDisabledReason);
+        Assert.False(context.ViewModel.HasApplyResult);
+    }
+
+    // ================================================================ status honesty
+
+    /// <summary>
+    /// The strip must not claim a resource is absent before it has looked.
+    ///
+    /// While the draft is incomplete there is no endpoint to query for, and the strip used to report
+    /// every resource as absent anyway. That is how a screen came to say the SSL binding was not
+    /// configured on a machine where Apply, which does query, found another application already bound
+    /// to the port.
+    /// </summary>
+    [Fact]
+    public async Task TheStatusStripDoesNotClaimAResourceIsAbsentBeforeItHasLooked()
+    {
+        var context = CreateContext(withCertificate: false);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.HttpsEnabled = true;
+
+        Assert.Equal(4, context.ViewModel.ResourceStatus.Count);
+        Assert.All(context.ViewModel.ResourceStatus, item =>
+        {
+            Assert.Equal("Not checked", item.Detail);
+            Assert.NotEqual("Not configured", item.Detail);
+            Assert.Contains("only queried", item.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// <summary>
+    /// Completing the draft makes the window ask, so the strip stops saying "not checked" and starts
+    /// reporting what the machine actually holds - including a binding that is not ours.
+    /// </summary>
+    [Fact]
+    public async Task CompletingTheDraftMakesTheStripReportTheMachine()
+    {
+        var context = CreateContext();
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.ForeignOwner, "AppId {00000000-0000-0000-0000-000000000001}"),
+            AgentResourceState.Absent,
+            AgentResourceState.Absent);
+        await context.ViewModel.RefreshAsync();
+
+        EnableValidHttps(context.ViewModel);
+
+        Assert.Equal("Owned by another application", context.ViewModel.ResourceStatus[0].Detail);
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[0].State);
+        Assert.Contains("AppId", context.ViewModel.ResourceStatus[0].TechnicalDetail);
+    }
 
     // ================================================================ theme
 
@@ -2496,9 +2852,12 @@ public sealed class T41AgentConfigViewModelTests
     [Fact]
     public async Task TheListenerRowSeparatesAnAbsentServiceFromAStoppedOne()
     {
+        // A valid endpoint, because the strip only reports on the machine once there is something to
+        // ask about. Enabling HTTPS alone leaves the draft incomplete, and the strip then says so
+        // rather than claiming the resources are absent.
         var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
         await absent.ViewModel.RefreshAsync();
-        absent.ViewModel.HttpsEnabled = true;
+        EnableValidHttps(absent.ViewModel);
 
         var absentListener = absent.ViewModel.ResourceStatus.Last();
         Assert.Equal(AgentDiagnosticState.Error, absentListener.State);
@@ -2506,7 +2865,7 @@ public sealed class T41AgentConfigViewModelTests
 
         var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
         await stopped.ViewModel.RefreshAsync();
-        stopped.ViewModel.HttpsEnabled = true;
+        EnableValidHttps(stopped.ViewModel);
 
         var stoppedListener = stopped.ViewModel.ResourceStatus.Last();
         Assert.Contains("stopped", stoppedListener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
@@ -2536,7 +2895,9 @@ public sealed class T41AgentConfigViewModelTests
             Assert.NotEqual("○", item.Glyph);
         });
 
-        context.ViewModel.HttpsEnabled = true;
+        // A complete draft, so the window actually queried Windows and found the binding absent.
+        // Without one there is nothing to query for, and the strip says "not checked" instead.
+        EnableValidHttps(context.ViewModel);
 
         Assert.Equal(AgentDiagnosticState.Error, context.ViewModel.ResourceStatus[0].State);
         Assert.Equal("critical", context.ViewModel.ResourceStatus[0].StateClass);
