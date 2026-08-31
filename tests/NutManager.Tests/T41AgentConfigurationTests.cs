@@ -492,6 +492,118 @@ public sealed class T41AgentConfigSurfaceTests
         Assert.DoesNotContain("HttpsStatusText", header, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The theme control is one circular button between the language selector and Diagnostics, and
+    /// it is not a switch of any kind.
+    ///
+    /// Circular is asserted through the shape rather than through a screenshot: equal width and
+    /// height with a radius far beyond half of either is a disc at any scaling, whereas a rounded
+    /// rectangle is what you get the moment somebody drops the explicit size.
+    /// </summary>
+    [Fact]
+    public void TheThemeControlIsOneCircularButtonBetweenLanguageAndDiagnostics()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
+        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
+        var markup = window[header..surface];
+
+        var language = markup.IndexOf("Classes=\"agent-language-selector\"", StringComparison.Ordinal);
+        var theme = markup.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
+        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(language >= 0, "The header must keep the single language selector.");
+        Assert.True(theme > language, "The theme button belongs after the language selector.");
+        Assert.True(diagnostics > theme, "The theme button belongs before Diagnostics.");
+
+        Assert.Contains("Command=\"{Binding ToggleThemeCommand}\"", markup, StringComparison.Ordinal);
+
+        // Never a switch, a checkbox or a segmented pair.
+        Assert.DoesNotContain("ToggleSwitch", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<CheckBox", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
+
+        var style = window[window.IndexOf("Button.agent-theme-button\"", StringComparison.Ordinal)..];
+        Assert.Contains("<Setter Property=\"Width\" Value=\"36\" />", style, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"Height\" Value=\"36\" />", style, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"999\" />", style, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The glyph is the action, not the state, and the markup is where that is decided: the sun is
+    /// shown when the button offers light, the moon when it offers dark. Reversing these two bindings
+    /// is the whole failure mode of this control.
+    /// </summary>
+    [Fact]
+    public void TheThemeGlyphShowsTheActionRatherThanTheCurrentTheme()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var button = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
+        var end = window.IndexOf("</Button>", button, StringComparison.Ordinal);
+        var markup = window[button..end];
+
+        var sun = markup.IndexOf("NutIconSun", StringComparison.Ordinal);
+        var moon = markup.IndexOf("NutIconMoon", StringComparison.Ordinal);
+        Assert.True(sun >= 0 && moon >= 0, "Both glyphs must be present.");
+
+        // The sun sits under ShowLightThemeAction and the moon under ShowDarkThemeAction.
+        var sunGate = markup.LastIndexOf("IsVisible=", sun, StringComparison.Ordinal);
+        var moonGate = markup.LastIndexOf("IsVisible=", moon, StringComparison.Ordinal);
+        Assert.Contains("ShowLightThemeAction", markup[sunGate..sun], StringComparison.Ordinal);
+        Assert.Contains("ShowDarkThemeAction", markup[moonGate..moon], StringComparison.Ordinal);
+
+        // Tooltip and accessible name are the action, and they are the same string.
+        Assert.Contains("ToolTip.Tip=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The glyph movement is the desktop application's, to the millisecond. Reused values rather than
+    /// a second animation that merely looks similar.
+    /// </summary>
+    [Fact]
+    public void TheThemeGlyphUsesTheDesktopMotionValues()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var shell = Read("src/NutManager.App/Presentation/Themes/NutShellStyles.axaml");
+
+        foreach (var expected in new[]
+        {
+            "<TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.34\" Easing=\"CubicEaseOut\" />",
+            "rotate(45deg) scale(1.08)",
+            "rotate(-18deg) scale(1.06)",
+        })
+        {
+            Assert.Contains(expected, shell, StringComparison.Ordinal);
+            Assert.Contains(expected, window, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Status columns say a short state and never render the adapter detail inline. The technical
+    /// text reaches the operator through the tooltip instead.
+    /// </summary>
+    [Fact]
+    public void StatusColumnsRenderTheShortStateAndPutTheDetailOnTheTooltip()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var template = window.IndexOf("x:Key=\"AgentResourceItemTemplate\"", StringComparison.Ordinal);
+        var end = window.IndexOf("</DataTemplate>", template, StringComparison.Ordinal);
+        var markup = window[template..end];
+
+        Assert.Contains("ToolTip.Tip=\"{Binding TooltipText}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding Detail}\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("TechnicalDetail", markup, StringComparison.Ordinal);
+
+        // The state glyph leads the state line rather than floating in a column of its own at the
+        // far right, where it read as unrelated to the words it was judging.
+        Assert.Contains("RowDefinitions=\"Auto,Auto\"", markup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnDefinitions=\"Auto,*,Auto\"", markup, StringComparison.Ordinal);
+    }
+
     /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
     [Fact]
     public void TheLanguageSelectorSitsBesideDiagnostics()
@@ -824,6 +936,90 @@ public sealed class T41AgentConfigurationStoreTests
 
 public sealed class T41AgentConfigUiPreferencesTests
 {
+    /// <summary>
+    /// The two preferences share one file and must not overwrite each other.
+    ///
+    /// They are set from different controls at different moments, so a write that serialised only
+    /// the field it knew about would drop the other one every time.
+    /// </summary>
+    [Fact]
+    public void ThemeAndLanguageShareTheFileWithoutOverwritingEachOther()
+    {
+        WithTemporaryPreferences((preferences, path) =>
+        {
+            preferences.WriteLanguage(UiLanguagePreference.EnUs);
+            preferences.WriteTheme(ThemePreference.Dark);
+
+            Assert.Equal(UiLanguagePreference.EnUs, preferences.ReadLanguage());
+            Assert.Equal(ThemePreference.Dark, preferences.ReadTheme());
+
+            preferences.WriteLanguage(UiLanguagePreference.PtBr);
+
+            Assert.Equal(ThemePreference.Dark, preferences.ReadTheme());
+            Assert.Equal(UiLanguagePreference.PtBr, preferences.ReadLanguage());
+
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.Equal("pt-BR", json.RootElement.GetProperty("language").GetString());
+            Assert.Equal("dark", json.RootElement.GetProperty("theme").GetString());
+        });
+    }
+
+    [Theory]
+    [InlineData(ThemePreference.Light, "light")]
+    [InlineData(ThemePreference.Dark, "dark")]
+    public void EachChosenThemeIsStoredAsAStableTag(ThemePreference theme, string expected)
+    {
+        WithTemporaryPreferences((preferences, path) =>
+        {
+            preferences.WriteTheme(theme);
+
+            Assert.Equal(theme, preferences.ReadTheme());
+
+            using var json = JsonDocument.Parse(File.ReadAllText(path));
+            Assert.Equal(expected, json.RootElement.GetProperty("theme").GetString());
+        });
+    }
+
+    /// <summary>
+    /// A missing file, an unreadable one and a tag from some later version all mean the same thing:
+    /// nobody has chosen. None of them may throw, because this is a convenience and it must never be
+    /// the reason an administration utility refuses to open.
+    /// </summary>
+    [Fact]
+    public void AnUnreadableOrUnknownPreferenceReadsAsNoChoiceRatherThanThrowing()
+    {
+        WithTemporaryPreferences((preferences, path) =>
+        {
+            Assert.Null(preferences.ReadTheme());
+            Assert.Null(preferences.ReadLanguage());
+
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{ this is not json");
+            Assert.Null(preferences.ReadTheme());
+
+            File.WriteAllText(path, "{\"language\":\"pt-BR\",\"theme\":\"solarized\"}");
+            Assert.Null(preferences.ReadTheme());
+
+            // The unknown theme did not take the language down with it.
+            Assert.Equal(UiLanguagePreference.PtBr, preferences.ReadLanguage());
+        });
+    }
+
+    private static void WithTemporaryPreferences(Action<AgentConfigUiPreferences, string> body)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"NutManager-T41-Ui-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "agent-config-ui.json");
+
+        try
+        {
+            body(new AgentConfigUiPreferences(path), path);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void LanguagePreferenceRoundTripsAsTheOnlyStoredUiValue()
     {
@@ -1315,6 +1511,245 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(AgentConfigConfirmation.RestartService, context.ViewModel.PendingConfirmation);
     }
 
+    // ================================================================ theme
+
+    /// <summary>
+    /// The glyph offers the destination, not the current state: dark shows a sun because pressing it
+    /// turns the light on. Getting this backwards is the single most likely way to ship this control
+    /// wrong, so it is asserted in both directions and in words as well as in the flag.
+    /// </summary>
+    [Fact]
+    public void TheThemeButtonOffersTheOppositeOfWhatIsOnScreen()
+    {
+        var context = CreateContext();
+
+        context.ViewModel.UpdateEffectiveTheme(isDark: true);
+        Assert.True(context.ViewModel.ShowLightThemeAction);
+        Assert.False(context.ViewModel.ShowDarkThemeAction);
+        Assert.Equal("Enable light mode", context.ViewModel.ThemeActionText);
+
+        context.ViewModel.UpdateEffectiveTheme(isDark: false);
+        Assert.True(context.ViewModel.ShowDarkThemeAction);
+        Assert.False(context.ViewModel.ShowLightThemeAction);
+        Assert.Equal("Enable dark mode", context.ViewModel.ThemeActionText);
+    }
+
+    /// <summary>
+    /// Toggling flips what is on screen, including from System - where the first press has to resolve
+    /// against the effective theme or it appears to do nothing on a machine that already matches.
+    /// </summary>
+    [Theory]
+    [InlineData(ThemePreference.System, true, ThemePreference.Light)]
+    [InlineData(ThemePreference.System, false, ThemePreference.Dark)]
+    [InlineData(ThemePreference.Dark, true, ThemePreference.Light)]
+    [InlineData(ThemePreference.Light, false, ThemePreference.Dark)]
+    public void TogglingTheThemeMovesToTheOppositeOfWhatIsShowing(
+        ThemePreference start, bool effectiveDark, ThemePreference expected)
+    {
+        var preferences = new FakePreferences(savedTheme: start == ThemePreference.System ? null : start);
+        var context = CreateContext(preferences: preferences);
+        context.ViewModel.UpdateEffectiveTheme(effectiveDark);
+
+        context.ViewModel.ToggleThemeCommand.Execute(null);
+
+        Assert.Equal(expected, context.ViewModel.SelectedTheme);
+        Assert.Equal(expected, preferences.SavedTheme);
+    }
+
+    /// <summary>
+    /// Nothing is written until somebody chooses. Opening the window on a machine with no saved theme
+    /// must not create one, or "follow Windows" would silently become a stored preference.
+    /// </summary>
+    [Fact]
+    public async Task NoThemeIsSavedUntilOneIsChosen()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal(ThemePreference.System, context.ViewModel.SelectedTheme);
+        Assert.Null(preferences.SavedTheme);
+        Assert.Equal(0, preferences.ThemeWrites);
+
+        context.ViewModel.ToggleThemeCommand.Execute(null);
+
+        Assert.Equal(1, preferences.ThemeWrites);
+    }
+
+    [Fact]
+    public void ASavedThemeIsWhatTheWindowOpensIn()
+    {
+        var light = CreateContext(preferences: new FakePreferences(savedTheme: ThemePreference.Light));
+        Assert.Equal(ThemePreference.Light, light.ViewModel.SelectedTheme);
+
+        var dark = CreateContext(preferences: new FakePreferences(savedTheme: ThemePreference.Dark));
+        Assert.Equal(ThemePreference.Dark, dark.ViewModel.SelectedTheme);
+    }
+
+    /// <summary>
+    /// A theme change is a view preference and nothing else.
+    ///
+    /// It must not make the configuration dirty, must not enable Apply, must not write agent.json and
+    /// must not reach the service, the certificate store or any system resource. That is the whole
+    /// safety claim of the feature, so it is asserted against every seam at once.
+    /// </summary>
+    [Fact]
+    public async Task ChangingTheThemeTouchesNothingBelongingToTheAgent()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        await context.ViewModel.RefreshAsync();
+
+        var dirtyBefore = context.ViewModel.IsDirty;
+        var canApplyBefore = context.ViewModel.CanApply;
+        var hostBefore = context.ViewModel.HttpsHost;
+        var httpsBefore = context.ViewModel.HttpsEnabled;
+        var pipeBefore = context.ViewModel.NamedPipeEnabled;
+        var certificateBefore = context.ViewModel.CertificateThumbprint;
+        var eventsBefore = context.Events.Count;
+
+        context.ViewModel.ToggleThemeCommand.Execute(null);
+        context.ViewModel.ToggleThemeCommand.Execute(null);
+
+        Assert.Equal(dirtyBefore, context.ViewModel.IsDirty);
+        Assert.Equal(canApplyBefore, context.ViewModel.CanApply);
+        Assert.Equal(hostBefore, context.ViewModel.HttpsHost);
+        Assert.Equal(httpsBefore, context.ViewModel.HttpsEnabled);
+        Assert.Equal(pipeBefore, context.ViewModel.NamedPipeEnabled);
+        Assert.Equal(certificateBefore, context.ViewModel.CertificateThumbprint);
+
+        Assert.Empty(context.Store.Writes);
+        Assert.Equal(eventsBefore, context.Events.Count);
+        Assert.Empty(context.Resources.RemoveRequests);
+        Assert.Equal(0, context.Resources.ApplyCalls);
+    }
+
+    /// <summary>The action text follows the language, like everything else on the window.</summary>
+    [Fact]
+    public void TheThemeActionTextIsLocalised()
+    {
+        var context = CreateContext();
+        context.ViewModel.UpdateEffectiveTheme(isDark: true);
+
+        Assert.Equal("Enable light mode", context.ViewModel.ThemeActionText);
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.PtBr;
+
+        Assert.Equal("Ativar modo claro", context.ViewModel.ThemeActionText);
+    }
+
+    // ================================================================ status presentation
+
+    /// <summary>
+    /// The card carries a short localised phrase and the platform sentence moves to the tooltip.
+    ///
+    /// The adapter detail is written in English by infrastructure and names an AppId or a rule; it
+    /// ran to several lines inside a quarter-width column and put English inside the Portuguese
+    /// window. Moving it is presentation - the classification is untouched and nothing is lost.
+    /// </summary>
+    [Fact]
+    public async Task StatusColumnsShowAShortStateAndKeepTheTechnicalDetailOnTheTooltip()
+    {
+        var context = CreateContext(document: HttpsDocument());
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(
+                AgentResourceOwnership.ForeignOwner,
+                "Port 5199 is bound by another application (AppId {ad073820-0000-0000-0000-000000000000})"),
+            new AgentResourceState(AgentResourceOwnership.Absent),
+            new AgentResourceState(
+                AgentResourceOwnership.ForeignOwner,
+                "A rule named NutManager Agent HTTPS exists but is not grouped under NutManager."));
+        await context.ViewModel.RefreshAsync();
+
+        var binding = context.ViewModel.ResourceStatus[0];
+        var reservation = context.ViewModel.ResourceStatus[1];
+        var firewall = context.ViewModel.ResourceStatus[2];
+
+        Assert.Equal("Owned by another application", binding.Detail);
+        Assert.Equal("Not configured", reservation.Detail);
+
+        // A rule that is not ours is most often one somebody left behind, not a rival product.
+        Assert.Equal("Existing unmanaged rule", firewall.Detail);
+
+        // Nothing inline is the adapter sentence, and no AppId reaches the card.
+        Assert.All(
+            context.ViewModel.ResourceStatus,
+            item => Assert.DoesNotContain("AppId", item.Detail ?? string.Empty, StringComparison.Ordinal));
+
+        // The detail is not lost: it is on the tooltip, whole.
+        Assert.Contains("AppId", binding.TechnicalDetail);
+        Assert.Contains("AppId", binding.TooltipText);
+        Assert.Contains("not grouped under NutManager", firewall.TechnicalDetail);
+
+        // And the classification behind it is exactly what it was.
+        Assert.Equal(AgentDiagnosticState.Attention, binding.State);
+        Assert.Equal(AgentDiagnosticState.Error, reservation.State);
+        Assert.Equal(AgentDiagnosticState.Attention, firewall.State);
+    }
+
+    /// <summary>
+    /// Portuguese agrees with the noun. "URL Reservation configurado" is wrong in the language this
+    /// product is mostly read in, and one shared string cannot express both forms.
+    /// </summary>
+    [Fact]
+    public async Task ThePortugueseStatusTextAgreesWithTheResourceItDescribes()
+    {
+        var context = CreateContext(document: HttpsDocument(), language: UiLanguagePreference.PtBr);
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager));
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Configurado", context.ViewModel.ResourceStatus[0].Detail);
+        Assert.Equal("Configurada", context.ViewModel.ResourceStatus[1].Detail);
+        Assert.Equal("Configurado", context.ViewModel.ResourceStatus[2].Detail);
+    }
+
+    /// <summary>
+    /// With HTTPS deliberately off, every resource reads as switched off rather than as broken, and
+    /// says so in the window language rather than borrowing a diagnostics string.
+    /// </summary>
+    [Fact]
+    public async Task DisabledHttpsReportsEveryResourceAsSwitchedOff()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal(4, context.ViewModel.ResourceStatus.Count);
+        Assert.All(context.ViewModel.ResourceStatus, item =>
+        {
+            Assert.Equal(AgentDiagnosticState.NotConfigured, item.State);
+            Assert.Equal("HTTPS disabled", item.Detail);
+        });
+    }
+
+    /// <summary>
+    /// The restart marker is a state, not a sentence appended to the apply message, and it never
+    /// causes a restart of its own.
+    /// </summary>
+    [Fact]
+    public async Task SavingWhileTheServiceRunsRaisesTheRestartMarkerWithoutRestarting()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.RestartRequired);
+
+        EnableValidHttps(context.ViewModel);
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.RestartRequired);
+        Assert.Equal(AgentConfigConfirmation.RestartService, context.ViewModel.PendingConfirmation);
+
+        // Offered, not performed.
+        Assert.Equal(0, context.Service.RestartCalls);
+
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.RestartCalls);
+        Assert.False(context.ViewModel.RestartRequired);
+    }
+
     // ================================================================ certificate import
 
     /// <summary>
@@ -1598,17 +2033,26 @@ public sealed class T41AgentConfigViewModelTests
         absent.ViewModel.HttpsEnabled = true;
 
         var absentListener = absent.ViewModel.ResourceStatus.Last();
-        Assert.Contains("not installed", absentListener.Detail, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AgentDiagnosticState.Error, absentListener.State);
+        Assert.Contains("not installed", absentListener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
 
         var stopped = CreateContext(serviceState: AgentServiceState.Stopped);
         await stopped.ViewModel.RefreshAsync();
         stopped.ViewModel.HttpsEnabled = true;
 
-        // Stopped and absent are different machine states and must not collapse into one sentence.
         var stoppedListener = stopped.ViewModel.ResourceStatus.Last();
-        Assert.Contains("stopped", stoppedListener.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.NotEqual(absentListener.Detail, stoppedListener.Detail);
+        Assert.Contains("stopped", stoppedListener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+
+        // Stopped and absent are different machine states and must not collapse into one.
+        //
+        // The card now says "Listener unavailable" for both, because that is what an operator sees
+        // either way and a quarter-width column has no room for the difference. The difference is
+        // still carried, and carried twice: a red error against an amber warning, which is the part
+        // read at a glance, and the precise sentence on the tooltip, which is the part read when
+        // deciding what to do. What must never happen is the two becoming one state.
+        Assert.NotEqual(absentListener.State, stoppedListener.State);
+        Assert.NotEqual(absentListener.TechnicalDetail, stoppedListener.TechnicalDetail);
+        Assert.NotEqual(absentListener.TooltipText, stoppedListener.TooltipText);
     }
 
     [Fact]
@@ -1959,11 +2403,16 @@ public sealed class T41AgentConfigViewModelTests
     }
 
     /// <summary>An in-memory preference store, so no test reads or writes a real user profile.</summary>
-    private sealed class FakePreferences(UiLanguagePreference? saved = null) : IAgentConfigUiPreferences
+    private sealed class FakePreferences(
+        UiLanguagePreference? saved = null, ThemePreference? savedTheme = null) : IAgentConfigUiPreferences
     {
         public UiLanguagePreference? Saved { get; private set; } = saved;
 
         public int Writes { get; private set; }
+
+        public ThemePreference? SavedTheme { get; private set; } = savedTheme;
+
+        public int ThemeWrites { get; private set; }
 
         public UiLanguagePreference? ReadLanguage() => Saved;
 
@@ -1971,6 +2420,14 @@ public sealed class T41AgentConfigViewModelTests
         {
             Saved = language;
             Writes++;
+        }
+
+        public ThemePreference? ReadTheme() => SavedTheme;
+
+        public void WriteTheme(ThemePreference theme)
+        {
+            SavedTheme = theme;
+            ThemeWrites++;
         }
     }
 

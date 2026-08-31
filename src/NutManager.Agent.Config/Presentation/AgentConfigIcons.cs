@@ -46,6 +46,8 @@ public static class AgentConfigIcons
         ("NutIconRemote", MaterialIconKind.RemoteDesktop),
         ("NutIconLogs", MaterialIconKind.TextBoxOutline),
         ("NutIconClose", MaterialIconKind.Close),
+        ("NutIconSun", MaterialIconKind.WhiteBalanceSunny),
+        ("NutIconMoon", MaterialIconKind.WeatherNight),
     ];
 
     /// <summary>

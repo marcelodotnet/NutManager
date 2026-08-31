@@ -90,6 +90,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // The saved value is read once here rather than watched: this window is open for minutes, and
         // a preference that changed underneath it would be somebody else's session, not this one.
         _selectedLanguage = language ?? _preferences.ReadLanguage() ?? AgentConfigStrings.DetectLanguage();
+
+        // No saved theme means nobody has chosen one, so the window follows Windows - the same answer
+        // the desktop application gives, where ThemePreference.System maps to ThemeVariant.Default.
+        // A third stored state here would be a preference nobody set masquerading as one they did.
+        _selectedTheme = _preferences.ReadTheme() ?? ThemePreference.System;
         _strings = new AgentConfigStrings(_selectedLanguage);
     }
 
@@ -148,6 +153,87 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _preferences.WriteLanguage(value);
         RelocalizeSurface();
     }
+
+    // ---------------------------------------------------------------- theme
+
+    /// <summary>
+    /// Raised when the operator picks a theme, so the view can hand it to Avalonia.
+    ///
+    /// An event rather than this class touching Application.Current: the view model is where the two
+    /// product rules live - which glyph is offered, and that a theme change is not a configuration
+    /// change - and neither of those needs a reference to a UI framework to be true or to be tested.
+    /// </summary>
+    public event Action<ThemePreference>? ThemeChanged;
+
+    [ObservableProperty]
+    private ThemePreference _selectedTheme;
+
+    /// <summary>
+    /// Which theme is actually on screen, which is not always the one that was chosen: System
+    /// resolves to whatever Windows is doing, and the window is told the answer by its own
+    /// ActualThemeVariantChanged. The glyph depends on this rather than on the preference, because an
+    /// operator reads what they are looking at, not what is stored.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isEffectiveDark = true;
+
+    /// <summary>
+    /// Whether the button offers to go light. The formula is the desktop application's own, kept
+    /// identical on purpose: two NutManager windows must not disagree about which way the toggle
+    /// points.
+    /// </summary>
+    public bool ShowLightThemeAction =>
+        SelectedTheme == ThemePreference.Dark ||
+        (SelectedTheme == ThemePreference.System && IsEffectiveDark);
+
+    public bool ShowDarkThemeAction => !ShowLightThemeAction;
+
+    /// <summary>
+    /// The tooltip and the accessible name, which are deliberately the same string.
+    ///
+    /// It names the action, not the state: in dark mode the button says "Enable light mode" and shows
+    /// a sun. A button that announced the theme it is already in would leave somebody using a screen
+    /// reader with no idea what pressing it does.
+    /// </summary>
+    public string ThemeActionText => ShowLightThemeAction
+        ? Strings["Theme.EnableLight"]
+        : Strings["Theme.EnableDark"];
+
+    partial void OnSelectedThemeChanged(ThemePreference value)
+    {
+        _preferences.WriteTheme(value);
+        NotifyThemeChanged();
+        ThemeChanged?.Invoke(value);
+    }
+
+    partial void OnIsEffectiveDarkChanged(bool value) => NotifyThemeChanged();
+
+    private void NotifyThemeChanged()
+    {
+        OnPropertyChanged(nameof(ShowLightThemeAction));
+        OnPropertyChanged(nameof(ShowDarkThemeAction));
+        OnPropertyChanged(nameof(ThemeActionText));
+    }
+
+    /// <summary>
+    /// Flips to the opposite of what is on screen.
+    ///
+    /// The System case resolves against the effective theme rather than toggling to System, so the
+    /// first press does what it looks like it will do instead of appearing to do nothing on a machine
+    /// whose Windows theme already matches. Same rule as the desktop application.
+    ///
+    /// Nothing here touches the Agent: no dirty flag, no Apply, no store, no service, no HTTP.sys.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleTheme() => SelectedTheme = SelectedTheme switch
+    {
+        ThemePreference.Light => ThemePreference.Dark,
+        ThemePreference.Dark => ThemePreference.Light,
+        _ => IsEffectiveDark ? ThemePreference.Light : ThemePreference.Dark,
+    };
+
+    /// <summary>Told by the window when Avalonia resolves the variant, including on start-up.</summary>
+    public void UpdateEffectiveTheme(bool isDark) => IsEffectiveDark = isDark;
 
     /// <summary>
     /// Re-renders everything that captured a string when it was built.
@@ -854,6 +940,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private string? _serviceMessage;
 
+    /// <summary>
+    /// Whether saved configuration is waiting for a restart to reach the listener.
+    ///
+    /// This was only ever a sentence appended to the apply message, which put a full explanation in
+    /// the narrow strip between the service actions and the Apply button and squeezed both. As a
+    /// state it can be a short marker with the explanation on its tooltip - and it is set from the
+    /// same condition as before: configuration was written while the service was running.
+    ///
+    /// It never causes a restart. It is a fact on screen, and the restart stays an explicit action.
+    /// </summary>
+    [ObservableProperty]
+    private bool _restartRequired;
+
     [ObservableProperty]
     private bool _isBusy;
 
@@ -905,6 +1004,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             var outcome = await operation(cancellationToken).ConfigureAwait(true);
             ServiceMessage = outcome.Succeeded ? null : outcome.Failure;
+
+            // The listener has been rebuilt from what was saved, so the marker has nothing left to
+            // warn about. Only a successful operation clears it.
+            if (outcome.Succeeded) RestartRequired = false;
+
             ReloadService();
         }
         finally
@@ -1141,7 +1245,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             // restart in exactly the way Apply offers it.
             if (_serviceState.IsRunning)
             {
-                notes.Add(Strings["Service.RestartRequired"]);
+                RestartRequired = true;
                 ApplyMessage = string.Join(" ", notes);
                 PendingConfirmation = AgentConfigConfirmation.RestartService;
                 return;
@@ -1305,7 +1409,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             // configuration is waiting for whenever somebody starts it.
             if (_serviceState.IsRunning)
             {
-                notes.Add(Strings["Service.RestartRequired"]);
+                RestartRequired = true;
                 ApplyMessage = string.Join(" ", notes);
                 PendingConfirmation = AgentConfigConfirmation.RestartService;
                 return;
@@ -1541,19 +1645,36 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             return;
         }
 
-        ResourceStatus.Add(Describe(Strings["Resources.SslBinding"], _resourceState.SslBinding, "NutIconTls"));
-        ResourceStatus.Add(Describe(Strings["Resources.UrlReservation"], _resourceState.UrlReservation, "NutIconRemote"));
+        ResourceStatus.Add(Describe(
+            Strings["Resources.SslBinding"], _resourceState.SslBinding, "NutIconTls", AgentResourceGender.Masculine));
+        ResourceStatus.Add(Describe(
+            Strings["Resources.UrlReservation"], _resourceState.UrlReservation, "NutIconRemote", AgentResourceGender.Feminine));
         // The firewall row names its port when there is one to name, as the reference does.
         var firewall = HttpsEnabled
             ? Strings.Format("Resources.Firewall.Port", HttpsPort)
             : Strings["Resources.Firewall"];
-        ResourceStatus.Add(Describe(firewall, _resourceState.FirewallRule, "NutIconShield"));
+        ResourceStatus.Add(Describe(
+            firewall, _resourceState.FirewallRule, "NutIconShield", AgentResourceGender.Masculine, isRule: true));
         ResourceStatus.Add(DescribeListener());
     }
 
     private AgentStatusItemViewModel DisabledResource(string label, string iconKey) =>
         AgentStatusItemViewModel.From(
-            Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.Disabled"], iconKey);
+            Strings, label, AgentDiagnosticState.NotConfigured, Strings["Resources.State.HttpsDisabled"], iconKey);
+
+    /// <summary>
+    /// Which way the Portuguese adjective has to agree.
+    ///
+    /// "SSL Binding configurado" and "URL Reservation configurada" are the same state and not the
+    /// same word. English has no agreement and maps both forms to "Configured", so this costs nothing
+    /// there - but leaving it out would put a grammatical error on the Portuguese screen, which is
+    /// the language this product is primarily read in.
+    /// </summary>
+    private enum AgentResourceGender
+    {
+        Masculine,
+        Feminine,
+    }
 
     /// <summary>
     /// Whether the HTTPS listener is actually up.
@@ -1572,16 +1693,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         if (!HttpsEnabled)
         {
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.Disabled"], icon);
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Resources.State.HttpsDisabled"], icon);
         }
 
+        // Below, the short phrase is the column and the precise sentence is the tooltip. The four
+        // cases stay four cases: which one an administrator is in still decides where they go next.
         if (!_serviceState.IsInstalled)
         {
             // Not installed is not stopped. Reporting a service that does not exist as merely stopped
             // sends an administrator to the wrong place, and it is exactly the conflation the
             // diagnostics rules forbid.
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.Error, Strings["Resources.Listener.ServiceMissing"], icon);
+                Strings, label, AgentDiagnosticState.Error, Strings["Resources.State.Listener.Unavailable"], icon,
+                Strings["Resources.Listener.ServiceMissing"]);
         }
 
         if (!_serviceState.IsRunning)
@@ -1589,41 +1713,71 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             // The configuration can be perfect and nothing is listening, because the service is not
             // running. Saying "ready" here would be the most misleading line on the screen.
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.ServiceStopped"], icon);
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.State.Listener.Unavailable"], icon,
+                Strings["Resources.Listener.ServiceStopped"]);
         }
 
         if (!HttpsIsValid || !_resourceState.IsFullyConfigured)
         {
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.Listener.Incomplete"], icon);
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.State.Listener.Incomplete"], icon,
+                Strings["Resources.Listener.Incomplete"]);
         }
 
         return AgentStatusItemViewModel.From(
-            Strings, label, AgentDiagnosticState.Ready, Strings.Format("Resources.Listener.Listening", HttpsEndpoint), icon);
+            Strings, label, AgentDiagnosticState.Ready, Strings["Resources.State.Listener.Active"], icon,
+            Strings.Format("Resources.Listener.Listening", HttpsEndpoint));
     }
 
-    private AgentStatusItemViewModel Describe(string label, AgentResourceState state, string iconKey)
+    /// <summary>
+    /// One status column.
+    ///
+    /// The classification is untouched - ownership still decides the state, and this method gets no
+    /// vote in it. What changed is what reaches the card: a short phrase built from the ownership and
+    /// localised here, instead of the adapter sentence. That sentence is written in English by
+    /// infrastructure and names an AppId or a rule; inline it made the four columns wildly different
+    /// heights and put English inside the Portuguese window. It moves to the tooltip intact.
+    /// </summary>
+    private AgentStatusItemViewModel Describe(
+        string label,
+        AgentResourceState state,
+        string iconKey,
+        AgentResourceGender gender,
+        bool isRule = false)
     {
         var diagnostic = state.Ownership switch
         {
             AgentResourceOwnership.OwnedByNutManager => AgentDiagnosticState.Ready,
-            // Present but somebody else's: not an error in NutManager, and not something to fix by
-            // deleting it. Attention, with the detail saying whose it is.
+            // Present but owned elsewhere: not an error in NutManager, and not something to fix by
+            // deleting it. Attention, with the tooltip saying who owns it.
             AgentResourceOwnership.ForeignOwner => AgentDiagnosticState.Attention,
             AgentResourceOwnership.Absent => HttpsEnabled ? AgentDiagnosticState.Error : AgentDiagnosticState.NotConfigured,
             _ => AgentDiagnosticState.Error,
         };
 
-        var detail = state.Detail ?? state.Ownership switch
+        var summary = state.Ownership switch
         {
-            AgentResourceOwnership.Absent => Strings["Resources.Absent"],
-            AgentResourceOwnership.ForeignOwner => Strings["Resources.Foreign"],
-            AgentResourceOwnership.Unknown => Strings["Resources.Unknown"],
-            _ => null,
+            AgentResourceOwnership.OwnedByNutManager => Configured(gender),
+            // A firewall rule that is not ours is most often one an administrator or an older install
+            // left behind, so it is named as what it is rather than as a rival application.
+            AgentResourceOwnership.ForeignOwner => isRule
+                ? Strings["Resources.State.UnmanagedRule"]
+                : Strings["Resources.State.Foreign"],
+            AgentResourceOwnership.Absent => NotConfigured(gender),
+            AgentResourceOwnership.Unknown => Strings["Resources.State.Unknown"],
+            _ => Strings["Resources.State.Error"],
         };
 
-        return AgentStatusItemViewModel.From(Strings, label, diagnostic, detail, iconKey);
+        return AgentStatusItemViewModel.From(Strings, label, diagnostic, summary, iconKey, state.Detail);
     }
+
+    private string Configured(AgentResourceGender gender) => gender == AgentResourceGender.Feminine
+        ? Strings["Resources.State.ConfiguredFeminine"]
+        : Strings["Resources.State.Configured"];
+
+    private string NotConfigured(AgentResourceGender gender) => gender == AgentResourceGender.Feminine
+        ? Strings["Resources.State.NotConfiguredFeminine"]
+        : Strings["Resources.State.NotConfigured"];
 
     /// <summary>
     /// The diagnostics list.

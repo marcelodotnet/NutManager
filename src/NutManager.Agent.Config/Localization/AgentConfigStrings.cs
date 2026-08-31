@@ -137,6 +137,37 @@ public sealed class AgentConfigStrings
         ["Resources.Absent"] = "Não configurado",
         ["Resources.Unknown"] = "Não foi possível verificar",
 
+        // The short state each status column shows. Deliberately not the adapter's own detail: that
+        // is written in English by infrastructure, names an AppId or a rule, and runs to several
+        // lines inside a quarter-width column. It moves to the tooltip; this is what the card says.
+        //
+        // Configured and NotConfigured come in two forms because Portuguese agrees with the noun:
+        // "SSL Binding configurado" but "URL Reservation configurada". English has no such
+        // agreement and maps both forms to the same word.
+        ["Resources.State.Configured"] = "Configurado",
+        ["Resources.State.ConfiguredFeminine"] = "Configurada",
+        ["Resources.State.NotConfigured"] = "Não configurado",
+        ["Resources.State.NotConfiguredFeminine"] = "Não configurada",
+        ["Resources.State.Foreign"] = "Pertence a outro aplicativo",
+        ["Resources.State.UnmanagedRule"] = "Regra existente não gerenciada",
+        ["Resources.State.Unknown"] = "Propriedade não confirmada",
+        ["Resources.State.Error"] = "Erro na configuração",
+        ["Resources.State.HttpsDisabled"] = "HTTPS desativado",
+        ["Resources.State.Listener.Active"] = "Ativo",
+        ["Resources.State.Listener.Incomplete"] = "Configuração incompleta",
+        ["Resources.State.Listener.Unavailable"] = "Listener indisponível",
+
+        // The tooltip. Everything the card no longer shows inline, on one hover.
+        ["Resources.Tooltip.State"] = "Estado: {0}",
+        ["Resources.Tooltip.Port"] = "Porta: {0}",
+
+        ["Theme.EnableDark"] = "Ativar modo escuro",
+        ["Theme.EnableLight"] = "Ativar modo claro",
+
+        ["Service.RestartPending"] = "Reinicialização necessária",
+        ["Service.RestartPending.Detail"] =
+            "As alterações serão aplicadas ao listener após reiniciar o NutManagerAgent.",
+
         ["Operators.Title"] = "NutManager Operators",
         ["Operators.Description"] = "Este grupo controla quem pode usar o NutManager Agent. Somente seus membros podem executar operações administrativas.",
         ["Operators.AddUser"] = "Adicionar usuário",
@@ -326,6 +357,29 @@ public sealed class AgentConfigStrings
         ["Resources.Foreign"] = "Not owned by NutManager",
         ["Resources.Absent"] = "Not configured",
         ["Resources.Unknown"] = "Could not be verified",
+
+        ["Resources.State.Configured"] = "Configured",
+        ["Resources.State.ConfiguredFeminine"] = "Configured",
+        ["Resources.State.NotConfigured"] = "Not configured",
+        ["Resources.State.NotConfiguredFeminine"] = "Not configured",
+        ["Resources.State.Foreign"] = "Owned by another application",
+        ["Resources.State.UnmanagedRule"] = "Existing unmanaged rule",
+        ["Resources.State.Unknown"] = "Ownership not confirmed",
+        ["Resources.State.Error"] = "Configuration error",
+        ["Resources.State.HttpsDisabled"] = "HTTPS disabled",
+        ["Resources.State.Listener.Active"] = "Active",
+        ["Resources.State.Listener.Incomplete"] = "Incomplete configuration",
+        ["Resources.State.Listener.Unavailable"] = "Listener unavailable",
+
+        ["Resources.Tooltip.State"] = "State: {0}",
+        ["Resources.Tooltip.Port"] = "Port: {0}",
+
+        ["Theme.EnableDark"] = "Enable dark mode",
+        ["Theme.EnableLight"] = "Enable light mode",
+
+        ["Service.RestartPending"] = "Restart required",
+        ["Service.RestartPending.Detail"] =
+            "The changes will reach the listener once NutManagerAgent is restarted.",
 
         ["Operators.Title"] = "NutManager Operators",
         ["Operators.Description"] = "This group controls who may use the NutManager Agent. Only its members can perform administrative operations.",

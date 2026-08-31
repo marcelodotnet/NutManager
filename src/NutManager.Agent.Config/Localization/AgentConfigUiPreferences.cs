@@ -22,6 +22,17 @@ public interface IAgentConfigUiPreferences
     UiLanguagePreference? ReadLanguage();
 
     void WriteLanguage(UiLanguagePreference language);
+
+    /// <summary>
+    /// The saved theme, or null when nobody has chosen one.
+    ///
+    /// Null is not the same as System. Null means the question has never been answered, so the window
+    /// follows whatever the desktop application's own default rule does; System would be a choice
+    /// somebody made. Only an explicit click writes here.
+    /// </summary>
+    ThemePreference? ReadTheme();
+
+    void WriteTheme(ThemePreference theme);
 }
 
 /// <summary>The file-backed preference store, plus a no-op for tests and for design-time.</summary>
@@ -49,34 +60,63 @@ public sealed class AgentConfigUiPreferences : IAgentConfigUiPreferences
         _path = path;
     }
 
-    public UiLanguagePreference? ReadLanguage()
+    public UiLanguagePreference? ReadLanguage() =>
+        // An unrecognised tag reads as "nothing saved" rather than as pt-BR, so a file written by a
+        // later version that adds a language does not silently pin this one to the wrong one.
+        Read()?.Language switch
+        {
+            "en-US" => UiLanguagePreference.EnUs,
+            "pt-BR" => UiLanguagePreference.PtBr,
+            _ => null,
+        };
+
+    public ThemePreference? ReadTheme() => Read()?.Theme switch
+    {
+        "light" => ThemePreference.Light,
+        "dark" => ThemePreference.Dark,
+        _ => null,
+    };
+
+    public void WriteLanguage(UiLanguagePreference language) =>
+        Write(current => current with
+        {
+            Language = language == UiLanguagePreference.EnUs ? "en-US" : "pt-BR",
+        });
+
+    public void WriteTheme(ThemePreference theme) =>
+        Write(current => current with
+        {
+            // Only the two an operator can actually pick are written. System is the absence of a
+            // choice, and it is represented by the field being absent rather than by a third tag.
+            Theme = theme == ThemePreference.Light ? "light" : "dark",
+        });
+
+    private AgentConfigUiDocument? Read()
     {
         try
         {
             if (!File.Exists(_path)) return null;
 
-            var document = JsonSerializer.Deserialize(
+            return JsonSerializer.Deserialize(
                 File.ReadAllText(_path), AgentConfigUiPreferencesJson.Default.AgentConfigUiDocument);
-
-            // An unrecognised tag reads as "nothing saved" rather than as pt-BR, so a file written by
-            // a later version that adds a language does not silently pin this one to the wrong one.
-            return document?.Language switch
-            {
-                "en-US" => UiLanguagePreference.EnUs,
-                "pt-BR" => UiLanguagePreference.PtBr,
-                _ => null,
-            };
         }
         catch (Exception)
         {
             // A preference file that cannot be read is a preference nobody set. The window falls back
-            // to the Windows culture and carries on: this is a convenience, and it must never be the
-            // reason an administration utility refuses to open.
+            // to its defaults and carries on: this is a convenience, and it must never be the reason
+            // an administration utility refuses to open.
             return null;
         }
     }
 
-    public void WriteLanguage(UiLanguagePreference language)
+    /// <summary>
+    /// Read, change one field, write the whole file back.
+    ///
+    /// Read-modify-write rather than write-what-I-know, because the two preferences are set from
+    /// different controls at different moments: serialising only the field being changed would drop
+    /// the other one every time somebody switched language or theme.
+    /// </summary>
+    private void Write(Func<AgentConfigUiDocument, AgentConfigUiDocument> change)
     {
         try
         {
@@ -86,13 +126,13 @@ public sealed class AgentConfigUiPreferences : IAgentConfigUiPreferences
             File.WriteAllText(
                 _path,
                 JsonSerializer.Serialize(
-                    new AgentConfigUiDocument(language == UiLanguagePreference.EnUs ? "en-US" : "pt-BR"),
+                    change(Read() ?? new AgentConfigUiDocument(null, null)),
                     AgentConfigUiPreferencesJson.Default.AgentConfigUiDocument));
         }
         catch (Exception)
         {
-            // Same reasoning as the read. The language has already changed on screen; failing to
-            // remember it for next time is not worth interrupting an administrator over.
+            // Same reasoning as the read. The preference has already taken effect on screen; failing
+            // to remember it for next time is not worth interrupting an administrator over.
         }
     }
 
@@ -103,13 +143,25 @@ public sealed class AgentConfigUiPreferences : IAgentConfigUiPreferences
         public void WriteLanguage(UiLanguagePreference language)
         {
         }
+
+        public ThemePreference? ReadTheme() => null;
+
+        public void WriteTheme(ThemePreference theme)
+        {
+        }
     }
 }
 
-/// <summary>The whole file: one culture tag. Never a credential, a path or a machine fact.</summary>
+/// <summary>
+/// The whole file: a culture tag and a theme tag, both optional. Never a credential, a path or a
+/// machine fact, and never anything the Agent service reads.
+/// </summary>
 public sealed record AgentConfigUiDocument(
-    [property: JsonPropertyName("language")] string Language);
+    [property: JsonPropertyName("language")] string? Language,
+    [property: JsonPropertyName("theme")] string? Theme);
 
-[JsonSourceGenerationOptions(WriteIndented = true)]
+// Absent rather than null: a preference nobody has set should leave no trace in the file, so a
+// language-only document stays a language-only document.
+[JsonSourceGenerationOptions(WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(AgentConfigUiDocument))]
 internal sealed partial class AgentConfigUiPreferencesJson : JsonSerializerContext;

@@ -24,39 +24,54 @@
       <Border Classes="agent-resource-item"
               BorderBrush="{DynamicResource NutBorderSubtleBrush}"
               BorderThickness="0,0,1,0"
+              ToolTip.Tip="{Binding TooltipText}"
               AutomationProperties.Name="{Binding AccessibleText}">
-        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6">
-          <!--
-            The resource glyph sits on the item's centre line rather than at the top of the cell. With
-            a two-line item, Top left it floating above a gap; centring is what makes the icon read as
-            belonging to the label it names.
-          -->
-          <PathIcon Grid.Column="0"
+        <!--
+          Two rows, not three columns.
+
+          The state glyph used to sit in a third column at the far right of the cell, which put it as
+          far from the words it was judging as the column allowed - a red cross floating beside a
+          label it did not appear to belong to. It now leads the state line, directly under the
+          title, so the pair reads as one statement.
+
+          The resource glyph still identifies the row and the state glyph still judges it: a padlock
+          says which resource, an amber triangle says how it is. Neither replaces the other.
+        -->
+        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*" ColumnSpacing="6" RowSpacing="3">
+          <PathIcon Grid.Row="0"
+                    Grid.Column="0"
                     Data="{Binding IconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
-                    Width="21"
-                    Height="21"
+                    Width="18"
+                    Height="18"
                     VerticalAlignment="Center"
                     Foreground="{DynamicResource NutTextSecondaryBrush}" />
-          <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-            <TextBlock Classes="nut-body"
-                       FontWeight="SemiBold"
-                       FontSize="11.5"
-                       Foreground="{DynamicResource NutTextPrimaryBrush}"
-                       Text="{Binding Label}"
-                       TextWrapping="NoWrap"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Classes="nut-metadata"
-                       Text="{Binding Detail}"
-                       IsVisible="{Binding HasDetail}"
-                       TextWrapping="Wrap" />
-          </StackPanel>
-          <PathIcon Grid.Column="2"
-                    Width="22"
-                    Height="22"
+          <TextBlock Grid.Row="0"
+                     Grid.Column="1"
+                     Classes="nut-body"
+                     FontWeight="SemiBold"
+                     FontSize="11.5"
+                     VerticalAlignment="Center"
+                     Foreground="{DynamicResource NutTextPrimaryBrush}"
+                     Text="{Binding Label}"
+                     TextWrapping="Wrap"
+                     MaxLines="2"
+                     TextTrimming="CharacterEllipsis" />
+          <PathIcon Grid.Row="1"
+                    Grid.Column="0"
+                    Width="17"
+                    Height="17"
                     VerticalAlignment="Center"
-                    ToolTip.Tip="{Binding StatusText}"
                     Data="{Binding StateIconKey, Converter={x:Static converters:AgentConfigConverters.IconByKey}}"
                     Foreground="{Binding StateClass, Converter={x:Static converters:AgentConfigConverters.StateBrush}}" />
+          <TextBlock Grid.Row="1"
+                     Grid.Column="1"
+                     Classes="nut-metadata"
+                     VerticalAlignment="Center"
+                     Text="{Binding Detail}"
+                     IsVisible="{Binding HasDetail}"
+                     TextWrapping="Wrap"
+                     MaxLines="2"
+                     TextTrimming="CharacterEllipsis" />
         </Grid>
       </Border>
     </DataTemplate>
@@ -193,6 +208,79 @@
       <Setter Property="MinHeight" Value="30" />
       <Setter Property="Padding" Value="9,5" />
     </Style>
+    <!--
+      A circle, not a rounded rectangle. Width equals height and the radius is far larger than half of
+      either, so the shape is a true disc at any scaling rather than a square that has been softened.
+
+      The transition values are the shell theme control, to the millisecond: 0.18s on the brushes for
+      hover, 0.34s CubicEaseOut on the glyph transform. They are repeated here rather than linked
+      because they live in NutShellStyles, which is the sidebar, the navigation rail and the window
+      chrome - none of which this one-screen utility has, and importing all of it to reach two
+      transitions would drag the whole shell in behind them.
+    -->
+    <Style Selector="Border.agent-restart-pending">
+      <Setter Property="Background" Value="{DynamicResource NutWarningSoftBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Padding" Value="9,3" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.agent-theme-button">
+      <Setter Property="Width" Value="36" />
+      <Setter Property="Height" Value="36" />
+      <Setter Property="MinWidth" Value="36" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Background" Value="{DynamicResource NutSurface1Brush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutBorderSubtleBrush}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Foreground" Value="{DynamicResource NutTextSecondaryBrush}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.18" />
+          <BrushTransition Property="Foreground" Duration="0:0:0.18" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-theme-button /template/ ContentPresenter">
+      <Setter Property="CornerRadius" Value="999" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.agent-theme-button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NutSurfaceHoverBrush}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.agent-theme-button:pointerover">
+      <Setter Property="Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
+    </Style>
+
+    <!--
+      The glyphs, moving the way the shell moves them. Both take colour from the button so the hover
+      state carries through, and both are transitions only, so the control costs nothing while nobody
+      is pointing at it.
+    -->
+    <Style Selector="Path.agent-theme-glyph">
+      <Setter Property="Fill" Value="{Binding $parent[Button].Foreground}" />
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="RenderTransform" Value="none" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.34" Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-theme-button:pointerover Path.agent-sun">
+      <Setter Property="RenderTransform" Value="rotate(45deg) scale(1.08)" />
+    </Style>
+    <Style Selector="Button.agent-theme-button:pointerover Path.agent-moon">
+      <Setter Property="RenderTransform" Value="rotate(-18deg) scale(1.06)" />
+    </Style>
+
     <Style Selector="Button.agent-reset-https">
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="{DynamicResource NutWarningBrush}" />
@@ -335,6 +423,41 @@
                               Height="11"
                               VerticalAlignment="Center" />
                   </StackPanel>
+                </Button>
+                <!--
+                  One circular button, and the glyph is the destination rather than the current state.
+
+                  In dark mode it shows a sun, because pressing it turns the light on; in light mode a
+                  moon. The alternative - showing the theme you are already in - is a button that
+                  describes rather than offers, and it reads backwards to everyone who tries it once.
+
+                  Two Paths with one visible at a time, not one Path with a swapped geometry: that is
+                  how the desktop application draws these, and it is what lets each glyph keep its own
+                  movement. The sun turns an eighth of a turn so a ray lands where a ray was; the moon
+                  leans back as if setting. Same durations, easing and rotations as the shell.
+                -->
+                <Button x:Name="ThemeToggle"
+                        Classes="agent-theme-button"
+                        VerticalAlignment="Center"
+                        Command="{Binding ToggleThemeCommand}"
+                        ToolTip.Tip="{Binding ThemeActionText}"
+                        AutomationProperties.Name="{Binding ThemeActionText}">
+                  <Panel Width="19" Height="19">
+                    <Viewbox Width="19" Height="19" IsVisible="{Binding ShowLightThemeAction}">
+                      <Grid Width="24" Height="24">
+                        <Path Classes="agent-theme-glyph agent-sun"
+                              Stretch="None"
+                              Data="{DynamicResource NutIconSun}" />
+                      </Grid>
+                    </Viewbox>
+                    <Viewbox Width="19" Height="19" IsVisible="{Binding ShowDarkThemeAction}">
+                      <Grid Width="24" Height="24">
+                        <Path Classes="agent-theme-glyph agent-moon"
+                              Stretch="None"
+                              Data="{DynamicResource NutIconMoon}" />
+                      </Grid>
+                    </Viewbox>
+                  </Panel>
                 </Button>
                 <Button VerticalAlignment="Center"
                         Padding="11,6"
@@ -894,17 +1017,47 @@
                 and Cancel buttons. Trimming keeps it inside its column, and the tooltip keeps the
                 whole message one hover away.
               -->
-              <TextBlock Grid.Column="1"
-                         Classes="nut-metadata"
-                         VerticalAlignment="Center"
-                         TextAlignment="Right"
-                         TextWrapping="Wrap"
-                         MaxLines="2"
-                         TextTrimming="CharacterEllipsis"
-                         Text="{Binding ApplyMessage}"
-                         ToolTip.Tip="{Binding ApplyMessage}"
-                         IsVisible="{Binding ApplyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                         Foreground="{Binding ApplyFailed, Converter={x:Static converters:AgentConfigConverters.MessageBrush}}" />
+              <StackPanel Grid.Column="1"
+                          Orientation="Horizontal"
+                          Spacing="8"
+                          HorizontalAlignment="Right"
+                          VerticalAlignment="Center">
+                <!--
+                  A marker, not a sentence.
+
+                  "Configuration saved. The changes will only take effect after restarting the
+                  NutManagerAgent." is true and it is also the whole strip between the service actions
+                  and Apply, which left both crowded. The dot and three words say the same thing at a
+                  glance; the sentence is on the tooltip for whoever has not met it before.
+
+                  It reports the state and does nothing about it: restarting stays the explicit
+                  action on the left.
+                -->
+                <Border Classes="agent-restart-pending"
+                        IsVisible="{Binding RestartRequired}"
+                        ToolTip.Tip="{Binding Strings[Service.RestartPending.Detail]}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="7"
+                             Height="7"
+                             VerticalAlignment="Center"
+                             Fill="{DynamicResource NutWarningBrush}" />
+                    <TextBlock Classes="nut-metadata"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource NutWarningBrush}"
+                               Text="{Binding Strings[Service.RestartPending]}" />
+                  </StackPanel>
+                </Border>
+                <TextBlock Classes="nut-metadata"
+                           VerticalAlignment="Center"
+                           TextAlignment="Right"
+                           TextWrapping="Wrap"
+                           MaxLines="2"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding ApplyMessage}"
+                           ToolTip.Tip="{Binding ApplyMessage}"
+                           IsVisible="{Binding ApplyMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{Binding ApplyFailed, Converter={x:Static converters:AgentConfigConverters.MessageBrush}}" />
+              </StackPanel>
               <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
                 <Button Classes="nut-primary"
                         Width="116"

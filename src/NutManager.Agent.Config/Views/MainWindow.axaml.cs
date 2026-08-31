@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Styling;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
@@ -17,9 +19,51 @@ namespace NutManager.Agent.Config.Views;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        // Avalonia resolves Default against Windows, so the variant the window ends up in is only
+        // known once it exists - and it can change underneath the window if somebody switches the
+        // system theme while it is open. Both cases arrive here, and the glyph follows.
+        ActualThemeVariantChanged += (_, _) => PublishEffectiveTheme();
+
+        DataContextChanged += OnDataContextChanged;
+    }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    private void OnDataContextChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is not AgentConfigViewModel viewModel) return;
+
+        // The saved preference is applied before the first paint, so the window opens in the theme
+        // the operator last chose rather than opening in one and correcting itself.
+        ApplyTheme(viewModel.SelectedTheme);
+        viewModel.ThemeChanged += ApplyTheme;
+        PublishEffectiveTheme();
+    }
+
+    /// <summary>
+    /// Hands the chosen theme to Avalonia, using the desktop application's own mapping.
+    ///
+    /// System maps to Default rather than to a guess, which is what lets "follow Windows" keep
+    /// following Windows after the window is open instead of freezing at whatever it was.
+    /// </summary>
+    private void ApplyTheme(ThemePreference preference)
+    {
+        if (Application.Current is not { } application) return;
+
+        application.RequestedThemeVariant = preference switch
+        {
+            ThemePreference.Light => ThemeVariant.Light,
+            ThemePreference.Dark => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+    }
+
+    private void PublishEffectiveTheme() =>
+        (DataContext as AgentConfigViewModel)?.UpdateEffectiveTheme(ActualThemeVariant == ThemeVariant.Dark);
 
     private void OnSelectPortugueseClicked(object? sender, RoutedEventArgs e) =>
         SelectLanguage(UiLanguagePreference.PtBr);

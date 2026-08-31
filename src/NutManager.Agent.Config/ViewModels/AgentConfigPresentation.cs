@@ -13,13 +13,19 @@ namespace NutManager.Agent.Config.ViewModels;
 public sealed class AgentStatusItemViewModel
 {
     public AgentStatusItemViewModel(
-        string label, AgentDiagnosticState state, string? detail, string statusText, string iconKey = "NutIconShield")
+        string label,
+        AgentDiagnosticState state,
+        string? detail,
+        string statusText,
+        string iconKey = "NutIconShield",
+        string? technicalDetail = null)
     {
         Label = label;
         State = state;
         Detail = detail;
         StatusText = statusText;
         IconKey = iconKey;
+        TechnicalDetail = technicalDetail;
     }
 
     /// <summary>
@@ -54,6 +60,34 @@ public sealed class AgentStatusItemViewModel
     public bool HasDetail => !string.IsNullOrWhiteSpace(Detail);
 
     /// <summary>
+    /// What the platform actually said, kept off the card and put on the tooltip.
+    ///
+    /// The adapters describe a resource precisely - "Port 5199 is bound by another application
+    /// (AppId {...})" - and precision is what makes them useless in a quarter-width column: the text
+    /// ran to five lines, pushed the four columns to wildly different heights, and appeared in
+    /// English inside the Portuguese window because infrastructure does not localise. None of that
+    /// is a reason to lose the information, so it moves rather than going away.
+    /// </summary>
+    public string? TechnicalDetail { get; }
+
+    public bool HasTechnicalDetail => !string.IsNullOrWhiteSpace(TechnicalDetail);
+
+    /// <summary>
+    /// The hover text: what the row is, what state it is in, and the platform's own words underneath.
+    /// Assembled here rather than in the view so the order is the same for every row.
+    /// </summary>
+    public string TooltipText
+    {
+        get
+        {
+            var lines = new List<string> { Label };
+            if (HasDetail) lines.Add(Detail!);
+            if (HasTechnicalDetail) lines.Add(TechnicalDetail!);
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
+
+    /// <summary>
     /// The glyph. Text rather than an icon so it survives being read aloud, copied into a support
     /// email, or rendered somewhere the icon font did not load.
     /// </summary>
@@ -84,8 +118,9 @@ public sealed class AgentStatusItemViewModel
         string label,
         AgentDiagnosticState state,
         string? detail = null,
-        string iconKey = "NutIconShield") =>
-        new(label, state, detail, StatusTextFor(strings, state), iconKey);
+        string iconKey = "NutIconShield",
+        string? technicalDetail = null) =>
+        new(label, state, detail, StatusTextFor(strings, state), iconKey, technicalDetail);
 
     internal static string StatusTextFor(AgentConfigStrings strings, AgentDiagnosticState state) => state switch
     {
