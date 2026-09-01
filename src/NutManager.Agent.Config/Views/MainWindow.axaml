@@ -609,14 +609,14 @@
       The question mark beside a switch that cannot be used.
 
       The glyph is its own circle, so the button draws none: a border here would put a second ring
-      around the first. It stands as tall as the switch it sits beside, because two controls on one
-      row that are not the same height read as one control and one afterthought.
+      around the first. It sits a little inside the height of the switch beside it - level with it and
+      clearly paired, without competing with the control it is only explaining.
     -->
     <Style Selector="Button.agent-help-button">
-      <Setter Property="Width" Value="26" />
-      <Setter Property="Height" Value="26" />
-      <Setter Property="MinWidth" Value="26" />
-      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="Width" Value="22" />
+      <Setter Property="Height" Value="22" />
+      <Setter Property="MinWidth" Value="22" />
+      <Setter Property="MinHeight" Value="22" />
       <Setter Property="Padding" Value="0" />
       <Setter Property="CornerRadius" Value="999" />
       <Setter Property="Background" Value="Transparent" />
@@ -1591,7 +1591,7 @@
                                   Command="{Binding ShowServiceInstallationCommand}"
                                   ToolTip.Tip="{Binding Strings[Settings.Startup.Install]}"
                                   AutomationProperties.Name="{Binding Strings[Settings.Startup.Install]}">
-                            <PathIcon Data="{DynamicResource AgentIconHelp}" Width="19" Height="19" />
+                            <PathIcon Data="{DynamicResource AgentIconHelp}" Width="14" Height="14" />
                           </Button>
                         </StackPanel>
                         <TextBlock Classes="hint"
