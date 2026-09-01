@@ -34,6 +34,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private readonly IAgentHttpsResourceAdministration _resources;
     private readonly IAgentCertificateCatalog _certificates;
     private readonly IAgentRuntimeInventory _inventory;
+
+    /// <summary>Absent in tests and on any host that has no browser to hand a link to.</summary>
+    private readonly IAgentProjectPageLauncher? _projectPage;
     private readonly IAgentCertificateImporter? _certificateImporter;
     private readonly IAgentConfigUiPreferences _preferences;
     private readonly TimeProvider _time;
@@ -78,7 +81,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         UiLanguagePreference? language = null,
         TimeProvider? timeProvider = null,
         IAgentCertificateImporter? certificateImporter = null,
-        IAgentConfigUiPreferences? preferences = null)
+        IAgentConfigUiPreferences? preferences = null,
+        IAgentProjectPageLauncher? projectPage = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(groups);
@@ -94,6 +98,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _certificates = certificates;
         _inventory = inventory;
         _certificateImporter = certificateImporter;
+        _projectPage = projectPage;
         _preferences = preferences ?? AgentConfigUiPreferences.None;
         _time = timeProvider ?? TimeProvider.System;
 
@@ -387,24 +392,35 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         }
     }
 
-    // ---------------------------------------------------------------- which half is showing
+    // ---------------------------------------------------------------- which surface is showing
 
     /// <summary>
-    /// Whether the diagnostics list has replaced the configuration surface.
+    /// Which of the three surfaces the window is showing.
     ///
-    /// One window, two views, and no navigation rail: there are exactly two things to look at, and a
-    /// sidebar for two destinations is the desktop shell this utility is deliberately not.
+    /// One window, three views, and still no navigation rail: configuration is the window's purpose,
+    /// diagnostics is a read-only report of the same machine, and settings holds the preferences and
+    /// the one destructive action that do not belong beside the fields they act on. A sidebar for
+    /// three destinations is the desktop shell this utility is deliberately not.
+    ///
+    /// One value rather than a boolean per surface, so "both showing" and "none showing" are states
+    /// the type cannot hold.
     /// </summary>
     [ObservableProperty]
-    private bool _showDiagnostics;
+    private AgentConfigSurface _surface = AgentConfigSurface.Configuration;
 
-    partial void OnShowDiagnosticsChanged(bool value)
+    partial void OnSurfaceChanged(AgentConfigSurface value)
     {
         OnPropertyChanged(nameof(ShowConfiguration));
+        OnPropertyChanged(nameof(ShowDiagnostics));
+        OnPropertyChanged(nameof(ShowSettings));
         OnPropertyChanged(nameof(ViewToggleText));
     }
 
-    public bool ShowConfiguration => !ShowDiagnostics;
+    public bool ShowConfiguration => Surface == AgentConfigSurface.Configuration;
+
+    public bool ShowDiagnostics => Surface == AgentConfigSurface.Diagnostics;
+
+    public bool ShowSettings => Surface == AgentConfigSurface.Settings;
 
     /// <summary>
     /// The toggle's label names where it goes, not where you are. Localized text belongs on the view
@@ -413,7 +429,18 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public string ViewToggleText => ShowDiagnostics ? Strings["Header.Configuration"] : Strings["Header.Diagnostics"];
 
     [RelayCommand]
-    private void ToggleDiagnostics() => ShowDiagnostics = !ShowDiagnostics;
+    private void ToggleDiagnostics() =>
+        Surface = ShowDiagnostics ? AgentConfigSurface.Configuration : AgentConfigSurface.Diagnostics;
+
+    /// <summary>
+    /// Settings, and back to the configuration surface.
+    ///
+    /// Settings is a place you visit and leave, not a third destination in a rotation, so leaving it
+    /// returns to the window's purpose rather than to whatever was showing before.
+    /// </summary>
+    [RelayCommand]
+    private void ToggleSettings() =>
+        Surface = ShowSettings ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;
 
     // ---------------------------------------------------------------- transports
 
@@ -1194,6 +1221,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ServiceIsInstalled));
         OnPropertyChanged(nameof(ShowStartServiceAction));
         OnPropertyChanged(nameof(ShowStopServiceAction));
+        SyncStartupFromService();
         RefreshCommandStates();
         RebuildDiagnostics();
     }
@@ -1837,6 +1865,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanImportCertificate));
         OnPropertyChanged(nameof(CanResetHttps));
         OnPropertyChanged(nameof(HttpsResetBlockedReason));
+        OnPropertyChanged(nameof(CanChangeStartup));
+        OnPropertyChanged(nameof(StartupBlockedReason));
         ResetHttpsCommand.NotifyCanExecuteChanged();
         RefreshApplyState();
     }
@@ -2180,6 +2210,197 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// having authenticated over it. A screen that collapsed those would be easier to read and would
     /// answer the wrong question.
     /// </summary>
+    // ---------------------------------------------------------------- startup preference
+
+    /// <summary>
+    /// Whether Windows starts the agent by itself.
+    ///
+    /// The service control manager is the only place this lives. Writing it into agent.json as well
+    /// would create a second answer that nothing reconciles: an operator can change the start type in
+    /// services.msc, and the copy here would be wrong from that moment on without ever saying so. It
+    /// is read back from the machine after every change for the same reason.
+    ///
+    /// Applied immediately rather than collected into Apply. Apply writes the transport document, and
+    /// a service start type is not part of that document.
+    /// </summary>
+    [ObservableProperty]
+    private bool _startsWithWindows;
+
+    /// <summary>True while the switch is being set from the machine, so echoing a fact back is not a change.</summary>
+    private bool _syncingStartup;
+
+    /// <summary>The last thing the startup switch did, or why it could not.</summary>
+    [ObservableProperty]
+    private string? _startupResultText;
+
+    [ObservableProperty]
+    private bool _startupFailed;
+
+    partial void OnStartsWithWindowsChanged(bool value)
+    {
+        if (_syncingStartup) return;
+
+        _ = ApplyStartupPreferenceAsync(value);
+    }
+
+    /// <summary>
+    /// There is a start type to change only when there is a service, and only when nothing else is
+    /// already in flight against it.
+    /// </summary>
+    public bool CanChangeStartup => _serviceState.IsInstalled && !IsBusy;
+
+    /// <summary>Why the switch is unavailable, said plainly rather than left to a disabled control.</summary>
+    public string? StartupBlockedReason =>
+        _serviceState.IsInstalled ? null : Strings["Settings.Startup.NotInstalled"];
+
+    private void SyncStartupFromService()
+    {
+        _syncingStartup = true;
+        try
+        {
+            StartsWithWindows = _serviceState.StartType == AgentServiceStartType.Automatic;
+        }
+        finally
+        {
+            _syncingStartup = false;
+        }
+
+        OnPropertyChanged(nameof(CanChangeStartup));
+        OnPropertyChanged(nameof(StartupBlockedReason));
+    }
+
+    /// <summary>
+    /// Automatic or Manual, and never Disabled.
+    ///
+    /// Turning a boot preference off must not take away the operator's ability to start the agent by
+    /// hand, and Disabled is precisely that. Nothing is started or stopped here either: this changes
+    /// what Windows does at the next boot, and an operator changing a boot preference has not asked
+    /// for anything to happen to the running service right now.
+    /// </summary>
+    private async Task ApplyStartupPreferenceAsync(bool automatic)
+    {
+        if (!CanChangeStartup)
+        {
+            SyncStartupFromService();
+            return;
+        }
+
+        var preference = automatic
+            ? AgentServiceStartupPreference.Automatic
+            : AgentServiceStartupPreference.Manual;
+
+        IsBusy = true;
+        try
+        {
+            var outcome = await _service.SetStartupAsync(preference, CancellationToken.None).ConfigureAwait(true);
+
+            StartupFailed = !outcome.Succeeded;
+            StartupResultText = outcome.Succeeded
+                ? Strings[automatic ? "Settings.Startup.Automatic.Done" : "Settings.Startup.Manual.Done"]
+                : outcome.Failure ?? Strings["Settings.Startup.Failed"];
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            StartupFailed = true;
+            StartupResultText = Strings["Settings.Startup.Failed"];
+        }
+        finally
+        {
+            IsBusy = false;
+
+            // Whatever happened, the switch is set from what the machine now reports rather than from
+            // what was asked for. A refused change must not leave the control claiming it succeeded.
+            ReloadService();
+        }
+    }
+
+    // ---------------------------------------------------------------- what the machine reports
+
+    /// <summary>
+    /// The start type in words, from the typed value rather than the raw string Windows returned, so
+    /// the two cultures say it rather than echoing an English WMI token.
+    /// </summary>
+    public string ServiceStartTypeText => _serviceState.StartType switch
+    {
+        AgentServiceStartType.Automatic => Strings["Service.StartType.Automatic"],
+        AgentServiceStartType.Manual => Strings["Service.StartType.Manual"],
+        AgentServiceStartType.Disabled => Strings["Service.StartType.Disabled"],
+        _ => Strings["About.Unknown"],
+    };
+
+    /// <summary>
+    /// The account the service runs as. An account name is not a credential and nothing here reads,
+    /// stores or displays a password.
+    /// </summary>
+    public string ServiceAccountText =>
+        string.IsNullOrWhiteSpace(_serviceState.Account) ? Strings["About.Unknown"] : _serviceState.Account;
+
+    /// <summary>
+    /// The transports that are on, named the way the transport card names them, from the edited state
+    /// rather than the file - this reports what the window would save, not a second reading.
+    /// </summary>
+    public string ActiveTransportsText
+    {
+        get
+        {
+            var active = new List<string>(2);
+            if (NamedPipeEnabled) active.Add(Strings["Transport.NamedPipe"]);
+            if (HttpsEnabled) active.Add(Strings["Transport.Https"]);
+            return active.Count == 0 ? Strings["Settings.Agent.None"] : string.Join(", ", active);
+        }
+    }
+
+    /// <summary>The port, or nothing at all when the transport that uses it is off.</summary>
+    public string HttpsPortText => HttpsEnabled
+        ? HttpsPort.ToString(CultureInfo.InvariantCulture)
+        : Strings["Settings.Agent.None"];
+
+    // ---------------------------------------------------------------- about
+
+    /// <summary>The product version, from the assembly that is actually running.</summary>
+    public string AboutVersion =>
+        typeof(AgentConfigViewModel).Assembly.GetName().Version?.ToString(3) ?? Strings["About.Unknown"];
+
+    /// <summary>
+    /// The full informational version, which carries whatever the build stamped onto it. Shown as the
+    /// build rather than parsed: a version string is the build's statement about itself.
+    /// </summary>
+    public string AboutBuild =>
+        typeof(AgentConfigViewModel).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion ?? AboutVersion;
+
+    /// <summary>Read from the same inventory the diagnostics list reports, so the two cannot disagree.</summary>
+    public string AboutDotNetRuntime => _machine.DotNetRuntimeVersion ?? Strings["About.Unknown"];
+
+    public string AboutAspNetCoreRuntime => _machine.AspNetCoreRuntimeVersion ?? Strings["About.Unknown"];
+
+    public string AboutDeveloper => "Marcelo Pacheco";
+
+    /// <summary>
+    /// The address the link opens, shown as text so the target is visible before it is followed and
+    /// still reachable on a machine with no browser installed.
+    /// </summary>
+    public string AboutProjectPageUrl => _projectPage?.ProjectPageUrl ?? string.Empty;
+
+    public bool CanOpenProjectPage => _projectPage is not null;
+
+    [ObservableProperty]
+    private bool _projectPageFailed;
+
+    /// <summary>
+    /// Opens the product's own project page. No parameter, here or in the contract: there is one
+    /// address, it is a constant in the launcher, and this command cannot name another.
+    /// </summary>
+    [RelayCommand]
+    private void OpenProjectPage()
+    {
+        if (_projectPage is null) return;
+
+        ProjectPageFailed = !_projectPage.OpenProjectPage();
+    }
+
     private void RebuildDiagnostics()
     {
         Diagnostics.Clear();

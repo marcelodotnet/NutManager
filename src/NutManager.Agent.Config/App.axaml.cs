@@ -43,7 +43,8 @@ public sealed class App : Application
                 new WindowsAgentCertificateCatalog(),
                 new WindowsAgentRuntimeInventory(),
                 certificateImporter: new WindowsAgentCertificateImporter(),
-                preferences: new AgentConfigUiPreferences());
+                preferences: new AgentConfigUiPreferences(),
+                projectPage: new WindowsAgentProjectPageLauncher());
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
 

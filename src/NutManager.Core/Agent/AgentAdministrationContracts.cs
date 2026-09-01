@@ -273,3 +273,20 @@ public interface IAgentServiceAdministration
     Task<AgentServiceOutcome> SetStartupAsync(
         AgentServiceStartupPreference preference, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Opens the product's own project page, and nothing else.
+///
+/// There is deliberately no URL parameter. A launcher that took one would be a general way to make
+/// this process open an arbitrary target, reachable from anywhere the interface is injected; the one
+/// address this product links to is a constant in the implementation, so there is nothing to pass and
+/// nothing to get wrong. It is not a browser, a shell, or a file opener.
+/// </summary>
+public interface IAgentProjectPageLauncher
+{
+    /// <summary>The address the About surface displays, so the text and the target cannot disagree.</summary>
+    string ProjectPageUrl { get; }
+
+    /// <summary>Hands the project page to the operator's default browser. Failures are reported, not thrown.</summary>
+    bool OpenProjectPage();
+}

@@ -275,6 +275,52 @@ public sealed class AgentConfigStrings
         ["Message.Discarded"] = "Alterações descartadas.",
         ["Message.NoChanges"] = "Nenhuma alteração pendente.",
         ["Message.RefreshFailed"] = "Não foi possível ler a configuração desta máquina.",
+
+        ["Settings.Title"] = "Configurações",
+        ["Settings.Tab.General"] = "Geral",
+        ["Settings.Tab.Appearance"] = "Aparência",
+        ["Settings.Tab.Agent"] = "Agent",
+        ["Settings.Tab.About"] = "Sobre",
+
+        ["Service.StartType.Automatic"] = "Automático",
+        ["Service.StartType.Manual"] = "Manual",
+        ["Service.StartType.Disabled"] = "Desativado",
+
+        ["Settings.Startup.Title"] = "Iniciar NutManager Agent com o Windows",
+        ["Settings.Startup.Description"] =
+            "Quando ativado, o Windows inicia o serviço automaticamente no boot. " +
+            "Desativar não interrompe o serviço em execução; apenas passa a exigir início manual.",
+        ["Settings.Startup.NotInstalled"] = "O serviço NutManagerAgent não está instalado nesta máquina.",
+        ["Settings.Startup.Automatic.Done"] = "O serviço passará a iniciar automaticamente com o Windows.",
+        ["Settings.Startup.Manual.Done"] = "O serviço passará a exigir início manual.",
+        ["Settings.Startup.Failed"] = "Não foi possível alterar o modo de início do serviço.",
+
+        ["Settings.Appearance.Theme"] = "Tema",
+        ["Settings.Appearance.Theme.Description"] = "Alterna entre o tema claro e o escuro desta janela.",
+        ["Settings.Appearance.Language"] = "Idioma",
+        ["Settings.Appearance.Language.Description"] = "Idioma da interface desta janela.",
+
+        ["Settings.Agent.Description"] = "Somente leitura. Nada nesta aba altera a máquina.",
+        ["Settings.Agent.Service"] = "Serviço",
+        ["Settings.Agent.StartMode"] = "Modo de início",
+        ["Settings.Agent.Account"] = "Conta",
+        ["Settings.Agent.Transports"] = "Transportes",
+        ["Settings.Agent.HttpsPort"] = "Porta HTTPS",
+        ["Settings.Agent.None"] = "Nenhum",
+
+        ["About.Version"] = "Versão",
+        ["About.Build"] = "Build",
+        ["About.DotNet"] = ".NET Runtime",
+        ["About.AspNetCore"] = "ASP.NET Core Runtime",
+        ["About.Developer"] = "Desenvolvedor",
+        ["About.ProjectPage"] = "GitHub",
+        ["About.ProjectPage.Open"] = "Abrir página do projeto",
+        ["About.ProjectPage.Failed"] = "Não foi possível abrir o navegador. Copie o endereço acima.",
+        ["About.Terms"] = "Termos",
+        ["About.Terms.Text"] =
+            "NutManager é fornecido no estado em que se encontra, sem garantias. " +
+            "NUT (Network UPS Tools) é um projeto independente e não é distribuído com este produto.",
+        ["About.Unknown"] = "Desconhecido",
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -524,6 +570,52 @@ public sealed class AgentConfigStrings
         ["Message.Discarded"] = "Changes discarded.",
         ["Message.NoChanges"] = "No pending changes.",
         ["Message.RefreshFailed"] = "This machine's configuration could not be read.",
+
+        ["Settings.Title"] = "Settings",
+        ["Settings.Tab.General"] = "General",
+        ["Settings.Tab.Appearance"] = "Appearance",
+        ["Settings.Tab.Agent"] = "Agent",
+        ["Settings.Tab.About"] = "About",
+
+        ["Service.StartType.Automatic"] = "Automatic",
+        ["Service.StartType.Manual"] = "Manual",
+        ["Service.StartType.Disabled"] = "Disabled",
+
+        ["Settings.Startup.Title"] = "Start NutManager Agent with Windows",
+        ["Settings.Startup.Description"] =
+            "When on, Windows starts the service automatically at boot. " +
+            "Turning it off does not stop the running service; it only means the service must be started by hand.",
+        ["Settings.Startup.NotInstalled"] = "The NutManagerAgent service is not installed on this machine.",
+        ["Settings.Startup.Automatic.Done"] = "The service will now start automatically with Windows.",
+        ["Settings.Startup.Manual.Done"] = "The service will now have to be started by hand.",
+        ["Settings.Startup.Failed"] = "The service start mode could not be changed.",
+
+        ["Settings.Appearance.Theme"] = "Theme",
+        ["Settings.Appearance.Theme.Description"] = "Switches this window between the light and dark themes.",
+        ["Settings.Appearance.Language"] = "Language",
+        ["Settings.Appearance.Language.Description"] = "The interface language of this window.",
+
+        ["Settings.Agent.Description"] = "Read-only. Nothing on this tab changes the machine.",
+        ["Settings.Agent.Service"] = "Service",
+        ["Settings.Agent.StartMode"] = "Start mode",
+        ["Settings.Agent.Account"] = "Account",
+        ["Settings.Agent.Transports"] = "Transports",
+        ["Settings.Agent.HttpsPort"] = "HTTPS port",
+        ["Settings.Agent.None"] = "None",
+
+        ["About.Version"] = "Version",
+        ["About.Build"] = "Build",
+        ["About.DotNet"] = ".NET Runtime",
+        ["About.AspNetCore"] = "ASP.NET Core Runtime",
+        ["About.Developer"] = "Developer",
+        ["About.ProjectPage"] = "GitHub",
+        ["About.ProjectPage.Open"] = "Open the project page",
+        ["About.ProjectPage.Failed"] = "The browser could not be opened. Copy the address above.",
+        ["About.Terms"] = "Terms",
+        ["About.Terms.Text"] =
+            "NutManager is provided as is, without warranty. " +
+            "NUT (Network UPS Tools) is an independent project and is not distributed with this product.",
+        ["About.Unknown"] = "Unknown",
     };
 
     private readonly IReadOnlyDictionary<string, string> _strings;

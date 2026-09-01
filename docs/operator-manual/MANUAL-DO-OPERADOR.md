@@ -141,7 +141,7 @@ O Agent é instalado **no servidor**, não na sua estação.
 Windows Server 2019 em diante, ou Windows 10/11 x64. Administrador local.
 
 **O Agent requer o Microsoft .NET Runtime 10 x64 e o Microsoft ASP.NET Core Runtime 10 x64.**
-Diferente do Desktop, que carrega o próprio runtime, o Agent e o Agent Config usam os runtimes
+Diferente do Desktop, que carrega o próprio runtime, o Agent usa os runtimes
 compartilhados da máquina. Não é necessário Hosting Bundle nem IIS.
 
 Isso é deliberado. O Agent é um serviço que fica no ar por meses num servidor; um runtime privado
@@ -180,7 +180,8 @@ O instalador:
 - registra o serviço `NutManagerAgent` como **LocalSystem**, inicialização **Automática**;
 - registra a origem `NutManager Agent` no Log de Eventos;
 - cria `C:\ProgramData\NutManager\Agent`;
-- instala **NutManager Agent Config** e seu atalho no menu Iniciar;
+- instala o executável **NutManager.Agent.exe** e o atalho **NutManager Agent Config** no menu
+  Iniciar, que abre o mesmo executável em modo de configuração;
 - deixa o serviço parado para a configuração administrativa inicial.
 
 O que ele **não** faz: não instala o NUT, não altera arquivo nenhum do NUT, não inicia nem para o

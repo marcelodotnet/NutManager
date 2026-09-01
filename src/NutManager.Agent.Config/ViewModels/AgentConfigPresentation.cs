@@ -363,3 +363,21 @@ public enum AgentConfigConfirmation
     /// <summary>Configuration was saved while the service was running.</summary>
     RestartService,
 }
+
+/// <summary>
+/// Which of the window's three surfaces is showing.
+///
+/// One value rather than a boolean per surface. Two booleans could already describe a state that does
+/// not exist - both true, or both false - and a third would make four such states. An enum cannot.
+/// </summary>
+public enum AgentConfigSurface
+{
+    /// <summary>The transports, HTTPS and access fields. The window's purpose.</summary>
+    Configuration,
+
+    /// <summary>The read-only report of the same machine.</summary>
+    Diagnostics,
+
+    /// <summary>Preferences, the startup choice, and the one destructive action.</summary>
+    Settings,
+}

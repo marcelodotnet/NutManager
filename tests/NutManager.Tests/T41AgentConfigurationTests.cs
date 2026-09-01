@@ -519,11 +519,15 @@ public sealed class T41AgentConfigSurfaceTests
     }
 
     /// <summary>
-    /// The reset is a small control in the HTTPS card, and it is not the old disable button under a
-    /// new name: that one, and the status badge beside the title, both stay gone.
+    /// Reset lives in Settings, not on the HTTPS card, and it is still not the old disable button
+    /// under a new name: that one, and the status badge beside the title, both stay gone.
+    ///
+    /// The card was the wrong home for it. The one action that tears down the SSL binding, the URL
+    /// reservation and the firewall rule sat directly above the fields it clears, one row from the
+    /// checkbox that merely turns the transport off. In Settings it is reached deliberately.
     /// </summary>
     [Fact]
-    public void ResetHttpsIsASmallControlInTheHttpsCardAndNotTheOldDisableButton()
+    public void ResetHttpsLivesInSettingsAndNotOnTheHttpsCard()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
@@ -531,52 +535,72 @@ public sealed class T41AgentConfigSurfaceTests
         var fields = window.IndexOf("x:Name=\"HttpsEditorFields\"", card, StringComparison.Ordinal);
         var header = window[card..fields];
 
-        Assert.Contains("Command=\"{Binding ResetHttpsCommand}\"", header, StringComparison.Ordinal);
-        Assert.Contains("IsEnabled=\"{Binding CanResetHttps}\"", header, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"{Binding HttpsResetToolTip}\"", header, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"agent-reset-https\"", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResetHttpsCommand", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-reset-https", header, StringComparison.Ordinal);
+
+        // Exactly one reset control in the whole window, and it is the one in Settings.
+        Assert.Single(Regex.Matches(window, "Command=\"{Binding ResetHttpsCommand}\""));
+
+        var settings = window.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
+        Assert.True(settings > fields, "Reset belongs in the settings surface, after the configuration surface.");
+
+        var reset = window[settings..];
+        Assert.Contains("Command=\"{Binding ResetHttpsCommand}\"", reset, StringComparison.Ordinal);
+        Assert.Contains("IsEnabled=\"{Binding CanResetHttps}\"", reset, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-reset-https\"", reset, StringComparison.Ordinal);
+
+        // The reason it is unavailable still has to be readable, and a disabled control takes no
+        // pointer input, so the tooltip stays on an enabled wrapper - which is why it is looked for
+        // across the settings surface rather than inside the button element itself.
+        Assert.Contains("ToolTip.Tip=\"{Binding HttpsResetToolTip}\"", window[fields..], StringComparison.Ordinal);
 
         // Not the filled danger treatment: that belongs to the affirmative button inside the
         // confirmation, where the operator has already been told what will happen.
-        Assert.DoesNotContain("nut-danger", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("nut-danger", window[settings..(settings + 900)], StringComparison.Ordinal);
 
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("HttpsStatusText", header, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The theme control is one circular button between the language selector and Diagnostics, and
-    /// it is not a switch of any kind.
+    /// The theme control is one circular button, and it is in Appearance rather than the header.
+    ///
+    /// It is a window preference, and it now sits with the other window preference instead of in the
+    /// row that changes what you are looking at. The control itself did not change: still one button,
+    /// still never a checkbox or a segmented pair.
     ///
     /// Circular is asserted through the shape rather than through a screenshot: equal width and
     /// height with a radius far beyond half of either is a disc at any scaling, whereas a rounded
     /// rectangle is what you get the moment somebody drops the explicit size.
     /// </summary>
     [Fact]
-    public void TheThemeControlIsOneCircularButtonBetweenLanguageAndDiagnostics()
+    public void TheThemeControlIsOneCircularButtonInAppearance()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
         var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
-        var markup = window[header..surface];
+        var headerMarkup = window[header..surface];
 
-        var language = markup.IndexOf("Classes=\"agent-language-selector\"", StringComparison.Ordinal);
-        var theme = markup.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
-        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+        // Neither preference is in the header any more. The gear is what replaced them.
+        Assert.DoesNotContain("x:Name=\"ThemeToggle\"", headerMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToggleThemeCommand", headerMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-language-selector", headerMarkup, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SettingsButton\"", headerMarkup, StringComparison.Ordinal);
 
-        Assert.True(language >= 0, "The header must keep the single language selector.");
-        Assert.True(theme > language, "The theme button belongs after the language selector.");
-        Assert.True(diagnostics > theme, "The theme button belongs before Diagnostics.");
+        var theme = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
+        Assert.True(theme > surface, "The theme button belongs in the settings surface.");
 
-        Assert.Contains("Command=\"{Binding ToggleThemeCommand}\"", markup, StringComparison.Ordinal);
+        // One theme control in the window, not one per surface.
+        Assert.Single(Regex.Matches(window, "Command=\"{Binding ToggleThemeCommand}\""));
 
-        // Never a switch, a checkbox or a segmented pair.
-        Assert.DoesNotContain("ToggleSwitch", window, StringComparison.Ordinal);
-        Assert.DoesNotContain("<CheckBox", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
+        // The only ToggleSwitch in this window is the startup preference, which is a machine setting
+        // with two states rather than an action. The theme control is still never one.
+        Assert.Single(Regex.Matches(window, "<ToggleSwitch"));
+        Assert.Contains("x:Name=\"StartWithWindowsSwitch\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
 
-        var style = window[window.IndexOf("Button.agent-theme-button\"", StringComparison.Ordinal)..];
+        var style = window[window.IndexOf("Button.agent-theme-button", StringComparison.Ordinal)..];
         Assert.Contains("<Setter Property=\"Width\" Value=\"36\" />", style, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"36\" />", style, StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"999\" />", style, StringComparison.Ordinal);
@@ -1002,28 +1026,36 @@ public sealed class T41AgentConfigSurfaceTests
         Assert.DoesNotContain("<Animation", markup, StringComparison.Ordinal);
     }
 
-    /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
+    /// <summary>
+    /// The language selector moved to Appearance and still offers exactly what ships.
+    ///
+    /// Still a flyout of radio menu items bound one-way, and still never a ComboBox: a ComboBox writes
+    /// its selection back the moment it materialises, which is how the saved preference was once
+    /// overwritten by whichever entry happened to be first.
+    /// </summary>
     [Fact]
-    public void TheLanguageSelectorSitsBesideDiagnostics()
+    public void TheLanguageSelectorSitsInAppearance()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
-        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
-        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
-        var markup = window[header..surface];
+        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", StringComparison.Ordinal);
+        var selector = window.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
 
-        var selector = markup.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
-        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+        Assert.True(selector > surface, "The language selector belongs in the settings surface.");
 
-        Assert.True(selector >= 0, "The header must carry the language selector.");
-        Assert.True(diagnostics > selector, "The language selector belongs beside the diagnostics button.");
+        var markup = window[selector..];
         Assert.Contains("<MenuFlyout", markup, StringComparison.Ordinal);
         Assert.Contains("Header=\"{Binding Strings[Language.Portuguese]}\"", markup, StringComparison.Ordinal);
         Assert.Contains("Header=\"{Binding Strings[Language.English]}\"", markup, StringComparison.Ordinal);
         Assert.Equal(2, Regex.Matches(markup, "ToggleType=\"Radio\"").Count);
         Assert.Contains("Text=\"{Binding SelectedLanguageCode}\"", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
-        Assert.Single(Regex.Matches(markup, "SelectedLanguageCode"));
+
+        // One selector in the window, and the checked state is reported rather than written.
+        Assert.Single(Regex.Matches(window, "x:Name=\"LanguageSelector\""));
+        Assert.Single(Regex.Matches(window, "SelectedLanguageCode"));
+        Assert.Equal(2, Regex.Matches(window, "Mode=OneWay").Count);
+        Assert.DoesNotContain("<ComboBox", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
     }
 
     private static string Read(string relativePath) =>

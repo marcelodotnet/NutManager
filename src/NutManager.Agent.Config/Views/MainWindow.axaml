@@ -299,7 +299,7 @@
       <Setter Property="Padding" Value="9,3" />
       <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Button.agent-theme-button">
+    <Style Selector="Button.agent-theme-button, Button.agent-settings-button">
       <Setter Property="Width" Value="36" />
       <Setter Property="Height" Value="36" />
       <Setter Property="MinWidth" Value="36" />
@@ -319,17 +319,38 @@
         </Transitions>
       </Setter>
     </Style>
-    <Style Selector="Button.agent-theme-button /template/ ContentPresenter">
+    <Style Selector="Button.agent-theme-button /template/ ContentPresenter, Button.agent-settings-button /template/ ContentPresenter">
       <Setter Property="CornerRadius" Value="999" />
       <Setter Property="Background" Value="Transparent" />
       <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
-    <Style Selector="Button.agent-theme-button:pointerover /template/ ContentPresenter">
+    <Style Selector="Button.agent-theme-button:pointerover /template/ ContentPresenter, Button.agent-settings-button:pointerover /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource NutSurfaceHoverBrush}" />
       <Setter Property="BorderBrush" Value="Transparent" />
     </Style>
-    <Style Selector="Button.agent-theme-button:pointerover">
+    <Style Selector="Button.agent-theme-button:pointerover, Button.agent-settings-button:pointerover">
       <Setter Property="Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
+    </Style>
+
+    <!--
+      The gear turns an eighth of a turn under the pointer and settles back.
+
+      Same duration and easing as every other icon movement in this product, and on the icon rather
+      than the button, so the circle stays still while the thing inside it responds. A gear that
+      rotates is the one piece of motion this glyph obviously has.
+    -->
+    <Style Selector="Button.agent-settings-button PathIcon">
+      <Setter Property="RenderTransformOrigin" Value="50%,50%" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <TransformOperationsTransition Property="RenderTransform"
+                                         Duration="0:0:0.28"
+                                         Easing="CubicEaseOut" />
+        </Transitions>
+      </Setter>
+    </Style>
+    <Style Selector="Button.agent-settings-button:pointerover PathIcon">
+      <Setter Property="RenderTransform" Value="rotate(45deg)" />
     </Style>
 
     <!--
@@ -487,72 +508,23 @@
                           Spacing="7"
                           VerticalAlignment="Center">
                 <!--
-                  One compact selector. The menu items bind their checked state one-way, so opening
-                  the menu cannot write a default over the saved preference. Only an explicit item
-                  click changes the language, and that still touches no Agent configuration.
-                -->
-                <Button x:Name="LanguageSelector"
-                        Classes="agent-language-selector"
-                        ToolTip.Tip="{Binding Strings[Language.Label]}"
-                        AutomationProperties.Name="{Binding Strings[Language.Label]}">
-                  <Button.Flyout>
-                    <MenuFlyout Placement="BottomEdgeAlignedRight">
-                      <MenuItem Header="{Binding Strings[Language.Portuguese]}"
-                                ToggleType="Radio"
-                                GroupName="AgentConfigLanguage"
-                                IsChecked="{Binding IsPortugueseSelected, Mode=OneWay}"
-                                Click="OnSelectPortugueseClicked" />
-                      <MenuItem Header="{Binding Strings[Language.English]}"
-                                ToggleType="Radio"
-                                GroupName="AgentConfigLanguage"
-                                IsChecked="{Binding IsEnglishSelected, Mode=OneWay}"
-                                Click="OnSelectEnglishClicked" />
-                    </MenuFlyout>
-                  </Button.Flyout>
-                  <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock VerticalAlignment="Center"
-                               FontWeight="SemiBold"
-                               Text="{Binding SelectedLanguageCode}" />
-                    <PathIcon Data="{DynamicResource NutIconChevronDown}"
-                              Width="11"
-                              Height="11"
-                              VerticalAlignment="Center" />
-                  </StackPanel>
-                </Button>
-                <!--
-                  One circular button, and the glyph is the destination rather than the current state.
+                  The gear, and nothing beside it.
 
-                  In dark mode it shows a sun, because pressing it turns the light on; in light mode a
-                  moon. The alternative - showing the theme you are already in - is a button that
-                  describes rather than offers, and it reads backwards to everyone who tries it once.
+                  The language selector and the theme button used to sit here, which put two window
+                  preferences in the same row as the one control that changes what you are looking at.
+                  They are preferences, they belong with the other preferences, and the header is
+                  better for having one fewer thing competing with the product name.
 
-                  Two Paths with one visible at a time, not one Path with a swapped geometry: that is
-                  how the desktop application draws these, and it is what lets each glyph keep its own
-                  movement. The sun turns an eighth of a turn so a ray lands where a ray was; the moon
-                  leans back as if setting. Same durations, easing and rotations as the shell.
+                  Circular and icon-only, at the same 36px as the desktop's own round buttons, so the
+                  hover and press movement is the movement everything else in this product already has.
                 -->
-                <Button x:Name="ThemeToggle"
-                        Classes="agent-theme-button"
+                <Button x:Name="SettingsButton"
+                        Classes="agent-settings-button"
                         VerticalAlignment="Center"
-                        Command="{Binding ToggleThemeCommand}"
-                        ToolTip.Tip="{Binding ThemeActionText}"
-                        AutomationProperties.Name="{Binding ThemeActionText}">
-                  <Panel Width="19" Height="19">
-                    <Viewbox Width="19" Height="19" IsVisible="{Binding ShowLightThemeAction}">
-                      <Grid Width="24" Height="24">
-                        <Path Classes="agent-theme-glyph agent-sun"
-                              Stretch="None"
-                              Data="{DynamicResource NutIconSun}" />
-                      </Grid>
-                    </Viewbox>
-                    <Viewbox Width="19" Height="19" IsVisible="{Binding ShowDarkThemeAction}">
-                      <Grid Width="24" Height="24">
-                        <Path Classes="agent-theme-glyph agent-moon"
-                              Stretch="None"
-                              Data="{DynamicResource NutIconMoon}" />
-                      </Grid>
-                    </Viewbox>
-                  </Panel>
+                        Command="{Binding ToggleSettingsCommand}"
+                        ToolTip.Tip="{Binding Strings[Settings.Title]}"
+                        AutomationProperties.Name="{Binding Strings[Settings.Title]}">
+                  <PathIcon Data="{DynamicResource NutIconSettings}" Width="19" Height="19" />
                 </Button>
                 <Button VerticalAlignment="Center"
                         Padding="11,6"
@@ -709,8 +681,13 @@
                 first and lets the fields take what is left, so the explanation is always whole.
               -->
               <DockPanel LastChildFill="True">
+                <!--
+                  Reset used to sit in this row, and it was the one destructive action on the window
+                  placed directly above the fields it destroys. It is in Settings now, where somebody
+                  goes deliberately - which is the only way that action should ever be reached.
+                -->
                 <Grid DockPanel.Dock="Top"
-                      ColumnDefinitions="Auto,*,Auto"
+                      ColumnDefinitions="Auto,*"
                       ColumnSpacing="7"
                       Margin="0,0,0,7">
                   <PathIcon Grid.Column="0"
@@ -721,30 +698,6 @@
                              FontSize="15"
                              VerticalAlignment="Center"
                              Text="{Binding Strings[Https.Title]}" />
-                  <!--
-                    Reset is not the HTTPS checkbox with a louder label, and it is not styled like one.
-
-                    The checkbox turns the transport off; this removes the SSL binding, the URL
-                    reservation and the firewall rule this product created and forgets the endpoint it
-                    saved. That is the bigger action, which is exactly why it is the smaller control:
-                    a wide red button invites the click, and this one should be found by somebody who
-                    came looking for it. It opens a confirmation and changes nothing by itself.
-                  -->
-                  <Button Grid.Column="2"
-                          Classes="agent-reset-https"
-                          Padding="8,3"
-                          VerticalAlignment="Center"
-                          Command="{Binding ResetHttpsCommand}"
-                          IsEnabled="{Binding CanResetHttps}"
-                          ToolTip.Tip="{Binding HttpsResetToolTip}"
-                          AutomationProperties.Name="{Binding Strings[Https.Reset.Tooltip]}">
-                    <StackPanel Orientation="Horizontal" Spacing="5">
-                      <PathIcon Data="{DynamicResource NutIconRestart}" Width="13" Height="13" />
-                      <TextBlock VerticalAlignment="Center"
-                                 FontSize="12"
-                                 Text="{Binding Strings[Https.Reset]}" />
-                    </StackPanel>
-                  </Button>
                 </Grid>
 
                 <!--
@@ -1136,6 +1089,312 @@
                          IsVisible="{Binding OperatorsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
           </Border>
+          </ScrollViewer>
+
+          <!-- ================================================ settings -->
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                        VerticalScrollBarVisibility="Auto"
+                        IsVisible="{Binding ShowSettings}">
+            <Border Classes="agent-shell-card" Padding="14" VerticalAlignment="Top">
+              <StackPanel Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <PathIcon Classes="agent-section-icon" Data="{DynamicResource NutIconSettings}" />
+                  <TextBlock Classes="nut-card-title"
+                             FontSize="17"
+                             VerticalAlignment="Center"
+                             Text="{Binding Strings[Settings.Title]}" />
+                </StackPanel>
+
+                <!--
+                  Four tabs, in the order somebody needs them: what the agent does at boot, how this
+                  window looks, what the machine currently reports, and what this build is. The
+                  TabControl keeps its own selection, so no view-model state exists whose only job
+                  would be to remember which tab is open.
+                -->
+                <TabControl x:Name="SettingsTabs">
+                  <!-- ================================================================ general -->
+                  <TabItem Header="{Binding Strings[Settings.Tab.General]}">
+                    <StackPanel Spacing="16" Margin="2,14,2,2">
+                      <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                          <TextBlock Grid.Column="0"
+                                     Classes="nut-card-title"
+                                     FontSize="14"
+                                     VerticalAlignment="Center"
+                                     TextWrapping="Wrap"
+                                     Text="{Binding Strings[Settings.Startup.Title]}" />
+                          <!--
+                            The tooltip lives on the wrapper rather than the switch, because a disabled
+                            control takes no pointer input and the reason it is disabled is exactly what
+                            somebody would hover to read.
+                          -->
+                          <Border Grid.Column="1"
+                                  Background="Transparent"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding StartupBlockedReason}"
+                                  AutomationProperties.HelpText="{Binding StartupBlockedReason}">
+                            <ToggleSwitch x:Name="StartWithWindowsSwitch"
+                                          IsChecked="{Binding StartsWithWindows, Mode=TwoWay}"
+                                          IsEnabled="{Binding CanChangeStartup}"
+                                          OnContent=""
+                                          OffContent=""
+                                          AutomationProperties.Name="{Binding Strings[Settings.Startup.Title]}" />
+                          </Border>
+                        </Grid>
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Settings.Startup.Description]}" />
+                        <TextBlock Classes="nut-metadata"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding StartupResultText}"
+                                   IsVisible="{Binding StartupResultText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                      </StackPanel>
+
+                      <Border Classes="nut-divider" Height="1" />
+
+                      <!--
+                        Reset, moved off the HTTPS card.
+
+                        It removes the SSL binding, the URL reservation and the firewall rule this
+                        product created, and forgets the endpoint it saved. That is why it is here and
+                        not next to the fields it clears: it should be found by somebody who came
+                        looking for it. It still only opens a confirmation and changes nothing itself.
+                      -->
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="nut-card-title"
+                                   FontSize="14"
+                                   Text="{Binding Strings[Https.Reset.Title]}" />
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Https.Reset.Message]}" />
+                        <Border Background="Transparent"
+                                HorizontalAlignment="Left"
+                                ToolTip.Tip="{Binding HttpsResetToolTip}"
+                                AutomationProperties.HelpText="{Binding HttpsResetToolTip}">
+                          <Button x:Name="SettingsResetHttps"
+                                  Classes="agent-reset-https"
+                                  Padding="10,5"
+                                  Command="{Binding ResetHttpsCommand}"
+                                  IsEnabled="{Binding CanResetHttps}"
+                                  AutomationProperties.Name="{Binding Strings[Https.Reset.Tooltip]}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <PathIcon Data="{DynamicResource NutIconRestart}" Width="14" Height="14" />
+                              <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Https.Reset]}" />
+                            </StackPanel>
+                          </Button>
+                        </Border>
+                      </StackPanel>
+                    </StackPanel>
+                  </TabItem>
+
+                  <!-- ================================================================ appearance -->
+                  <TabItem Header="{Binding Strings[Settings.Tab.Appearance]}">
+                    <StackPanel Spacing="16" Margin="2,14,2,2">
+                      <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                          <TextBlock Grid.Column="0"
+                                     Classes="nut-card-title"
+                                     FontSize="14"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding Strings[Settings.Appearance.Theme]}" />
+                          <!--
+                            The same button that was in the header, unchanged: the glyph is still the
+                            destination rather than the current state, and it still shows a sun in dark
+                            mode because pressing it turns the light on.
+                          -->
+                          <Button Grid.Column="1"
+                                  x:Name="ThemeToggle"
+                                  Classes="agent-theme-button"
+                                  VerticalAlignment="Center"
+                                  Command="{Binding ToggleThemeCommand}"
+                                  ToolTip.Tip="{Binding ThemeActionText}"
+                                  AutomationProperties.Name="{Binding ThemeActionText}">
+                            <Panel Width="19" Height="19">
+                              <Viewbox Width="19" Height="19" IsVisible="{Binding ShowLightThemeAction}">
+                                <Grid Width="24" Height="24">
+                                  <Path Classes="agent-theme-glyph agent-sun"
+                                        Stretch="None"
+                                        Data="{DynamicResource NutIconSun}" />
+                                </Grid>
+                              </Viewbox>
+                              <Viewbox Width="19" Height="19" IsVisible="{Binding ShowDarkThemeAction}">
+                                <Grid Width="24" Height="24">
+                                  <Path Classes="agent-theme-glyph agent-moon"
+                                        Stretch="None"
+                                        Data="{DynamicResource NutIconMoon}" />
+                                </Grid>
+                              </Viewbox>
+                            </Panel>
+                          </Button>
+                        </Grid>
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Settings.Appearance.Theme.Description]}" />
+                      </StackPanel>
+
+                      <Border Classes="nut-divider" Height="1" />
+
+                      <StackPanel Spacing="6">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
+                          <TextBlock Grid.Column="0"
+                                     Classes="nut-card-title"
+                                     FontSize="14"
+                                     VerticalAlignment="Center"
+                                     Text="{Binding Strings[Settings.Appearance.Language]}" />
+                          <!--
+                            Still a flyout of radio items bound one-way, not a ComboBox.
+
+                            A ComboBox writes its selection back as soon as it materialises, which once
+                            overwrote the saved preference with whatever happened to be first. These
+                            items only report what is chosen; nothing but a click changes it.
+                          -->
+                          <Button Grid.Column="1"
+                                  x:Name="LanguageSelector"
+                                  Classes="agent-language-selector"
+                                  VerticalAlignment="Center"
+                                  ToolTip.Tip="{Binding Strings[Language.Label]}"
+                                  AutomationProperties.Name="{Binding Strings[Language.Label]}">
+                            <Button.Flyout>
+                              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuItem Header="{Binding Strings[Language.Portuguese]}"
+                                          ToggleType="Radio"
+                                          GroupName="AgentConfigLanguage"
+                                          IsChecked="{Binding IsPortugueseSelected, Mode=OneWay}"
+                                          Click="OnSelectPortugueseClicked" />
+                                <MenuItem Header="{Binding Strings[Language.English]}"
+                                          ToggleType="Radio"
+                                          GroupName="AgentConfigLanguage"
+                                          IsChecked="{Binding IsEnglishSelected, Mode=OneWay}"
+                                          Click="OnSelectEnglishClicked" />
+                              </MenuFlyout>
+                            </Button.Flyout>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <TextBlock VerticalAlignment="Center"
+                                         FontWeight="SemiBold"
+                                         Text="{Binding SelectedLanguageCode}" />
+                              <PathIcon Data="{DynamicResource NutIconChevronDown}"
+                                        Width="11"
+                                        Height="11"
+                                        VerticalAlignment="Center" />
+                            </StackPanel>
+                          </Button>
+                        </Grid>
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Settings.Appearance.Language.Description]}" />
+                      </StackPanel>
+                    </StackPanel>
+                  </TabItem>
+
+                  <!-- ================================================================ agent -->
+                  <TabItem Header="{Binding Strings[Settings.Tab.Agent]}">
+                    <StackPanel Spacing="10" Margin="2,14,2,2">
+                      <TextBlock Classes="hint"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding Strings[Settings.Agent.Description]}" />
+                      <Grid ColumnDefinitions="Auto,*"
+                            RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                            RowSpacing="7"
+                            ColumnSpacing="16">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Service]}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceStateText}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.StartMode]}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceStartTypeText}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Account]}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceAccountText}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Transports]}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ActiveTransportsText}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.HttpsPort]}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding HttpsPortText}" />
+                      </Grid>
+                    </StackPanel>
+                  </TabItem>
+
+                  <!-- ================================================================ about -->
+                  <TabItem Header="{Binding Strings[Settings.Tab.About]}">
+                    <StackPanel Spacing="10" Margin="2,14,2,2">
+                      <Grid ColumnDefinitions="Auto,*"
+                            RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                            RowSpacing="7"
+                            ColumnSpacing="16">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[About.Version]}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="nut-metadata"
+                                   Text="{Binding AboutVersion}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[About.Build]}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding AboutBuild}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[About.DotNet]}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="nut-metadata"
+                                   Text="{Binding AboutDotNetRuntime}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[About.AspNetCore]}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="nut-metadata"
+                                   Text="{Binding AboutAspNetCoreRuntime}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[About.Developer]}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-metadata"
+                                   Text="{Binding AboutDeveloper}" />
+                      </Grid>
+
+                      <Border Classes="nut-divider" Height="1" />
+
+                      <!--
+                        The address is shown as text and the button opens that same address, so the
+                        target is readable before it is followed and still reachable on a machine with
+                        no browser. Neither the button nor the contract behind it takes a URL.
+                      -->
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="nut-metadata" Text="{Binding Strings[About.ProjectPage]}" />
+                        <SelectableTextBlock Classes="nut-metadata"
+                                             TextWrapping="Wrap"
+                                             Text="{Binding AboutProjectPageUrl}" />
+                        <Button x:Name="OpenProjectPage"
+                                Classes="nut-ghost"
+                                HorizontalAlignment="Left"
+                                Command="{Binding OpenProjectPageCommand}"
+                                IsEnabled="{Binding CanOpenProjectPage}"
+                                Content="{Binding Strings[About.ProjectPage.Open]}" />
+                        <TextBlock Classes="nut-metadata"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource NutCriticalBrush}"
+                                   IsVisible="{Binding ProjectPageFailed}"
+                                   Text="{Binding Strings[About.ProjectPage.Failed]}" />
+                      </StackPanel>
+
+                      <Border Classes="nut-divider" Height="1" />
+
+                      <StackPanel Spacing="6">
+                        <TextBlock Classes="nut-metadata" Text="{Binding Strings[About.Terms]}" />
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[About.Terms.Text]}" />
+                      </StackPanel>
+                    </StackPanel>
+                  </TabItem>
+                </TabControl>
+              </StackPanel>
+            </Border>
           </ScrollViewer>
           </Panel>
 
