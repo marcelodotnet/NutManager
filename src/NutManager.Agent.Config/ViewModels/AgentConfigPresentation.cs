@@ -365,6 +365,15 @@ public enum AgentConfigConfirmation
     RestartService,
 
     /// <summary>
+    /// The service is being removed from the machine.
+    ///
+    /// Asked because it is destructive and because one of its consequences is not obvious: a running
+    /// agent is stopped to complete the removal. What it does not touch is worth saying in the same
+    /// breath, which is why the question names the operators group it leaves alone.
+    /// </summary>
+    RemoveService,
+
+    /// <summary>
     /// The service is being taken off automatic start.
     ///
     /// Asked only in this direction. Turning automatic start on adds a behaviour and takes nothing
@@ -381,6 +390,20 @@ public enum AgentConfigConfirmation
 /// neither a success to celebrate nor a failure to fix - it is the thing the operator asked for, and
 /// a consequence they should see. A red line there would be wrong and a green tick would be worse.
 /// </summary>
+/// <summary>
+/// What the one service action is doing right now.
+///
+/// It exists so the button can report an operation in progress in the place the operation was started
+/// from, rather than disappearing, greying out anonymously, or letting a second click through while
+/// the first is still talking to the service control manager.
+/// </summary>
+public enum AgentServiceLifecycle
+{
+    Idle,
+    Installing,
+    Removing,
+}
+
 public enum AgentSettingsFeedback
 {
     None,
@@ -407,6 +430,15 @@ public enum AgentConfigSurface
     Settings,
 
     /// <summary>
+    /// Who may administer the agent, reached from the Agent panel and returning to it.
+    ///
+    /// A surface rather than a section, because choosing accounts is a task with its own list, its own
+    /// empty state and its own way in - and folding it into a settings panel would either crowd that
+    /// panel or truncate the list. It is still this window: no second window, no external console.
+    /// </summary>
+    Permissions,
+
+    /// <summary>
     /// The full terms of use, reached from About and returning to it.
     ///
     /// A surface rather than a second window or a browser: the terms are part of this product, and
@@ -425,9 +457,21 @@ public enum AgentConfigSurface
 /// </summary>
 public enum AgentSettingsTab
 {
+    /// <summary>The startup preference, and how the window looks and reads.</summary>
     General,
-    Appearance,
+
+    /// <summary>
+    /// What this product has done to the machine, and what it can undo.
+    ///
+    /// Named for the machine rather than for the product: registering a service and tearing down
+    /// HTTPS resources are both changes to Windows, and grouping them says so. It replaces the
+    /// Appearance tab, whose contents were preferences and belong beside the other preferences.
+    /// </summary>
+    System,
+
+    /// <summary>What the agent reports, and who may administer it.</summary>
     Agent,
+
     About,
 }
 

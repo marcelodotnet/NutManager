@@ -79,7 +79,8 @@ public static class AgentConfigIcons
         ("AgentIconHome", MaterialIconKind.HomeOutline),
 
         ("AgentIconTabGeneral", MaterialIconKind.TuneVariant),
-        ("AgentIconTabAppearance", MaterialIconKind.PaletteOutline),
+        // The machine itself, for the panel that holds what this product did to it.
+        ("AgentIconTabSystem", MaterialIconKind.Monitor),
 
         // Beside a switch that cannot be used, offering the way to the thing that would make it work.
         ("AgentIconHelp", MaterialIconKind.HelpCircleOutline),

@@ -521,6 +521,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowDiagnostics));
         OnPropertyChanged(nameof(ShowSettings));
         OnPropertyChanged(nameof(ShowTerms));
+        OnPropertyChanged(nameof(ShowPermissions));
         OnPropertyChanged(nameof(ShowActionBar));
         OnPropertyChanged(nameof(ShowHomeAction));
         OnPropertyChanged(nameof(ShowSettingsAction));
@@ -532,7 +533,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // A result belongs to the action that produced it and to the panel it happened on. Leaving
         // settings ends both, so the message does not greet whoever comes back later as though they
         // had just done something.
-        if (value != AgentConfigSurface.Settings)
+        if (value is not (AgentConfigSurface.Settings or AgentConfigSurface.Permissions))
         {
             ClearStartupResult();
             ClearInstallResult();
@@ -552,6 +553,34 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public bool ShowTerms => Surface == AgentConfigSurface.Terms;
 
+    public bool ShowPermissions => Surface == AgentConfigSurface.Permissions;
+
+    /// <summary>
+    /// Opens the list of who may administer the agent, reading the group as it goes.
+    ///
+    /// The read is deliberate: the group and its members can change from services.msc or from another
+    /// administrator while this window is open, and a list built when the window opened would be a
+    /// snapshot of a different moment. It reads and never creates - a group appears because somebody
+    /// installed the service or asked for it, not because a panel was opened.
+    /// </summary>
+    [RelayCommand]
+    private void OpenPermissions()
+    {
+        ReloadGroup();
+        OperatorsMessage = null;
+        NewMemberAccount = string.Empty;
+        IsAddingOperator = false;
+        Surface = AgentConfigSurface.Permissions;
+    }
+
+    /// <summary>Back to the panel it was opened from, with that panel still selected.</summary>
+    [RelayCommand]
+    private void ClosePermissions()
+    {
+        SettingsTab = AgentSettingsTab.Agent;
+        Surface = AgentConfigSurface.Settings;
+    }
+
     /// <summary>
     /// Whether Apply and Cancel belong on screen.
     ///
@@ -563,7 +592,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// Diagnostics keeps them, because it is a read-only view of the same configuration the draft
     /// belongs to and losing the buttons on the way there was never part of this.
     /// </summary>
-    public bool ShowActionBar => !ShowSettings && !ShowTerms;
+    public bool ShowActionBar => !ShowSettings && !ShowTerms && !ShowPermissions;
 
     /// <summary>
     /// The toggle's label names where it goes, not where you are. Localized text belongs on the view
@@ -584,7 +613,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// surface, so it is a house. A gear that did not open settings would be a lie about what
     /// pressing it does.
     /// </summary>
-    public bool ShowHomeAction => ShowSettings || ShowTerms;
+    public bool ShowHomeAction => ShowSettings || ShowTerms || ShowPermissions;
 
     public bool ShowSettingsAction => !ShowHomeAction;
 
@@ -628,10 +657,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // Each result is local to its own panel: the start type line belongs to General and the
         // registration line to Agent. Switching panels leaves the action behind with them.
         if (value != AgentSettingsTab.General) ClearStartupResult();
-        if (value != AgentSettingsTab.Agent) ClearInstallResult();
+        if (value != AgentSettingsTab.System) ClearInstallResult();
 
         OnPropertyChanged(nameof(IsGeneralTab));
-        OnPropertyChanged(nameof(IsAppearanceTab));
+        OnPropertyChanged(nameof(IsSystemTab));
         OnPropertyChanged(nameof(IsAgentTab));
         OnPropertyChanged(nameof(IsAboutTab));
 
@@ -640,7 +669,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public bool IsGeneralTab => SettingsTab == AgentSettingsTab.General;
 
-    public bool IsAppearanceTab => SettingsTab == AgentSettingsTab.Appearance;
+    public bool IsSystemTab => SettingsTab == AgentSettingsTab.System;
 
     public bool IsAgentTab => SettingsTab == AgentSettingsTab.Agent;
 
@@ -650,7 +679,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void SelectGeneralTab() => SettingsTab = AgentSettingsTab.General;
 
     [RelayCommand]
-    private void SelectAppearanceTab() => SettingsTab = AgentSettingsTab.Appearance;
+    private void SelectSystemTab() => SettingsTab = AgentSettingsTab.System;
 
     [RelayCommand]
     private void SelectAgentTab() => SettingsTab = AgentSettingsTab.Agent;
@@ -1273,6 +1302,15 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string OperatorsGroupName => _groupState.GroupName;
 
+    /// <summary>
+    /// The group named as a technical detail rather than as a heading.
+    ///
+    /// "Permissões de acesso" is what the section is about; NutManager Operators is the thing an
+    /// administrator types into Windows to find it. Both belong on screen, and only one of them is a
+    /// title.
+    /// </summary>
+    public string OperatorsGroupCaption => Strings.Format("Settings.Permissions.Group", OperatorsGroupName);
+
     [ObservableProperty]
     private bool _operatorsGroupExists;
 
@@ -1320,6 +1358,31 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ReloadGroup();
     }
 
+    /// <summary>
+    /// Whether the account field is open.
+    ///
+    /// Closed by default so the page reads as a list with one way in, and so that granting
+    /// administrative rights takes a deliberate step rather than a stray keystroke in a box that was
+    /// already focused.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isAddingOperator;
+
+    [RelayCommand]
+    private void BeginAddOperator()
+    {
+        NewMemberAccount = string.Empty;
+        OperatorsMessage = null;
+        IsAddingOperator = true;
+    }
+
+    [RelayCommand]
+    private void CancelAddOperator()
+    {
+        NewMemberAccount = string.Empty;
+        IsAddingOperator = false;
+    }
+
     [RelayCommand]
     private void AddMember()
     {
@@ -1340,6 +1403,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         if (result.Succeeded)
         {
             NewMemberAccount = string.Empty;
+            IsAddingOperator = false;
             ReloadMembers();
         }
     }
@@ -1350,6 +1414,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OperatorsGroupExists = _groupState.Exists;
 
         OnPropertyChanged(nameof(OperatorsGroupName));
+        OnPropertyChanged(nameof(OperatorsGroupCaption));
         OnPropertyChanged(nameof(GroupCreationAffectsDirectory));
 
         ReloadMembers();
@@ -1470,8 +1535,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowStartServiceAction));
         OnPropertyChanged(nameof(ShowStopServiceAction));
         OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
         OnPropertyChanged(nameof(ServiceInstallDescription));
+        OnPropertyChanged(nameof(ServiceInstallState));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
         InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
         SyncStartupFromService();
         RefreshCommandStates();
 
@@ -1552,6 +1622,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public string ConfirmButtonText => PendingConfirmation switch
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Confirm"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Action"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryConfirm"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.RemoveAndDisable"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Confirm"],
@@ -1562,6 +1633,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public string? ConfirmationTitle => PendingConfirmation switch
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Title"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Title"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryTitle"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Title"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Title"],
@@ -1572,6 +1644,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public string? ConfirmationMessage => PendingConfirmation switch
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Question"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Question"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryWarning"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Message"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Message"],
@@ -1735,6 +1808,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         switch (pending)
         {
+            case AgentConfigConfirmation.RemoveService:
+                await RemoveServiceCoreAsync(CancellationToken.None).ConfigureAwait(true);
+                break;
+
             case AgentConfigConfirmation.ManualStartup:
                 // The one place the start type moves to Manual. Reaching it means somebody read what
                 // it does and said yes.
@@ -2844,11 +2921,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool ShowStartupHelp => !_serviceState.IsInstalled;
 
     /// <summary>
-    /// Goes to the panel that can install the service. Navigation and nothing else - it opens a tab
-    /// in this same window, touches no machine state, and asks nothing of the operator on the way.
+    /// Goes to the panel that can install the service, which is System - the panel that holds what
+    /// this product has done to the machine. Navigation and nothing else: it opens a tab in this same
+    /// window, touches no machine state, and asks nothing of the operator on the way.
     /// </summary>
     [RelayCommand]
-    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.Agent;
+    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.System;
 
     /// <summary>Forgets the last action, so a result never outlives the panel it belongs to.</summary>
     private void ClearStartupResult()
@@ -2873,8 +2951,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(StartupBlockedReason));
         OnPropertyChanged(nameof(ShowStartupHelp));
         OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
         OnPropertyChanged(nameof(ServiceInstallDescription));
+        OnPropertyChanged(nameof(ServiceInstallState));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
         InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -2934,13 +3017,60 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     // ---------------------------------------------------------------- service installation
 
     /// <summary>
+    /// Which way the one button is pointing, and whether it is mid-operation.
+    ///
+    /// One value rather than a pair of booleans, because "installing and removing at once" is a state
+    /// the machine cannot be in and the type should not be able to hold either.
+    /// </summary>
+    [ObservableProperty]
+    private AgentServiceLifecycle _serviceLifecycle = AgentServiceLifecycle.Idle;
+
+    partial void OnServiceLifecycleChanged(AgentServiceLifecycle value)
+    {
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
+        InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
     /// Whether there is a service to register.
     ///
     /// Read from the service control manager rather than remembered. A preference recording that this
     /// window once installed the service would keep claiming so after somebody removed it, and the
     /// button would then offer an action the machine has already refused.
     /// </summary>
-    public bool CanInstallService => !_serviceState.IsInstalled && !IsBusy;
+    public bool CanInstallService =>
+        !_serviceState.IsInstalled && !IsBusy && ServiceLifecycle is AgentServiceLifecycle.Idle;
+
+    /// <summary>There is something to remove only when the machine says there is.</summary>
+    public bool CanRemoveService =>
+        _serviceState.IsInstalled && !IsBusy && ServiceLifecycle is AgentServiceLifecycle.Idle;
+
+    /// <summary>
+    /// Whether the button removes rather than installs.
+    ///
+    /// Derived from the service control manager and never from what was last clicked: a registration
+    /// that the SCM has not confirmed must not flip the button, or the screen would be reporting an
+    /// intention as a fact.
+    /// </summary>
+    public bool ServiceActionIsRemoval =>
+        _serviceState.IsInstalled && ServiceLifecycle is not AgentServiceLifecycle.Installing;
+
+    /// <summary>
+    /// One label for one button, in four states.
+    ///
+    /// The button keeps its place through the whole operation rather than disappearing and being
+    /// replaced: it is the same action area, reporting what it is doing.
+    /// </summary>
+    public string ServiceActionText => ServiceLifecycle switch
+    {
+        AgentServiceLifecycle.Installing => Strings["Settings.Agent.Install.Working"],
+        AgentServiceLifecycle.Removing => Strings["Settings.Agent.Remove.Working"],
+        _ => Strings[ServiceActionIsRemoval ? "Settings.Agent.Remove.Action" : "Settings.Agent.Install.Action"],
+    };
 
     [ObservableProperty]
     private string? _installResultText;
@@ -2968,7 +3098,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public string ServiceInstallDescription => _serviceState.IsInstalled
         ? Strings["Settings.Agent.Install.Already"]
-        : Strings["Settings.Agent.Install.Description"];
+        : Strings["Settings.Agent.Install.Missing"];
+
+    /// <summary>
+    /// The disc beside that sentence: a tick for a machine that has the service, a raised eyebrow for
+    /// one that does not. Not an error - an agent that has not been installed yet is a normal state,
+    /// and this is the panel that offers to change it.
+    /// </summary>
+    public AgentSettingsFeedback ServiceInstallState => _serviceState.IsInstalled
+        ? AgentSettingsFeedback.Success
+        : AgentSettingsFeedback.Warning;
 
     /// <summary>
     /// Registers the service. It does not start it.
@@ -2987,11 +3126,22 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         ClearInstallResult();
 
+        ServiceLifecycle = AgentServiceLifecycle.Installing;
         IsBusy = true;
         RefreshCommandStates();
 
         try
         {
+            // The group before the service, because the agent refuses to start without it.
+            //
+            // This is the failure that was found on a real machine: a service registered by this
+            // window, correct in every field, that would not start - Event 7023, exit code 1 - because
+            // NutManager Operators did not exist. The agent checks for its authorization group at
+            // startup and fails closed when it is missing, which is the right behaviour and left this
+            // button producing a service that could never run. Registering one without preparing what
+            // it needs is not an installation.
+            if (!EnsureOperatorsGroup()) return;
+
             var result = await _service.InstallAsync(cancellationToken).ConfigureAwait(true);
 
             (InstallResultKind, InstallResultText) = result.Outcome switch
@@ -3020,11 +3170,124 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         }
         finally
         {
+            ServiceLifecycle = AgentServiceLifecycle.Idle;
             IsBusy = false;
             RefreshCommandStates();
 
             // Read back from the machine, so the button and the rows below it report what is actually
-            // registered rather than what was asked for.
+            // registered rather than what was asked for. Nothing on screen says "installed" until the
+            // service control manager has been asked again and answered.
+            ReloadService();
+        }
+    }
+
+    /// <summary>
+    /// Makes sure the authorization group exists, creating it only as part of this explicit action.
+    ///
+    /// Creating a Windows group is not something a settings screen should do quietly, and it does not:
+    /// it happens because somebody pressed Install, and the agent cannot run without it. On a domain
+    /// controller there is no independent SAM and the group would become a directory object visible
+    /// across the domain - so that case keeps its own confirmation and this refuses rather than
+    /// creating it as a side effect of a different question.
+    ///
+    /// It creates the group and stops there. No account is added, to this group or any other: who may
+    /// administer the agent stays a decision somebody makes deliberately in Permissions.
+    /// </summary>
+    private bool EnsureOperatorsGroup()
+    {
+        if (_groupState.Exists) return true;
+
+        if (_groupState.CreationAffectsDirectory)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.GroupDirectory"];
+            _installFailure = Strings["Operators.DirectoryWarning"];
+            return false;
+        }
+
+        var created = _groups.Create();
+
+        if (!created.Created && created.Sid is null)
+        {
+            // Without the group the service could be registered and would never start, so nothing is
+            // registered. A machine with no agent is a better outcome than one with an agent that
+            // fails at every boot for a reason nothing on screen explains.
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.GroupFailed"];
+            _installFailure = created.Failure;
+            return false;
+        }
+
+        ReloadGroup();
+        return true;
+    }
+
+    /// <summary>
+    /// Removes the service, once somebody has said yes to the question.
+    ///
+    /// The command opens the confirmation and does nothing else - the confirmation is where the
+    /// consequences are stated, including the one that is not obvious: a running agent is stopped to
+    /// complete the removal.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRemoveService))]
+    private void RemoveService()
+    {
+        if (!CanRemoveService) return;
+
+        ClearInstallResult();
+        PendingConfirmation = AgentConfigConfirmation.RemoveService;
+    }
+
+    private async Task RemoveServiceCoreAsync(CancellationToken cancellationToken)
+    {
+        ServiceLifecycle = AgentServiceLifecycle.Removing;
+        IsBusy = true;
+        RefreshCommandStates();
+
+        try
+        {
+            var result = await _service.RemoveAsync(cancellationToken).ConfigureAwait(true);
+
+            (InstallResultKind, InstallResultText) = result.Outcome switch
+            {
+                AgentServiceRemovalOutcome.Removed =>
+                    (AgentSettingsFeedback.Success, Strings["Settings.Agent.Remove.Done"]),
+
+                // Nothing was there. Reported rather than treated as a failure: the machine is in the
+                // state the operator asked for.
+                AgentServiceRemovalOutcome.NotInstalled =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Remove.Absent"]),
+
+                // Windows removes a service when the last handle to it closes, and a console left open
+                // holds it. Saying "removed" here would be untrue.
+                AgentServiceRemovalOutcome.PendingDeletion =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Remove.Pending"]),
+
+                // A service wearing the name that is not ours. Left exactly where it is.
+                AgentServiceRemovalOutcome.NotOwned =>
+                    (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.NotOwned"]),
+
+                _ => (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.Failed"]),
+            };
+
+            _installFailure = result.Outcome is AgentServiceRemovalOutcome.Removed
+                ? null
+                : result.Failure;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Remove.Failed"];
+            _installFailure = $"{exception.GetType().Name}: {exception.Message}";
+        }
+        finally
+        {
+            ServiceLifecycle = AgentServiceLifecycle.Idle;
+            IsBusy = false;
+            RefreshCommandStates();
+
+            // The group and its members are deliberately not reloaded away: removing the service does
+            // not touch them, and the next installation reuses exactly what is there.
             ReloadService();
         }
     }

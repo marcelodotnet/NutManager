@@ -381,11 +381,16 @@ public sealed class T41InstallerAndPackagingTests
 
         var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
         var firstScrollViewer = window.IndexOf("<ScrollViewer", StringComparison.Ordinal);
-        var operators = window.IndexOf("Group administration remains available", StringComparison.Ordinal);
+        var permissions = window.IndexOf(
+            "<!-- ================================================ access permissions -->", StringComparison.Ordinal);
         Assert.True(firstScrollViewer > diagnostics,
             "The fixed 800x600 configuration surface must not depend on a page-level ScrollViewer.");
-        Assert.True(diagnostics >= 0 && operators > diagnostics,
-            "Operators administration must remain available without changing the reference configuration surface.");
+
+        // Operators administration moved off diagnostics and onto a page of its own, reached from the
+        // Agent panel. It is still one page in this window and still after the reference surface.
+        Assert.True(diagnostics >= 0 && permissions > diagnostics,
+            "Access permissions must remain available without changing the reference configuration surface.");
+        Assert.DoesNotContain("Group administration remains available", window, StringComparison.Ordinal);
 
         Assert.Contains("DataTransferItem", codeBehind, StringComparison.Ordinal);
         Assert.Contains("DataFormat.Text", codeBehind, StringComparison.Ordinal);
@@ -3460,8 +3465,8 @@ public sealed class T41AgentConfigViewModelTests
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
-        var groups = new FakeGroups(groupRole, groupExists);
-        var service = new FakeService(serviceState);
+        var groups = new FakeGroups(groupRole, groupExists, events);
+        var service = new FakeService(serviceState, events);
         var resources = new FakeResources(events);
         var certificate = new AgentCertificateSummary(
             Thumbprint,
@@ -3836,7 +3841,7 @@ public sealed class T41AgentConfigViewModelTests
         foreach (var select in new Action[]
                  {
                      () => viewModel.SelectGeneralTabCommand.Execute(null),
-                     () => viewModel.SelectAppearanceTabCommand.Execute(null),
+                     () => viewModel.SelectSystemTabCommand.Execute(null),
                      () => viewModel.SelectAgentTabCommand.Execute(null),
                      () => viewModel.SelectAboutTabCommand.Execute(null),
                  })
@@ -3846,7 +3851,7 @@ public sealed class T41AgentConfigViewModelTests
             var shown = new[]
             {
                 viewModel.IsGeneralTab,
-                viewModel.IsAppearanceTab,
+                viewModel.IsSystemTab,
                 viewModel.IsAgentTab,
                 viewModel.IsAboutTab,
             };
@@ -4114,7 +4119,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.HasStartupResult);
 
         // Another panel in the same surface.
-        context.ViewModel.SelectAppearanceTabCommand.Execute(null);
+        context.ViewModel.SelectSystemTabCommand.Execute(null);
         Assert.False(context.ViewModel.HasStartupResult);
 
         context.ViewModel.SelectGeneralTabCommand.Execute(null);
@@ -4170,7 +4175,7 @@ public sealed class T41AgentConfigViewModelTests
     /// machine alone.
     /// </summary>
     [Fact]
-    public async Task TheWayToInstallOpensTheAgentPanelAndTouchesNothing()
+    public async Task TheWayToInstallOpensTheSystemPanelAndTouchesNothing()
     {
         var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
         await context.ViewModel.RefreshAsync();
@@ -4179,7 +4184,9 @@ public sealed class T41AgentConfigViewModelTests
 
         context.ViewModel.ShowServiceInstallationCommand.Execute(null);
 
-        Assert.True(context.ViewModel.IsAgentTab);
+        // System, not Agent: installing is something done to the machine, and that is where it lives.
+        Assert.True(context.ViewModel.IsSystemTab);
+        Assert.False(context.ViewModel.IsAgentTab);
         Assert.True(context.ViewModel.ShowSettings);
 
         // Same window, same surface. Nothing was installed, started or written on the way.
@@ -4314,13 +4321,15 @@ public sealed class T41AgentConfigViewModelTests
         var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
         await absent.ViewModel.RefreshAsync();
         Assert.Equal(
-            "Install NutManager Agent as a Windows service so that it can run in the background.",
+            "NutManager Agent is not installed as a Windows service yet.",
             absent.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Warning, absent.ViewModel.ServiceInstallState);
 
         await absent.ViewModel.InstallServiceCommand.ExecuteAsync(null);
         Assert.Equal(
             "NutManager Agent is already installed as a Windows service.",
             absent.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Success, absent.ViewModel.ServiceInstallState);
     }
 
     /// <summary>
@@ -4379,7 +4388,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         Assert.Equal(
-            "Instale o NutManager Agent como servi\u00e7o do Windows para permitir sua execu\u00e7\u00e3o em segundo plano.",
+            "O NutManager Agent ainda n\u00e3o est\u00e1 instalado como servi\u00e7o do Windows.",
             context.ViewModel.ServiceInstallDescription);
 
         await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
@@ -4397,6 +4406,424 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Single(
             viewModel.Diagnostics,
             item => item.Label == viewModel.Strings["Diagnostics.ServiceConfiguration"]);
+
+    // ---------------------------------------------------------------- T42: lifecycle and permissions
+
+    /// <summary>
+    /// The group comes before the service, because the agent will not start without it.
+    ///
+    /// This is the failure found on a real machine: a service registered by this window, correct in
+    /// every field, that would not start - Event 7023, exit code 1 - because NutManager Operators did
+    /// not exist. The agent fails closed when its authorization group is missing, which is right, and
+    /// left this button producing a service that could never run.
+    /// </summary>
+    [Fact]
+    public async Task InstallingCreatesTheOperatorsGroupBeforeRegisteringTheService()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.OperatorsGroupExists);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        // And the order is the order, not merely both having happened.
+        var group = context.Events.IndexOf("groups.create");
+        var install = context.Events.IndexOf("service.install");
+        Assert.True(group >= 0 && install > group, "The group has to exist before the service is registered.");
+    }
+
+    /// <summary>
+    /// A group that could not be created means no service, rather than a service that cannot start.
+    ///
+    /// A machine with no agent is a better outcome than one with an agent that fails at every boot
+    /// for a reason nothing on screen explains.
+    /// </summary>
+    [Fact]
+    public async Task AServiceIsNotRegisteredWhenItsGroupCouldNotBeCreated()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        context.Groups.CreateFailure = "Access is denied.";
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(0, context.Service.InstallCalls);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "The NutManager Operators group could not be created, so the service was not installed.",
+            context.ViewModel.InstallResultText);
+    }
+
+    /// <summary>An existing group is reused, never recreated, and its members are left alone.</summary>
+    [Fact]
+    public async Task InstallingReusesAnExistingGroupAndItsMembers()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: true);
+        context.Groups.MemberList.Add(@"EXAMPLE\svc_nutmanager");
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.Equal(0, context.Groups.AddCalls);
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.Equal([@"EXAMPLE\operator", @"EXAMPLE\svc_nutmanager"], context.Groups.MemberList);
+    }
+
+    /// <summary>
+    /// Installing authorizes nobody.
+    ///
+    /// The group is a prerequisite the agent needs to run; who is in it is a decision an administrator
+    /// makes deliberately. Adding the current account, or Administrators, would be this window handing
+    /// out administrative rights as a side effect of an installation.
+    /// </summary>
+    [Fact]
+    public async Task InstallingAddsNoMemberToTheGroup()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, context.Groups.AddCalls);
+        Assert.Empty(context.ViewModel.Members);
+    }
+
+    /// <summary>
+    /// The button reports the operation while it runs, and refuses a second one.
+    /// </summary>
+    [Fact]
+    public async Task TheActionReportsItselfWhileItRunsAndRefusesASecondClick()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+
+        // Observed from inside the operation, which is where the in-progress state actually exists.
+        // A held task and assertions from another thread would be a race; this runs on the operation.
+        AgentServiceLifecycle lifecycle = default;
+        string? label = null;
+        var enabled = true;
+        var removable = true;
+
+        context.Service.WhileInstalling = () =>
+        {
+            lifecycle = context.ViewModel.ServiceLifecycle;
+            label = context.ViewModel.ServiceActionText;
+
+            // Both refusals, which is what keeps the button dark and a second press inert.
+            enabled = context.ViewModel.CanInstallService
+                      || context.ViewModel.InstallServiceCommand.CanExecute(null);
+
+            // And the other action is closed too, so a registration in flight cannot be answered by
+            // a removal.
+            removable = context.ViewModel.CanRemoveService
+                        || context.ViewModel.RemoveServiceCommand.CanExecute(null);
+        };
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentServiceLifecycle.Installing, lifecycle);
+        Assert.Equal("Installing...", label);
+        Assert.False(enabled);
+        Assert.False(removable);
+        Assert.Equal(1, context.Service.InstallCalls);
+
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+    }
+
+    /// <summary>
+    /// The button turns around only once the service control manager says the service is there.
+    ///
+    /// A registration that returned a handle is not a registration the machine has confirmed, and the
+    /// screen must not claim one before the other.
+    /// </summary>
+    [Fact]
+    public async Task TheActionTurnsAroundOnlyAfterTheMachineConfirmsIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+
+        // The registration succeeds, and the machine has not caught up.
+        context.Service.InstallResult = AgentServiceInstallation.Installed;
+        context.Service.SuppressInstallStateChange = true;
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+
+        // Now it has, and only now does the action change.
+        context.Service.State = AgentServiceState.Stopped;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+    }
+
+    /// <summary>Removing asks first, and does nothing before the answer.</summary>
+    [Fact]
+    public async Task RemovingAsksBeforeItTouchesAnything()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        Assert.True(context.ViewModel.CanRemoveService);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.RemoveService, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Service.RemoveCalls);
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+
+        // The question names what happens to the running service, and what is left alone.
+        Assert.Equal("Remove NutManager Agent?", context.ViewModel.ConfirmationTitle);
+        Assert.Contains("will be stopped", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Contains(
+            "NutManager Operators group and its users will not be removed",
+            context.ViewModel.ConfirmationMessage!,
+            StringComparison.Ordinal);
+        Assert.Equal("Remove service", context.ViewModel.ConfirmButtonText);
+    }
+
+    /// <summary>Answering no leaves the service exactly where it was.</summary>
+    [Fact]
+    public async Task CancellingTheRemovalChangesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Service.RemoveCalls);
+        Assert.Equal(0, context.Service.StopCalls);
+        Assert.Equal(AgentServiceState.Running, context.Service.State);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+        Assert.False(context.ViewModel.HasInstallResult);
+    }
+
+    /// <summary>
+    /// Answering yes removes the service, and leaves everything that is not the service.
+    ///
+    /// The group, its members and the configuration outlive the registration on purpose: removing and
+    /// reinstalling must not quietly discard who was authorized or what was configured.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingRemovesOnlyTheService()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        context.Groups.MemberList.Add(@"EXAMPLE\svc_nutmanager");
+        await context.ViewModel.RefreshAsync();
+
+        var writes = context.Store.Writes.Count;
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.RemoveCalls);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.InstallResultKind);
+        Assert.Equal("Service removed successfully.", context.ViewModel.InstallResultText);
+
+        // The group and its members are untouched.
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal([@"EXAMPLE\operator", @"EXAMPLE\svc_nutmanager"], context.Groups.MemberList);
+        Assert.Equal(0, context.Groups.DeleteCalls);
+
+        // And so is everything else this window can act on.
+        Assert.Equal(writes, context.Store.Writes.Count);
+        Assert.Empty(context.Resources.RemoveRequests);
+    }
+
+    /// <summary>
+    /// A removal the machine has not finished is reported as pending, never as done.
+    ///
+    /// Windows removes a service when the last handle to it closes, so an open console can hold one
+    /// indefinitely. Saying "removed" over a service that is still registered would be a lie the next
+    /// refresh would expose.
+    /// </summary>
+    [Fact]
+    public async Task APendingRemovalIsReportedAsPending()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.RemoveResult = AgentServiceRemoval.PendingDeletion;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.InstallResultKind);
+        Assert.Contains("still registered", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+
+        // The service is still there, so the action still offers to remove it.
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+    }
+
+    /// <summary>A service that is not this product is reported and left exactly where it is.</summary>
+    [Fact]
+    public async Task AForeignServiceIsRefusedRatherThanRemoved()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.RemoveResult = AgentServiceRemoval.NotOwned(
+            "A service named NutManagerAgent exists but does not run NutManager.Agent.exe.");
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Contains("does not belong to NutManager", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.ServiceInstall"]);
+        Assert.Contains("does not run", diagnostic.TechnicalDetail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Install, authorize, remove, reinstall - and the same people are still authorized.
+    ///
+    /// The whole point of leaving the group behind: an operator who removes the service to replace the
+    /// binaries does not have to remember who had access.
+    /// </summary>
+    [Fact]
+    public async Task AuthorizedUsersSurviveARemovalAndAReinstall()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_nutmanager";
+        context.ViewModel.AddMemberCommand.Execute(null);
+        Assert.Equal([@"EXAMPLE\svc_nutmanager"], context.ViewModel.Members);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(2, context.Service.InstallCalls);
+
+        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        Assert.Equal([@"EXAMPLE\svc_nutmanager"], context.ViewModel.Members);
+    }
+
+    /// <summary>
+    /// Permissions is a page of this window, reached from Agent and returning to it.
+    /// </summary>
+    [Fact]
+    public async Task PermissionsIsAPageOfThisWindowThatReturnsToAgent()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        context.ViewModel.OpenPermissionsCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowPermissions);
+        Assert.False(context.ViewModel.ShowSettings);
+        Assert.True(context.ViewModel.ShowHomeAction);
+        Assert.False(context.ViewModel.ShowActionBar);
+
+        // Opening it reads the group rather than creating one.
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.False(context.ViewModel.IsAddingOperator);
+
+        context.ViewModel.ClosePermissionsCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowSettings);
+        Assert.True(context.ViewModel.IsAgentTab);
+    }
+
+    /// <summary>
+    /// Adding an account takes two steps, and the field is closed until the first one is taken.
+    /// </summary>
+    [Fact]
+    public async Task AuthorizingAnAccountTakesTwoDeliberateSteps()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.OpenPermissionsCommand.Execute(null);
+
+        Assert.False(context.ViewModel.IsAddingOperator);
+        var before = context.ViewModel.Members.Count;
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        Assert.True(context.ViewModel.IsAddingOperator);
+        Assert.Equal(0, context.Groups.AddCalls);
+
+        context.ViewModel.CancelAddOperatorCommand.Execute(null);
+        Assert.False(context.ViewModel.IsAddingOperator);
+        Assert.Equal(0, context.Groups.AddCalls);
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_backup";
+        context.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal(1, context.Groups.AddCalls);
+        Assert.False(context.ViewModel.IsAddingOperator);
+        Assert.True(context.ViewModel.HasMembers);
+        Assert.Equal(before + 1, context.ViewModel.Members.Count);
+    }
+
+    /// <summary>Opening Permissions never creates a Windows group as a side effect of looking.</summary>
+    [Fact]
+    public async Task OpeningPermissionsWithNoGroupCreatesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.OpenPermissionsCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowPermissions);
+        Assert.False(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.Empty(context.ViewModel.Members);
+    }
+
+    /// <summary>The group is named as a detail, and the page is named for what it is about.</summary>
+    [Fact]
+    public async Task TheGroupIsNamedAsADetailRatherThanAsATitle()
+    {
+        var context = CreateContext(groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Access permissions", context.ViewModel.Strings["Settings.Permissions.Title"]);
+        Assert.Equal("Windows group: NutManager Operators", context.ViewModel.OperatorsGroupCaption);
+
+        var portuguese = CreateContext(groupExists: true, language: UiLanguagePreference.PtBr);
+        await portuguese.ViewModel.RefreshAsync();
+        Assert.Equal(
+            "Grupo do Windows: NutManager Operators", portuguese.ViewModel.OperatorsGroupCaption);
+    }
 
     // ---------------------------------------------------------------- T42: the listener, watched
 
@@ -5115,10 +5542,43 @@ public sealed class T41AgentConfigViewModelTests
         }
     }
 
-    private sealed class FakeGroups(AgentMachineRole role, bool exists) : IAgentOperatorsGroupAdministration
+    private sealed class FakeGroups : IAgentOperatorsGroupAdministration
     {
+        private readonly AgentMachineRole _role;
+        private readonly List<string> _events;
+        private bool _exists;
+
+        internal FakeGroups(AgentMachineRole role, bool exists, List<string>? events = null)
+        {
+            _role = role;
+            _exists = exists;
+            _events = events ?? [];
+
+            if (exists) MemberList.Add(@"EXAMPLE\operator");
+        }
+
         public int CreateCalls { get; private set; }
         public int AddCalls { get; private set; }
+
+        /// <summary>
+        /// Never incremented by anything, and asserted against.
+        ///
+        /// Removing the service must not remove the group, and the way to prove a call did not happen
+        /// is to have somewhere it would have been counted.
+        /// </summary>
+        public int DeleteCalls => 0;
+
+        /// <summary>Set to make the machine refuse to create the group.</summary>
+        public string? CreateFailure { get; set; }
+
+        /// <summary>
+        /// The members, as a list a test can seed and then read back.
+        ///
+        /// A real group keeps its members across a service being registered and removed, so the fake
+        /// has to as well - a fixed answer could never show that they survived.
+        /// </summary>
+        public List<string> MemberList { get; } = [];
+
         public AgentMembershipResult AddResult { get; set; } =
             new(AgentMembershipOutcome.Added, @"EXAMPLE\operator");
 
@@ -5128,16 +5588,24 @@ public sealed class T41AgentConfigViewModelTests
         {
             DescribeCalls++;
             return new(
-                exists || CreateCalls > 0,
+                _exists,
                 "NutManager Operators",
-                CreateCalls > 0 || exists ? "S-1-5-32-1000" : null,
-                role,
+                _exists ? "S-1-5-32-1000" : null,
+                _role,
                 null);
         }
 
         public AgentGroupCreationResult Create()
         {
             CreateCalls++;
+            _events.Add("groups.create");
+
+            if (CreateFailure is not null)
+            {
+                return new AgentGroupCreationResult(false, "NutManager Operators", null, CreateFailure);
+            }
+
+            _exists = true;
             return new AgentGroupCreationResult(true, "NutManager Operators", "S-1-5-32-1000", null);
         }
 
@@ -5147,13 +5615,16 @@ public sealed class T41AgentConfigViewModelTests
         public AgentMembershipResult AddMember(string accountName)
         {
             AddCalls++;
+
+            if (AddResult.Succeeded && !MemberList.Contains(accountName)) MemberList.Add(accountName);
+
             return AddResult with { AccountName = accountName };
         }
 
-        public IReadOnlyList<string> ListMembers() => exists ? [@"EXAMPLE\operator"] : [];
+        public IReadOnlyList<string> ListMembers() => _exists ? [.. MemberList] : [];
     }
 
-    private sealed class FakeService(AgentServiceState state) : IAgentServiceAdministration
+    private sealed class FakeService(AgentServiceState state, List<string> events) : IAgentServiceAdministration
     {
         /// <summary>
         /// What the service control manager would say now.
@@ -5227,17 +5698,38 @@ public sealed class T41AgentConfigViewModelTests
 
         public int InstallCalls { get; private set; }
 
+        /// <summary>
+        /// Run while the registration is in flight, so the in-progress state can be observed.
+        ///
+        /// A callback rather than a held task: parking a registration on a completion source and
+        /// asserting from another thread is a race, and one that took the xUnit host down with it.
+        /// This runs inside the operation, where the state being asserted is the state that exists.
+        /// </summary>
+        public Action? WhileInstalling { get; set; }
+
+        /// <summary>
+        /// Set to make a registration succeed without the machine catching up.
+        ///
+        /// The real service control manager can report a service a moment after CreateService returns,
+        /// and the window must not claim the registration before the SCM confirms it.
+        /// </summary>
+        public bool SuppressInstallStateChange { get; set; }
+
+
         /// <summary>What registration answers. Settable so a refusal and a race can both be exercised.</summary>
         public AgentServiceInstallation InstallResult { get; set; } = AgentServiceInstallation.Installed;
 
         public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken)
         {
             InstallCalls++;
+            events.Add("service.install");
+
+            WhileInstalling?.Invoke();
 
             // A real registration leaves the service present and stopped, with automatic start and no
             // process running. The fake has to do the same or the tests would be asserting against a
             // machine state Windows never produces.
-            if (InstallResult.Succeeded)
+            if (InstallResult.Succeeded && !SuppressInstallStateChange)
             {
                 State = AgentServiceState.Stopped;
                 StartType = AgentServiceStartType.Automatic;
@@ -5245,6 +5737,28 @@ public sealed class T41AgentConfigViewModelTests
             }
 
             return Task.FromResult(InstallResult);
+        }
+
+        public int RemoveCalls { get; private set; }
+
+        /// <summary>What removal answers. Settable so a refusal and a pending deletion are reachable.</summary>
+        public AgentServiceRemoval RemoveResult { get; set; } = AgentServiceRemoval.Removed;
+
+        public Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken)
+        {
+            RemoveCalls++;
+
+            // A real removal leaves nothing registered, so the fake has to stop reporting a service.
+            // Anything else and the tests would be asserting against a machine state Windows never
+            // produces - a deleted service that still answers.
+            if (RemoveResult.Succeeded)
+            {
+                State = AgentServiceState.NotInstalled;
+                StartType = AgentServiceStartType.Unknown;
+                Account = string.Empty;
+            }
+
+            return Task.FromResult(RemoveResult);
         }
     }
 

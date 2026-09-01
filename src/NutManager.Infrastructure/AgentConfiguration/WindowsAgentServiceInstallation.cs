@@ -22,6 +22,13 @@ namespace NutManager.Infrastructure.AgentConfiguration;
 /// It creates the service stopped. Starting it is a separate operator action, exactly as it is after
 /// the product installer runs.
 ///
+/// Removal is the same boundary in reverse, and carries one rule the registration does not need: the
+/// service being deleted has to prove it is this product's. A name is not proof - anybody can register
+/// a service called NutManagerAgent - so the image path is read back and matched against the executable
+/// this class is allowed to register, and a mismatch refuses rather than deleting somebody else's
+/// service. It deletes the registration and nothing else: not the operators group, not its members,
+/// not the configuration, not a certificate, and not one HTTPS resource.
+///
 /// This is deliberately not everything the MSI does. The installer also owns the Event Log source, as
 /// a registry key it may later remove, and the agent refuses to run without it rather than creating
 /// its own - that fail-closed boundary is the reason this class does not create it either. Registering
@@ -42,14 +49,36 @@ internal sealed class WindowsAgentServiceInstallation
     /// <summary>The apphost this is allowed to register, by name.</summary>
     internal const string HostFileName = "NutManager.Agent.exe";
 
+    private const uint ScManagerConnect = 0x0001;
     private const uint ScManagerCreateService = 0x0002;
     private const uint ServiceQueryStatus = 0x0004;
+    private const uint ServiceQueryConfig = 0x0001;
+    private const uint ServiceStop = 0x0020;
+    private const uint ServiceDelete = 0x00010000;
+    private const uint ServiceControlStop = 0x00000001;
+    private const int ScStatusProcessInfo = 0;
+    private const uint ServiceStateStopped = 1;
     private const uint ServiceWin32OwnProcess = 0x00000010;
     private const uint ServiceAutoStart = 0x00000002;
     private const uint ServiceErrorNormal = 0x00000001;
 
     internal const int ErrorServiceExists = 1073;
     internal const int ErrorServiceMarkedForDelete = 1072;
+    internal const int ErrorServiceDoesNotExist = 1060;
+    internal const int ErrorServiceNotActive = 1062;
+    internal const int ErrorInsufficientBuffer = 122;
+
+    /// <summary>
+    /// How long a stop, and then the disappearance of the service, are waited for.
+    ///
+    /// Short and explicit. Windows removes a service once the last handle to it closes, so an open
+    /// services.msc on the machine can hold it indefinitely - and waiting forever for somebody else to
+    /// close a console is not something a window should do. When it runs out, the state is reported as
+    /// pending rather than as removed.
+    /// </summary>
+    internal static TimeSpan RemovalTimeout { get; } = TimeSpan.FromSeconds(10);
+
+    private static readonly TimeSpan RemovalPollInterval = TimeSpan.FromMilliseconds(250);
 
     private readonly Func<string?> _hostPath;
     private readonly Func<string, bool> _fileExists;
@@ -160,6 +189,223 @@ internal sealed class WindowsAgentServiceInstallation
         }
     }
 
+    /// <summary>
+    /// Stops the service if it is running, deletes it, and waits for the SCM to stop reporting it.
+    ///
+    /// The wait is the part that matters. DeleteService marks a service for deletion and it goes away
+    /// when the last handle closes, so returning success on the API call alone would put "removed" on
+    /// screen beside a service the machine still has. This asks until the SCM says it is gone.
+    /// </summary>
+    internal AgentServiceRemoval Remove(TimeProvider time, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(time);
+
+        var manager = IntPtr.Zero;
+        var service = IntPtr.Zero;
+
+        try
+        {
+            manager = OpenSCManagerW(null, null, ScManagerConnect);
+            if (manager == IntPtr.Zero)
+            {
+                return RemovalFailure(
+                    "the Service Control Manager could not be opened", Marshal.GetLastWin32Error());
+            }
+
+            var access = ServiceQueryConfig | ServiceQueryStatus | ServiceStop | ServiceDelete;
+            service = OpenServiceW(manager, ServiceName, access);
+
+            if (service == IntPtr.Zero)
+            {
+                var openError = Marshal.GetLastWin32Error();
+                return openError == ErrorServiceDoesNotExist
+                    ? AgentServiceRemoval.NotInstalled
+                    : RemovalFailure("the service could not be opened for removal", openError);
+            }
+
+            // Ownership before anything destructive. The registered image path has to be the
+            // executable this class is allowed to register; a service that merely borrowed the name
+            // belongs to somebody else and is left exactly where it is.
+            if (ReadImagePath(service) is not { } registered)
+            {
+                return AgentServiceRemoval.NotOwned(
+                    $"The {ServiceName} service was not removed because its configuration could not be read.");
+            }
+
+            if (!IsOwnedImagePath(registered))
+            {
+                return AgentServiceRemoval.NotOwned(
+                    $"A service named {ServiceName} exists but does not run {HostFileName}, so it was left " +
+                    "untouched.");
+            }
+
+            if (!StopIfRunning(service, time, cancellationToken, out var stopFailure)) return stopFailure!;
+
+            if (!DeleteService(service))
+            {
+                var deleteError = Marshal.GetLastWin32Error();
+
+                // Already marked by somebody else. The wait below still decides what to report.
+                if (deleteError != ErrorServiceMarkedForDelete)
+                {
+                    return RemovalFailure("the service could not be deleted", deleteError);
+                }
+            }
+
+            // The handle this function holds is itself one of the references keeping the service
+            // registered, so it is released before asking whether the service is gone.
+            CloseServiceHandle(service);
+            service = IntPtr.Zero;
+
+            return WaitUntilAbsent(manager, time, cancellationToken)
+                ? AgentServiceRemoval.Removed
+                : AgentServiceRemoval.PendingDeletion;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return AgentServiceRemoval.Failed(
+                $"The {ServiceName} service could not be removed ({exception.GetType().Name}).");
+        }
+        finally
+        {
+            if (service != IntPtr.Zero) CloseServiceHandle(service);
+            if (manager != IntPtr.Zero) CloseServiceHandle(manager);
+        }
+    }
+
+    /// <summary>
+    /// Whether a registered image path is one this class could have written.
+    ///
+    /// Compared on the executable rather than on the whole string, because the installed product and
+    /// this running copy are the same file in the same place, and quoting or an extra switch should
+    /// not be the thing that decides whether a service can be removed.
+    /// </summary>
+    internal static bool IsOwnedImagePath(string imagePath)
+    {
+        var executable = imagePath.Trim();
+
+        if (executable.StartsWith('"'))
+        {
+            var closing = executable.IndexOf('"', 1);
+            if (closing < 0) return false;
+            executable = executable[1..closing];
+        }
+        else
+        {
+            var space = executable.IndexOf(' ', StringComparison.Ordinal);
+            if (space > 0) executable = executable[..space];
+        }
+
+        return string.Equals(Path.GetFileName(executable), HostFileName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ReadImagePath(IntPtr service)
+    {
+        QueryServiceConfigW(service, IntPtr.Zero, 0, out var required);
+        if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || required == 0) return null;
+
+        var buffer = Marshal.AllocHGlobal(checked((int)required));
+        try
+        {
+            if (!QueryServiceConfigW(service, buffer, required, out _)) return null;
+
+            var configuration = Marshal.PtrToStructure<QueryServiceConfigNative>(buffer);
+            return Marshal.PtrToStringUni(configuration.BinaryPathName);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>
+    /// Stops the service when it is running, and waits for it to actually stop.
+    ///
+    /// Reached only after the operator confirmed a removal that says the running service will be
+    /// stopped to complete it. Nothing else in this window stops the agent without being asked.
+    /// </summary>
+    private bool StopIfRunning(
+        IntPtr service, TimeProvider time, CancellationToken cancellationToken, out AgentServiceRemoval? failure)
+    {
+        failure = null;
+
+        if (ReadState(service) is not { } state || state == ServiceStateStopped) return true;
+
+        var status = default(ServiceStatusNative);
+        if (!ControlService(service, ServiceControlStop, ref status))
+        {
+            var error = Marshal.GetLastWin32Error();
+
+            // It stopped between the read and the control request. That is the desired state.
+            if (error != ErrorServiceNotActive)
+            {
+                failure = RemovalFailure("the service could not be stopped", error);
+                return false;
+            }
+        }
+
+        var deadline = time.GetUtcNow() + RemovalTimeout;
+
+        while (time.GetUtcNow() < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (ReadState(service) is not { } current || current == ServiceStateStopped) return true;
+
+            Thread.Sleep(RemovalPollInterval);
+        }
+
+        failure = AgentServiceRemoval.Failed(
+            $"The {ServiceName} service did not stop within {RemovalTimeout.TotalSeconds:N0} seconds, so it " +
+            "was not removed.");
+        return false;
+    }
+
+    private static uint? ReadState(IntPtr service)
+    {
+        var size = Marshal.SizeOf<ServiceStatusProcessNative>();
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            return QueryServiceStatusEx(service, ScStatusProcessInfo, buffer, (uint)size, out _)
+                ? Marshal.PtrToStructure<ServiceStatusProcessNative>(buffer).CurrentState
+                : null;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary>Asks the SCM whether the service is gone yet, until it is or the wait runs out.</summary>
+    private static bool WaitUntilAbsent(IntPtr manager, TimeProvider time, CancellationToken cancellationToken)
+    {
+        var deadline = time.GetUtcNow() + RemovalTimeout;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var probe = OpenServiceW(manager, ServiceName, ServiceQueryStatus);
+
+            if (probe == IntPtr.Zero && Marshal.GetLastWin32Error() == ErrorServiceDoesNotExist) return true;
+            if (probe != IntPtr.Zero) CloseServiceHandle(probe);
+
+            if (time.GetUtcNow() >= deadline) return false;
+
+            Thread.Sleep(RemovalPollInterval);
+        }
+    }
+
+    private static AgentServiceRemoval RemovalFailure(string operation, int error) =>
+        AgentServiceRemoval.Failed(
+            $"The {ServiceName} service {operation} (Win32 error {error}: {new Win32Exception(error).Message}).",
+            error);
+
     private static AgentServiceInstallation Failure(string operation, int error) =>
         AgentServiceInstallation.Failed(
             $"The {ServiceName} service {operation} (Win32 error {error}: {new Win32Exception(error).Message}).",
@@ -184,7 +430,62 @@ internal sealed class WindowsAgentServiceInstallation
         string? lpServiceStartName,
         string? lpPassword);
 
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+    private static extern IntPtr OpenServiceW(IntPtr manager, string serviceName, uint desiredAccess);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceConfigW(
+        IntPtr service, IntPtr configuration, uint bufferSize, out uint bytesNeeded);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceStatusEx(
+        IntPtr service, int informationLevel, IntPtr buffer, uint bufferSize, out uint bytesNeeded);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ControlService(IntPtr service, uint control, ref ServiceStatusNative status);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteService(IntPtr service);
+
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CloseServiceHandle(IntPtr handle);
+}
+
+/// <summary>SERVICE_STATUS, as ControlService fills it in.</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct ServiceStatusNative
+{
+    internal uint ServiceType;
+    internal uint CurrentState;
+    internal uint ControlsAccepted;
+    internal uint Win32ExitCode;
+    internal uint ServiceSpecificExitCode;
+    internal uint CheckPoint;
+    internal uint WaitHint;
+}
+
+/// <summary>
+/// SERVICE_STATUS_PROCESS.
+///
+/// Declared here rather than shared with the query adapter so that the removal path owns its own
+/// marshalling: the two files answer different questions and neither should be able to break the
+/// other by adjusting a struct for its own use.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct ServiceStatusProcessNative
+{
+    internal uint ServiceType;
+    internal uint CurrentState;
+    internal uint ControlsAccepted;
+    internal uint Win32ExitCode;
+    internal uint ServiceSpecificExitCode;
+    internal uint CheckPoint;
+    internal uint WaitHint;
+    internal uint ProcessId;
+    internal uint ServiceFlags;
 }

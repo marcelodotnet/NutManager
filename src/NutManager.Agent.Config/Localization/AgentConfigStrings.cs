@@ -288,7 +288,7 @@ public sealed class AgentConfigStrings
 
         ["Settings.Title"] = "Configurações",
         ["Settings.Tab.General"] = "Geral",
-        ["Settings.Tab.Appearance"] = "Aparência",
+        ["Settings.Tab.System"] = "Sistema",
         ["Settings.Tab.Agent"] = "Agent",
         ["Settings.Tab.About"] = "Sobre",
 
@@ -318,6 +318,7 @@ public sealed class AgentConfigStrings
             "Remove o binding SSL, a reserva de URL e a regra de firewall criados por este produto " +
             "e esquece o endpoint salvo. O certificado nunca é removido.",
 
+        ["Settings.Appearance.Section"] = "Aparência e idioma",
         ["Settings.Appearance.Theme"] = "Tema",
         ["Settings.Appearance.Theme.Description"] = "Alterna entre o tema claro e o escuro desta janela.",
         ["Settings.Appearance.Theme.Light"] = "Claro",
@@ -325,15 +326,49 @@ public sealed class AgentConfigStrings
         ["Settings.Appearance.Language"] = "Idioma",
         ["Settings.Appearance.Language.Description"] = "Idioma da interface desta janela.",
 
-        ["Settings.Agent.Install.Title"] = "Instalação do serviço",
-        ["Settings.Agent.Install.Description"] =
-            "Instale o NutManager Agent como serviço do Windows para permitir sua execução em segundo plano.",
+        ["Settings.Agent.Install.Title"] = "Instalação do Agent",
+        ["Settings.Agent.Install.Missing"] =
+            "O NutManager Agent ainda não está instalado como serviço do Windows.",
+        ["Settings.Agent.Install.Working"] = "Instalando...",
+        ["Settings.Agent.Install.GroupFailed"] =
+            "Não foi possível criar o grupo NutManager Operators, então o serviço não foi instalado.",
+        ["Settings.Agent.Install.GroupDirectory"] =
+            "O grupo NutManager Operators precisa ser criado no domínio antes de instalar o serviço.",
+        ["Settings.Agent.Remove.Action"] = "Remover serviço",
+        ["Settings.Agent.Remove.Working"] = "Removendo...",
+        ["Settings.Agent.Remove.Title"] = "Remover NutManager Agent?",
+        ["Settings.Agent.Remove.Question"] =
+            "O serviço NutManager Agent será removido deste computador. " +
+            "Se estiver em execução, ele será interrompido para concluir a remoção. " +
+            "O grupo NutManager Operators e seus usuários não serão removidos.",
+        ["Settings.Agent.Remove.Done"] = "Serviço removido com sucesso.",
+        ["Settings.Agent.Remove.Absent"] = "O serviço já não estava instalado.",
+        ["Settings.Agent.Remove.Pending"] =
+            "O serviço foi marcado para remoção e ainda está registrado. " +
+            "Feche o console de Serviços do Windows e verifique novamente.",
+        ["Settings.Agent.Remove.NotOwned"] =
+            "Existe um serviço com esse nome que não pertence ao NutManager, então nada foi removido.",
+        ["Settings.Agent.Remove.Failed"] = "Não foi possível remover o serviço.",
         ["Settings.Agent.Install.Already"] =
             "O NutManager Agent já está instalado como serviço do Windows.",
         ["Settings.Agent.Install.Action"] = "Instalar serviço",
         ["Settings.Agent.Install.Done"] = "Serviço instalado com sucesso.",
         ["Settings.Agent.Install.Failed"] = "Não foi possível instalar o serviço.",
         ["Settings.Agent.Section"] = "Serviço e comunicação",
+        ["Settings.System.Title"] = "Sistema",
+        ["Settings.Permissions.Title"] = "Permissões de acesso",
+        ["Settings.Permissions.Summary"] =
+            "Gerencie quais usuários podem administrar o NutManager Agent.",
+        ["Settings.Permissions.Group"] = "Grupo do Windows: {0}",
+        ["Settings.Permissions.Manage"] = "Gerenciar permissões",
+        ["Settings.Permissions.Intro"] =
+            "Usuários autorizados a administrar o NutManager Agent.",
+        ["Settings.Permissions.Members"] = "Usuários autorizados",
+        ["Settings.Permissions.Empty"] = "Nenhum usuário configurado.",
+        ["Settings.Permissions.Select"] = "Selecionar usuário...",
+        ["Settings.Permissions.GroupMissing"] =
+            "O grupo NutManager Operators ainda não existe. Ele é criado ao instalar o Agent.",
+        ["Settings.Permissions.Back"] = "Agent",
         ["Settings.Agent.Service"] = "Serviço",
         ["Settings.Agent.StartMode"] = "Modo de início",
         ["Settings.Agent.Account"] = "Conta",
@@ -620,7 +655,7 @@ public sealed class AgentConfigStrings
 
         ["Settings.Title"] = "Settings",
         ["Settings.Tab.General"] = "General",
-        ["Settings.Tab.Appearance"] = "Appearance",
+        ["Settings.Tab.System"] = "System",
         ["Settings.Tab.Agent"] = "Agent",
         ["Settings.Tab.About"] = "About",
 
@@ -650,6 +685,7 @@ public sealed class AgentConfigStrings
             "Removes the SSL binding, the URL reservation and the firewall rule this product created, " +
             "and forgets the saved endpoint. The certificate is never removed.",
 
+        ["Settings.Appearance.Section"] = "Appearance and language",
         ["Settings.Appearance.Theme"] = "Theme",
         ["Settings.Appearance.Theme.Description"] = "Switches this window between the light and dark themes.",
         ["Settings.Appearance.Theme.Light"] = "Light",
@@ -657,15 +693,50 @@ public sealed class AgentConfigStrings
         ["Settings.Appearance.Language"] = "Language",
         ["Settings.Appearance.Language.Description"] = "The interface language of this window.",
 
-        ["Settings.Agent.Install.Title"] = "Service installation",
-        ["Settings.Agent.Install.Description"] =
-            "Install NutManager Agent as a Windows service so that it can run in the background.",
+        ["Settings.Agent.Install.Title"] = "Agent installation",
+        ["Settings.Agent.Install.Missing"] =
+            "NutManager Agent is not installed as a Windows service yet.",
+        ["Settings.Agent.Install.Working"] = "Installing...",
+        ["Settings.Agent.Install.GroupFailed"] =
+            "The NutManager Operators group could not be created, so the service was not installed.",
+        ["Settings.Agent.Install.GroupDirectory"] =
+            "The NutManager Operators group has to be created in the directory before the service " +
+            "can be installed.",
+        ["Settings.Agent.Remove.Action"] = "Remove service",
+        ["Settings.Agent.Remove.Working"] = "Removing...",
+        ["Settings.Agent.Remove.Title"] = "Remove NutManager Agent?",
+        ["Settings.Agent.Remove.Question"] =
+            "The NutManager Agent service will be removed from this computer. " +
+            "If it is running, it will be stopped to complete the removal. " +
+            "The NutManager Operators group and its users will not be removed.",
+        ["Settings.Agent.Remove.Done"] = "Service removed successfully.",
+        ["Settings.Agent.Remove.Absent"] = "The service was already not installed.",
+        ["Settings.Agent.Remove.Pending"] =
+            "The service is marked for removal and is still registered. " +
+            "Close the Windows Services console and check again.",
+        ["Settings.Agent.Remove.NotOwned"] =
+            "A service with that name exists but does not belong to NutManager, so nothing was removed.",
+        ["Settings.Agent.Remove.Failed"] = "The service could not be removed.",
         ["Settings.Agent.Install.Already"] =
             "NutManager Agent is already installed as a Windows service.",
         ["Settings.Agent.Install.Action"] = "Install service",
         ["Settings.Agent.Install.Done"] = "Service installed successfully.",
         ["Settings.Agent.Install.Failed"] = "The service could not be installed.",
         ["Settings.Agent.Section"] = "Service and communication",
+        ["Settings.System.Title"] = "System",
+        ["Settings.Permissions.Title"] = "Access permissions",
+        ["Settings.Permissions.Summary"] =
+            "Manage which users can administer NutManager Agent.",
+        ["Settings.Permissions.Group"] = "Windows group: {0}",
+        ["Settings.Permissions.Manage"] = "Manage permissions",
+        ["Settings.Permissions.Intro"] =
+            "Users authorized to administer NutManager Agent.",
+        ["Settings.Permissions.Members"] = "Authorized users",
+        ["Settings.Permissions.Empty"] = "No user configured.",
+        ["Settings.Permissions.Select"] = "Select user...",
+        ["Settings.Permissions.GroupMissing"] =
+            "The NutManager Operators group does not exist yet. It is created when the Agent is installed.",
+        ["Settings.Permissions.Back"] = "Agent",
         ["Settings.Agent.Service"] = "Service",
         ["Settings.Agent.StartMode"] = "Start mode",
         ["Settings.Agent.Account"] = "Account",

@@ -290,6 +290,71 @@ public interface IAgentServiceAdministration
     /// product installer from starting what it installs.
     /// </summary>
     Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Removes NutManagerAgent from the service control manager, stopping it first if it is running.
+    ///
+    /// As parameterless as its opposite, and for the same reason: a method that took a service name
+    /// would be a way to delete any service on the machine from an elevated window. It removes the
+    /// registration and nothing else - not the operators group, not its members, not the transport
+    /// document, not a certificate, and not one HTTPS resource. Those outlive the service on purpose,
+    /// so that removing and reinstalling does not silently discard who was authorized.
+    ///
+    /// The service it deletes must prove it is this product's before anything is deleted. A service
+    /// that merely shares the name is somebody else's, and this fails rather than guessing.
+    /// </summary>
+    Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>What removing the service did, or why it did not.</summary>
+public enum AgentServiceRemovalOutcome
+{
+    /// <summary>Deleted, and the service control manager no longer reports it.</summary>
+    Removed,
+
+    /// <summary>There was nothing registered to remove.</summary>
+    NotInstalled,
+
+    /// <summary>
+    /// Deleted, but still present when the wait ran out.
+    ///
+    /// Windows marks a service for deletion and removes it once every handle to it closes, so a
+    /// console left open on the machine can hold it for as long as it likes. Reported as its own
+    /// outcome because "removed" would be untrue and "failed" would send somebody looking for a
+    /// problem that will resolve itself.
+    /// </summary>
+    PendingDeletion,
+
+    /// <summary>
+    /// A service of that name exists and is not this product's.
+    ///
+    /// Fails closed. The name is not proof of ownership, and deleting somebody else's service
+    /// because it borrowed the name is the one mistake this operation must never make.
+    /// </summary>
+    NotOwned,
+
+    Failed,
+}
+
+/// <summary>The result of a removal attempt, with the Win32 error kept rather than flattened.</summary>
+public sealed record AgentServiceRemoval(
+    AgentServiceRemovalOutcome Outcome,
+    string? Failure = null,
+    int? ErrorCode = null)
+{
+    public bool Succeeded => Outcome is AgentServiceRemovalOutcome.Removed;
+
+    public static AgentServiceRemoval Removed { get; } = new(AgentServiceRemovalOutcome.Removed);
+
+    public static AgentServiceRemoval NotInstalled { get; } = new(AgentServiceRemovalOutcome.NotInstalled);
+
+    public static AgentServiceRemoval PendingDeletion { get; } = new(AgentServiceRemovalOutcome.PendingDeletion);
+
+    public static AgentServiceRemoval NotOwned(string failure) =>
+        new(AgentServiceRemovalOutcome.NotOwned, failure);
+
+    public static AgentServiceRemoval Failed(string failure, int? errorCode = null) =>
+        new(AgentServiceRemovalOutcome.Failed, failure, errorCode);
 }
 
 /// <summary>What registering the service did, or why it did not.</summary>

@@ -251,7 +251,10 @@ public sealed class T42SettingsSurfaceTests
         Assert.Contains("Data=\"{DynamicResource AgentIconHome}\"", markup, StringComparison.Ordinal);
 
         // Home goes to the configuration surface; the gear opens settings. One command, two answers.
-        Assert.Contains("public bool ShowHomeAction => ShowSettings || ShowTerms;", viewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "public bool ShowHomeAction => ShowSettings || ShowTerms || ShowPermissions;",
+            viewModel,
+            StringComparison.Ordinal);
         Assert.Contains(
             "Surface = ShowHomeAction ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;",
             viewModel,
@@ -278,7 +281,7 @@ public sealed class T42SettingsSurfaceTests
 
         Assert.Contains("IsVisible=\"{Binding ShowSettings}\"", window, StringComparison.Ordinal);
 
-        foreach (var tab in new[] { "General", "Appearance", "Agent", "About" })
+        foreach (var tab in new[] { "General", "System", "Agent", "About" })
         {
             Assert.Contains($"Text=\"{{Binding Strings[Settings.Tab.{tab}]}}\"", window, StringComparison.Ordinal);
         }
@@ -411,11 +414,12 @@ public sealed class T42SettingsSurfaceTests
         Assert.DoesNotContain("<ToggleSwitch", tab, StringComparison.Ordinal);
         Assert.DoesNotContain("<CheckBox", tab, StringComparison.Ordinal);
 
-        // Exactly one action, and it is the registration. A second button here would mean something
-        // else on this tab had started changing the machine.
+        // Exactly one action, and it is the way to the permissions page. A second button here would
+        // mean something else on this tab had started changing the machine - installation moved to
+        // System precisely so that this panel reports and delegates rather than acting.
         Assert.Single(Regex.Matches(tab, "<Button"));
         Assert.Single(Regex.Matches(tab, "Command="));
-        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", tab, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding OpenPermissionsCommand}\"", tab, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -774,7 +778,7 @@ public sealed class T42RefinementTests
         // Diagnostics is absent from the condition on purpose: it is a read-only view of the very
         // configuration the draft belongs to, and it keeps the buttons.
         Assert.Contains(
-            "public bool ShowActionBar => !ShowSettings && !ShowTerms;",
+            "public bool ShowActionBar => !ShowSettings && !ShowTerms && !ShowPermissions;",
             viewModel,
             StringComparison.Ordinal);
 
@@ -1294,7 +1298,7 @@ public sealed class T42ServiceAdministrationSettingsTests
             strings,
             StringComparison.Ordinal);
 
-        var panel = GeneralPanel();
+        var panel = SystemPanel();
         var description = panel.IndexOf("Settings.Https.Reset.Description", StringComparison.Ordinal);
         var button = panel.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
         Assert.True(description > 0 && button > description);
@@ -1304,69 +1308,147 @@ public sealed class T42ServiceAdministrationSettingsTests
     }
 
     /// <summary>
-    /// The Agent panel installs first and reports second, on one surface with a rule between.
+    /// System resets first and installs second, on one surface with a rule between.
+    ///
+    /// Reset comes first because it is the one an operator arrives looking for; installation second
+    /// because it is the one they are sent to by the question mark in General.
     /// </summary>
     [Fact]
-    public void TheAgentPanelInstallsFirstAndReportsSecond()
+    public void TheSystemPanelResetsFirstAndInstallsSecond()
     {
-        var panel = AgentPanel();
+        var panel = SystemPanel();
 
-        var installHeading = panel.IndexOf("Settings.Agent.Install.Title", StringComparison.Ordinal);
-        var button = panel.IndexOf("x:Name=\"AgentInstallService\"", StringComparison.Ordinal);
+        var reset = panel.IndexOf("Settings.Https.Reset.Title", StringComparison.Ordinal);
+        var resetButton = panel.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
         var divider = panel.IndexOf("Classes=\"nut-divider\"", StringComparison.Ordinal);
-        var section = panel.IndexOf("Settings.Agent.Section", StringComparison.Ordinal);
-        var state = panel.IndexOf("ServiceStateText", StringComparison.Ordinal);
+        var install = panel.IndexOf("Settings.Agent.Install.Title", StringComparison.Ordinal);
+        var button = panel.IndexOf("x:Name=\"AgentInstallService\"", StringComparison.Ordinal);
 
-        Assert.True(installHeading >= 0, "The installation section is missing.");
-        Assert.True(button > installHeading, "The button belongs under its own heading.");
-        Assert.True(divider > button, "The rule separates the two sections.");
-        Assert.True(section > divider, "The reported values come after the rule.");
-        Assert.True(state > section, "The values belong under their heading.");
+        Assert.True(reset >= 0, "The HTTPS reset belongs on the System panel.");
+        Assert.True(resetButton > reset, "The reset button belongs under its own heading.");
+        Assert.True(divider > resetButton, "One rule separates the two sections.");
+        Assert.True(install > divider, "Installation comes after the rule.");
+        Assert.True(button > install, "The action belongs under its own heading.");
 
-        // Left, driven by the machine, and never hidden once it has been used: the button element
-        // itself carries no visibility binding, only the enabled state its command decides.
-        var element = panel[button..panel.IndexOf("</Button>", button, StringComparison.Ordinal)];
-        Assert.Contains("HorizontalAlignment=\"Left\"", element, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsVisible=", element, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", element, StringComparison.Ordinal);
-
-        // One surface. No card of its own for the new section, and nothing to scroll.
+        // One surface, one rule, nothing to scroll.
         Assert.DoesNotContain("agent-shell-card", panel, StringComparison.Ordinal);
-        Assert.DoesNotContain("nut-card\"", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("<ScrollViewer", panel, StringComparison.Ordinal);
         Assert.Single(Regex.Matches(panel, "nut-divider"));
     }
 
     /// <summary>
-    /// Two headings, both of them named, and the sentence that used to say the tab does nothing is
-    /// gone - because it now does something.
+    /// One action in one place, in four states, driven by the machine rather than by the last click.
     /// </summary>
     [Fact]
-    public void TheAgentPanelHasExactlyTheTwoAgreedHeadings()
+    public void TheInstallActionReportsWhatTheMachineHas()
+    {
+        var panel = SystemPanel();
+
+        // The state of the machine, said with a disc and in emphasis.
+        Assert.Contains("x:Name=\"AgentInstallState\"", panel, StringComparison.Ordinal);
+        Assert.Contains("FontWeight=\"SemiBold\"", panel, StringComparison.Ordinal);
+        Assert.Contains(
+            "Data=\"{Binding ServiceInstallState, Converter={x:Static converters:AgentConfigConverters.SettingsFeedbackIcon}}\"",
+            panel,
+            StringComparison.Ordinal);
+
+        // Install and Remove occupy the same spot rather than sitting side by side, and each is shown
+        // by what the service control manager reports - never by what was last pressed.
+        Assert.Contains("<Panel HorizontalAlignment=\"Left\"", panel, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding !ServiceActionIsRemoval}\"", panel, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ServiceActionIsRemoval}\"", panel, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", panel, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding RemoveServiceCommand}\"", panel, StringComparison.Ordinal);
+
+        // One label for both, so Installing and Removing are reported on the control that started them.
+        Assert.Equal(4, Regex.Matches(panel, Regex.Escape("{Binding ServiceActionText}")).Count);
+
+        // And which one it is comes from the snapshot, not from a flag set when the button was pressed.
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        Assert.Contains("_serviceState.IsInstalled", ServiceActionRule(viewModel), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Agent reports and delegates: what the service is doing, and who may administer it.
+    ///
+    /// Installation left this panel entirely - it is a change to the machine and belongs with the
+    /// others under System.
+    /// </summary>
+    [Fact]
+    public void TheAgentPanelReportsAndThenDelegatesPermissions()
+    {
+        var panel = AgentPanel();
+
+        var section = panel.IndexOf("Settings.Agent.Section", StringComparison.Ordinal);
+        var state = panel.IndexOf("ServiceStateText", StringComparison.Ordinal);
+        var port = panel.IndexOf("HttpsPortText", StringComparison.Ordinal);
+        var divider = panel.IndexOf("Classes=\"nut-divider\"", StringComparison.Ordinal);
+        var permissions = panel.IndexOf("Settings.Permissions.Title", StringComparison.Ordinal);
+        var manage = panel.IndexOf("x:Name=\"AgentManagePermissions\"", StringComparison.Ordinal);
+
+        Assert.True(section >= 0 && state > section, "The reported values belong under their heading.");
+        Assert.True(divider > port, "One rule separates the report from the permissions summary.");
+        Assert.True(permissions > divider, "Permissions comes after the rule.");
+        Assert.True(manage > permissions, "The way in belongs under its own heading.");
+
+        // Neither installation nor the HTTPS reset lives here any more.
+        Assert.DoesNotContain("Settings.Agent.Install.Title", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("InstallServiceCommand", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("Settings.Https.Reset", panel, StringComparison.Ordinal);
+
+        // The group is a technical detail under the heading, never the heading itself.
+        Assert.Contains("{Binding OperatorsGroupCaption}", panel, StringComparison.Ordinal);
+        var caption = panel.IndexOf("OperatorsGroupCaption", StringComparison.Ordinal);
+        Assert.True(caption > permissions, "The group name follows the heading rather than being it.");
+
+        // One surface, one rule, nothing to scroll.
+        Assert.DoesNotContain("agent-shell-card", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ScrollViewer", panel, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(panel, "nut-divider"));
+    }
+
+    /// <summary>
+    /// The headings across the reorganized panels, in both languages, and the read-only disclaimer
+    /// still gone.
+    /// </summary>
+    [Fact]
+    public void TheReorganizedPanelsCarryTheAgreedHeadings()
     {
         var strings = T42UnifiedHostTests.Read(
             "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
 
         foreach (var heading in new[]
                  {
-                     "[\"Settings.Agent.Install.Title\"] = \"Instala\u00e7\u00e3o do servi\u00e7o\"",
+                     "[\"Settings.Tab.System\"] = \"Sistema\"",
+                     "[\"Settings.Tab.System\"] = \"System\"",
+                     "[\"Settings.Appearance.Section\"] = \"Apar\u00eancia e idioma\"",
+                     "[\"Settings.Appearance.Section\"] = \"Appearance and language\"",
+                     "[\"Settings.Agent.Install.Title\"] = \"Instala\u00e7\u00e3o do Agent\"",
+                     "[\"Settings.Agent.Install.Title\"] = \"Agent installation\"",
                      "[\"Settings.Agent.Section\"] = \"Servi\u00e7o e comunica\u00e7\u00e3o\"",
-                     "[\"Settings.Agent.Install.Title\"] = \"Service installation\"",
                      "[\"Settings.Agent.Section\"] = \"Service and communication\"",
+                     "[\"Settings.Permissions.Title\"] = \"Permiss\u00f5es de acesso\"",
+                     "[\"Settings.Permissions.Title\"] = \"Access permissions\"",
                  })
         {
             Assert.Contains(heading, strings, StringComparison.Ordinal);
         }
 
-        // Not split into a "Service" heading and a "Communication" heading.
-        Assert.DoesNotContain("[\"Settings.Agent.Communication\"]", strings, StringComparison.Ordinal);
-
-        // The read-only sentence is gone from the strings and from the window, and was not replaced
-        // by another one saying the same thing.
+        // Appearance is no longer a destination of its own.
+        Assert.DoesNotContain("Settings.Tab.Appearance", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Settings.Agent.Description", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Somente leitura", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Read-only", strings, StringComparison.Ordinal);
-        Assert.DoesNotContain("Settings.Agent.Description", AgentPanel(), StringComparison.Ordinal);
+    }
+
+    /// <summary>The one expression that decides which way the action button points.</summary>
+    private static string ServiceActionRule(string viewModel)
+    {
+        var start = viewModel.IndexOf("public bool ServiceActionIsRemoval", StringComparison.Ordinal);
+        Assert.True(start > 0, "The action rule was not found.");
+
+        return viewModel[start..viewModel.IndexOf(';', start)];
     }
 
     /// <summary>
@@ -1535,7 +1617,9 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains("AgentEventLogSource", package, StringComparison.Ordinal);
     }
 
-    private static string GeneralPanel() => Panel("IsGeneralTab", "IsAppearanceTab");
+    private static string GeneralPanel() => Panel("IsGeneralTab", "IsSystemTab");
+
+    private static string SystemPanel() => Panel("IsSystemTab", "IsAgentTab");
 
     private static string AgentPanel() => Panel("IsAgentTab", "IsAboutTab");
 

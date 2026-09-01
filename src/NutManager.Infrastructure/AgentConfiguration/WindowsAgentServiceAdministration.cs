@@ -27,6 +27,7 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
 
     private readonly WindowsAgentServiceQuery _query;
     private readonly WindowsAgentServiceInstallation _installation;
+    private readonly TimeProvider _time;
 
     public WindowsAgentServiceAdministration()
         : this(new WindowsAgentServiceQuery(), new WindowsAgentServiceInstallation())
@@ -39,13 +40,16 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     }
 
     internal WindowsAgentServiceAdministration(
-        WindowsAgentServiceQuery query, WindowsAgentServiceInstallation installation)
+        WindowsAgentServiceQuery query,
+        WindowsAgentServiceInstallation installation,
+        TimeProvider? timeProvider = null)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(installation);
 
         _query = query;
         _installation = installation;
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     public AgentServiceSnapshot Describe() => _query.Describe(ServiceName);
@@ -207,6 +211,16 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     /// </summary>
     public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken) =>
         Task.Run(() => _installation.Install(), cancellationToken);
+
+    /// <summary>
+    /// Removes the service, stopping it first when it is running.
+    ///
+    /// Off the UI thread because it waits: for the service to stop, and then for the service control
+    /// manager to stop reporting it at all. Both waits are bounded, and neither is something a window
+    /// should perform while it is supposed to be painting.
+    /// </summary>
+    public Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken) =>
+        Task.Run(() => _installation.Remove(_time, cancellationToken), cancellationToken);
 
     private static AgentServiceOutcome StartupFailure() => new(
         false,

@@ -1344,61 +1344,169 @@
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <!-- Group administration remains available without competing with the reference layout. -->
-              <Border Classes="nut-divider" Height="1" Margin="0,4" />
-              <StackPanel Orientation="Horizontal" Spacing="10">
-                <PathIcon Data="{DynamicResource NutIconUsers}"
-                          Width="20"
-                          Height="20"
-                          Foreground="{DynamicResource NutAccentBrightBrush}" />
-                <TextBlock Classes="nut-card-title"
-                           FontSize="17"
-                           VerticalAlignment="Center"
-                           Text="{Binding Strings[Operators.Title]}" />
-              </StackPanel>
-              <TextBlock Classes="hint"
-                         Text="{Binding Strings[Operators.Description]}"
-                         TextWrapping="Wrap" />
-              <Grid ColumnDefinitions="Auto,*,Auto"
-                    ColumnSpacing="10"
-                    IsVisible="{Binding !OperatorsGroupExists}">
-                <PathIcon Grid.Column="0"
-                          Classes="warning"
-                          Data="{DynamicResource NutIconWarning}"
-                          Width="17"
-                          Height="17"
-                          VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1"
-                           Classes="hint"
-                           VerticalAlignment="Center"
-                           Text="{Binding Strings[Operators.Missing]}" />
-                <Button Grid.Column="2"
-                        Classes="nut-ghost"
-                        Command="{Binding CreateGroupCommand}"
-                        Content="{Binding Strings[Operators.Create]}" />
-              </Grid>
-              <StackPanel Spacing="7" IsVisible="{Binding OperatorsGroupExists}">
-                <TextBlock Classes="nut-label" Text="{Binding Strings[Operators.AddUser]}" />
-                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                  <TextBox Grid.Column="0"
-                           Text="{Binding NewMemberAccount}"
-                           PlaceholderText="{Binding Strings[Operators.Placeholder]}"
-                           AutomationProperties.Name="{Binding Strings[Operators.AddUser]}" />
-                  <Button Grid.Column="1"
-                          Classes="nut-ghost"
-                          Command="{Binding AddMemberCommand}"
-                          Content="{Binding Strings[Operators.Add]}" />
-                </Grid>
-              </StackPanel>
-              <TextBlock Classes="nut-metadata"
-                         Text="{Binding OperatorsMessage}"
-                         TextWrapping="Wrap"
-                         IsVisible="{Binding OperatorsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
             </StackPanel>
           </Border>
           </ScrollViewer>
 
           <!-- ================================================ terms -->
+          <!-- ================================================ access permissions -->
+
+          <!--
+            Who may administer the agent, on a page of its own.
+
+            An inner page rather than a section, and the same shape the terms use: the control that
+            leaves is first in the reading order, the title says where you are, and the window itself
+            never scrolls - only the list does, and only when there is more of it than fits.
+
+            Every rule behind this page already existed and is reused rather than restated: the group
+            is located, listed and added to by the same administration boundary the diagnostics view
+            has always used, with its domain-controller confirmation intact. What changed is where an
+            operator finds it.
+          -->
+          <Grid IsVisible="{Binding ShowPermissions}" RowDefinitions="Auto,*" RowSpacing="10">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
+              <Button x:Name="PermissionsBack"
+                      Classes="agent-settings-button"
+                      Command="{Binding ClosePermissionsCommand}"
+                      ToolTip.Tip="{Binding Strings[Settings.Permissions.Back]}"
+                      AutomationProperties.Name="{Binding Strings[Settings.Permissions.Back]}">
+                <PathIcon Data="{DynamicResource NutIconChevronLeft}" Width="17" Height="17" />
+              </Button>
+              <TextBlock Classes="nut-card-title"
+                         FontSize="17"
+                         VerticalAlignment="Center"
+                         Text="{Binding Strings[Settings.Permissions.Title]}" />
+            </StackPanel>
+
+            <Border Grid.Row="1" Classes="agent-shell-card" Padding="16" VerticalAlignment="Top">
+              <StackPanel Spacing="10">
+                <TextBlock Classes="hint"
+                           TextWrapping="Wrap"
+                           Text="{Binding Strings[Settings.Permissions.Intro]}" />
+                <TextBlock Classes="nut-metadata"
+                           TextWrapping="Wrap"
+                           Text="{Binding OperatorsGroupCaption}" />
+
+                <Border Classes="nut-divider" Height="1" />
+
+                <!--
+                  The group has to exist before anyone can be added to it, and it is created by
+                  installing the agent rather than by opening this page. Saying where it comes from
+                  beats a button here that would create a Windows group as a side effect of looking.
+                -->
+                <StackPanel x:Name="PermissionsGroupMissing"
+                            Orientation="Horizontal"
+                            Spacing="7"
+                            IsVisible="{Binding !OperatorsGroupExists}">
+                  <PathIcon Width="15"
+                            Height="15"
+                            VerticalAlignment="Center"
+                            Data="{DynamicResource AgentIconFeedbackWarning}"
+                            Foreground="{DynamicResource NutWarningBrush}" />
+                  <TextBlock Classes="nut-metadata"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"
+                             TextWrapping="Wrap"
+                             Text="{Binding Strings[Settings.Permissions.GroupMissing]}" />
+                </StackPanel>
+
+                <StackPanel Spacing="8" IsVisible="{Binding OperatorsGroupExists}">
+                  <TextBlock Classes="nut-card-title"
+                             FontSize="14"
+                             Text="{Binding Strings[Settings.Permissions.Members]}" />
+
+                  <TextBlock x:Name="PermissionsEmpty"
+                             Classes="hint"
+                             IsVisible="{Binding !HasMembers}"
+                             Text="{Binding Strings[Settings.Permissions.Empty]}" />
+
+                  <!--
+                    The list scrolls, the page does not. A machine with thirty authorized accounts
+                    must not be able to push the button that adds the thirty-first off the window.
+                  -->
+                  <ScrollViewer x:Name="PermissionsMemberList"
+                                MaxHeight="180"
+                                IsVisible="{Binding HasMembers}"
+                                HorizontalScrollBarVisibility="Disabled"
+                                VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,8,0">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9" Margin="0,3">
+                            <PathIcon Grid.Column="0"
+                                      Data="{DynamicResource NutIconUsers}"
+                                      Width="15"
+                                      Height="15"
+                                      VerticalAlignment="Center"
+                                      Foreground="{DynamicResource NutTextSecondaryBrush}" />
+                            <TextBlock Grid.Column="1"
+                                       Classes="nut-metadata"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"
+                                       Text="{Binding}" />
+                          </Grid>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </ScrollViewer>
+
+                  <!--
+                    Choosing an account, then adding it. Two steps rather than one, because a box that
+                    grants administrative rights the moment it is filled in is one keystroke away from
+                    granting them to the wrong account.
+
+                    The field is the existing one and resolves the account through the same identity
+                    boundary as before, so a name Windows cannot resolve is refused rather than stored.
+                    What this does not yet do is open the Windows account picker: that needs interop
+                    this round did not take on, and it is recorded as a limitation rather than replaced
+                    with something improvised.
+                  -->
+                  <Button x:Name="PermissionsSelectUser"
+                          Classes="agent-install-service"
+                          Padding="10,5"
+                          Margin="0,2,0,0"
+                          HorizontalAlignment="Left"
+                          IsVisible="{Binding !IsAddingOperator}"
+                          Command="{Binding BeginAddOperatorCommand}"
+                          AutomationProperties.Name="{Binding Strings[Settings.Permissions.Select]}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                      <PathIcon Data="{DynamicResource NutIconUsers}" Width="14" Height="14" />
+                      <TextBlock VerticalAlignment="Center"
+                                 Text="{Binding Strings[Settings.Permissions.Select]}" />
+                    </StackPanel>
+                  </Button>
+
+                  <StackPanel x:Name="PermissionsAddPanel"
+                              Spacing="7"
+                              IsVisible="{Binding IsAddingOperator}">
+                    <TextBlock Classes="nut-label" Text="{Binding Strings[Operators.AddUser]}" />
+                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                      <TextBox Grid.Column="0"
+                               x:Name="PermissionsAccount"
+                               Text="{Binding NewMemberAccount}"
+                               PlaceholderText="{Binding Strings[Operators.Placeholder]}"
+                               AutomationProperties.Name="{Binding Strings[Operators.AddUser]}" />
+                      <Button Grid.Column="1"
+                              Classes="agent-install-service"
+                              Padding="10,5"
+                              Command="{Binding AddMemberCommand}"
+                              Content="{Binding Strings[Operators.Add]}" />
+                      <Button Grid.Column="2"
+                              Padding="10,5"
+                              Command="{Binding CancelAddOperatorCommand}"
+                              Content="{Binding Strings[Action.Cancel]}" />
+                    </Grid>
+                  </StackPanel>
+                </StackPanel>
+
+                <TextBlock Classes="nut-metadata"
+                           TextWrapping="Wrap"
+                           Text="{Binding OperatorsMessage}"
+                           IsVisible="{Binding OperatorsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+              </StackPanel>
+            </Border>
+          </Grid>
+
           <Grid IsVisible="{Binding ShowTerms}" RowDefinitions="Auto,*" RowSpacing="10">
             <!--
               Back and title, the way an inner page carries them: the control that leaves is the
@@ -1517,11 +1625,11 @@
                   </Button>
                   <Border Classes="agent-section-divider" />
                   <Button Classes="agent-section-tab"
-                          Classes.selected="{Binding IsAppearanceTab}"
-                          Command="{Binding SelectAppearanceTabCommand}">
+                          Classes.selected="{Binding IsSystemTab}"
+                          Command="{Binding SelectSystemTabCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="9">
-                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabAppearance}" />
-                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.Appearance]}" />
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabSystem}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.System]}" />
                     </StackPanel>
                   </Button>
                   <Border Classes="agent-section-divider" />
@@ -1623,6 +1731,91 @@
                       <Border Classes="nut-divider" Height="1" />
 
                       <!--
+                        Appearance and language, on one row.
+
+                        They were a tab of their own, which gave two window preferences the same weight
+                        in the navigation as the machine and the agent. They are preferences, they
+                        belong with the other one, and side by side they take a fraction of the room
+                        they used to: each is a label over its control, and the two labels line up.
+                      -->
+                      <StackPanel Spacing="8">
+                        <TextBlock Classes="nut-card-title"
+                                   FontSize="14"
+                                   Text="{Binding Strings[Settings.Appearance.Section]}" />
+                        <Grid x:Name="AppearanceAndLanguage"
+                              ColumnDefinitions="Auto,*"
+                              ColumnSpacing="28">
+                          <StackPanel Grid.Column="0" Spacing="7" VerticalAlignment="Top">
+                            <TextBlock Classes="nut-label"
+                                       Text="{Binding Strings[Settings.Appearance.Theme]}" />
+                            <Border x:Name="ThemeToggle" Classes="agent-theme-toggle">
+                                <StackPanel Orientation="Horizontal" Spacing="2">
+                                  <Button Classes="agent-theme-option"
+                                          Classes.selected="{Binding ShowDarkThemeAction}"
+                                          Command="{Binding SelectLightThemeCommand}"
+                                          ToolTip.Tip="{Binding Strings[Settings.Appearance.Theme.Light]}"
+                                          AutomationProperties.Name="{Binding Strings[Settings.Appearance.Theme.Light]}">
+                                    <Grid Width="18" Height="18">
+                                      <Viewbox Width="18" Height="18">
+                                        <Grid Width="24" Height="24">
+                                          <Path Classes="agent-theme-glyph agent-sun"
+                                                Stretch="None"
+                                                Data="{DynamicResource NutIconSun}" />
+                                        </Grid>
+                                      </Viewbox>
+                                    </Grid>
+                                  </Button>
+                                  <Button Classes="agent-theme-option moon"
+                                          Classes.selected="{Binding ShowLightThemeAction}"
+                                          Command="{Binding SelectDarkThemeCommand}"
+                                          ToolTip.Tip="{Binding Strings[Settings.Appearance.Theme.Dark]}"
+                                          AutomationProperties.Name="{Binding Strings[Settings.Appearance.Theme.Dark]}">
+                                    <Grid Width="18" Height="18">
+                                      <Viewbox Width="18" Height="18">
+                                        <Grid Width="24" Height="24">
+                                          <Path Classes="agent-theme-glyph agent-moon"
+                                                Stretch="None"
+                                                Data="{DynamicResource NutIconMoon}" />
+                                        </Grid>
+                                      </Viewbox>
+                                    </Grid>
+                                  </Button>
+                                </StackPanel>
+                              </Border>
+                          </StackPanel>
+                          <StackPanel Grid.Column="1" Spacing="7" VerticalAlignment="Top">
+                            <TextBlock Classes="nut-label"
+                                       Text="{Binding Strings[Settings.Appearance.Language]}" />
+                            <ComboBox
+                                                    x:Name="LanguageSelector"
+                                                    VerticalAlignment="Center"
+                                                    Width="200"
+                                                    ItemsSource="{Binding LanguageOptions}"
+                                                    SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
+                                                    ToolTip.Tip="{Binding Strings[Language.Label]}"
+                                                    AutomationProperties.Name="{Binding Strings[Language.Label]}">
+                                            <ComboBox.ItemTemplate>
+                                              <DataTemplate DataType="viewModels:AgentLanguageOption">
+                                                <TextBlock Text="{Binding Title}" />
+                                              </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                          </ComboBox>
+                          </StackPanel>
+                        </Grid>
+                      </StackPanel>
+                    </StackPanel>
+
+                  <!-- ================================================================ system -->
+
+                    <!--
+                      What this product has done to the machine, and what it can undo.
+
+                      Reset first, because it is the one an operator arrives looking for; installation
+                      second, because it is the one they are sent to. One surface, one rule between.
+                    -->
+                    <StackPanel Spacing="16" Margin="2,14,2,2"
+                                IsVisible="{Binding IsSystemTab}">
+                      <!--
                         Reset, moved off the HTTPS card.
 
                         It removes the SSL binding, the URL reservation and the firewall rule this
@@ -1668,154 +1861,67 @@
                           </Button>
                         </Border>
                       </StackPanel>
-                    </StackPanel>
-
-                  <!-- ================================================================ appearance -->
-
-                    <StackPanel Spacing="16" Margin="2,14,2,2"
-                                IsVisible="{Binding IsAppearanceTab}">
-                      <StackPanel Spacing="8">
-                        <TextBlock Classes="nut-card-title"
-                                   FontSize="14"
-                                   Text="{Binding Strings[Settings.Appearance.Theme]}" />
-                        <!--
-                          A switch with both destinations named, rather than one button whose glyph
-                          has to carry the whole meaning.
-
-                          The button that was here showed the theme it would move to - correct, and
-                          still a control that says only one of the two things it does. A switch shows
-                          both, and its position says which one is current without anyone having to
-                          work out whether the glyph means "you are here" or "go here".
-
-                          The sun and moon stay, on the labels they belong to, drawn from the same
-                          catalog as before.
-                        -->
-                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                          <Border x:Name="ThemeToggle" Classes="agent-theme-toggle">
-                            <StackPanel Orientation="Horizontal" Spacing="2">
-                              <Button Classes="agent-theme-option"
-                                      Classes.selected="{Binding ShowDarkThemeAction}"
-                                      Command="{Binding SelectLightThemeCommand}"
-                                      ToolTip.Tip="{Binding Strings[Settings.Appearance.Theme.Light]}"
-                                      AutomationProperties.Name="{Binding Strings[Settings.Appearance.Theme.Light]}">
-                                <Grid Width="18" Height="18">
-                                  <Viewbox Width="18" Height="18">
-                                    <Grid Width="24" Height="24">
-                                      <Path Classes="agent-theme-glyph agent-sun"
-                                            Stretch="None"
-                                            Data="{DynamicResource NutIconSun}" />
-                                    </Grid>
-                                  </Viewbox>
-                                </Grid>
-                              </Button>
-                              <Button Classes="agent-theme-option moon"
-                                      Classes.selected="{Binding ShowLightThemeAction}"
-                                      Command="{Binding SelectDarkThemeCommand}"
-                                      ToolTip.Tip="{Binding Strings[Settings.Appearance.Theme.Dark]}"
-                                      AutomationProperties.Name="{Binding Strings[Settings.Appearance.Theme.Dark]}">
-                                <Grid Width="18" Height="18">
-                                  <Viewbox Width="18" Height="18">
-                                    <Grid Width="24" Height="24">
-                                      <Path Classes="agent-theme-glyph agent-moon"
-                                            Stretch="None"
-                                            Data="{DynamicResource NutIconMoon}" />
-                                    </Grid>
-                                  </Viewbox>
-                                </Grid>
-                              </Button>
-                            </StackPanel>
-                          </Border>
-                          <TextBlock VerticalAlignment="Center"
-                                     Classes="hint"
-                                     Text="{Binding ThemeActionText}" />
-                        </StackPanel>
-                        <TextBlock Classes="hint"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding Strings[Settings.Appearance.Theme.Description]}" />
-                      </StackPanel>
 
                       <Border Classes="nut-divider" Height="1" />
 
                       <StackPanel Spacing="6">
-                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
-                          <TextBlock Grid.Column="0"
-                                     Classes="nut-card-title"
-                                     FontSize="14"
-                                     VerticalAlignment="Center"
-                                     Text="{Binding Strings[Settings.Appearance.Language]}" />
-                          <!--
-                            The same control the desktop application uses, showing the same thing: a
-                            ComboBox of language names, each written in its own language.
-
-                            It used to be a flyout showing "PT-BR", which named the code rather than
-                            the language and looked like nothing else in the product. The reason it
-                            was a flyout was that a list control assigns its selection while it
-                            materialises, and that assignment once overwrote a saved preference. That
-                            is handled in the view model now - the initial value never goes through
-                            the setter, and an echo of the current value is not a change - so the
-                            control can be the ordinary one.
-
-                            Width 200, as on the desktop: enough for "English (United States)"
-                            without a dropdown that spans the card.
-                          -->
-                          <ComboBox Grid.Column="1"
-                                    x:Name="LanguageSelector"
-                                    VerticalAlignment="Center"
-                                    Width="200"
-                                    ItemsSource="{Binding LanguageOptions}"
-                                    SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
-                                    ToolTip.Tip="{Binding Strings[Language.Label]}"
-                                    AutomationProperties.Name="{Binding Strings[Language.Label]}">
-                            <ComboBox.ItemTemplate>
-                              <DataTemplate DataType="viewModels:AgentLanguageOption">
-                                <TextBlock Text="{Binding Title}" />
-                              </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                          </ComboBox>
-                        </Grid>
-                        <TextBlock Classes="hint"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding Strings[Settings.Appearance.Language.Description]}" />
-                      </StackPanel>
-                    </StackPanel>
-
-                  <!-- ================================================================ agent -->
-
-                    <!--
-                      Installation first, then what the machine reports.
-
-                      One surface, two sections, a rule between them - the same shape General has. The
-                      order is the order somebody needs it in: a machine with no service has one thing
-                      to do here, and it is at the top rather than under five rows of values that are
-                      all empty because the service does not exist.
-                    -->
-                    <StackPanel Spacing="10" Margin="2,14,2,2"
-                                IsVisible="{Binding IsAgentTab}">
-                      <StackPanel Spacing="6">
                         <TextBlock Classes="nut-card-title"
                                    FontSize="14"
                                    Text="{Binding Strings[Settings.Agent.Install.Title]}" />
-                        <TextBlock Classes="hint"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding ServiceInstallDescription}" />
                         <!--
-                          Kept on screen and disabled once the service exists, rather than removed. A
-                          control that vanishes after use leaves nothing to answer "is it registered",
-                          and this button in this position is that answer either way.
+                          Whether the machine has the agent, said with a disc and in emphasis. Not an
+                          error when it does not: a machine that has not had the agent installed yet is
+                          a normal machine, and this is the section that offers to change that.
                         -->
-                        <Button x:Name="AgentInstallService"
-                                Classes="agent-install-service"
-                                Padding="10,5"
-                                Margin="0,4,0,0"
-                                HorizontalAlignment="Left"
-                                Command="{Binding InstallServiceCommand}"
-                                AutomationProperties.Name="{Binding Strings[Settings.Agent.Install.Action]}">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <PathIcon Data="{DynamicResource NutIconService}" Width="14" Height="14" />
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding Strings[Settings.Agent.Install.Action]}" />
-                          </StackPanel>
-                        </Button>
+                        <StackPanel x:Name="AgentInstallState"
+                                    Orientation="Horizontal"
+                                    Spacing="7">
+                          <PathIcon Width="15"
+                                    Height="15"
+                                    VerticalAlignment="Center"
+                                    Data="{Binding ServiceInstallState, Converter={x:Static converters:AgentConfigConverters.SettingsFeedbackIcon}}"
+                                    Foreground="{Binding ServiceInstallState, Converter={x:Static converters:AgentConfigConverters.SettingsFeedbackBrush}}" />
+                          <TextBlock Classes="nut-metadata"
+                                     FontWeight="SemiBold"
+                                     VerticalAlignment="Center"
+                                     TextWrapping="Wrap"
+                                     Text="{Binding ServiceInstallDescription}" />
+                        </StackPanel>
+                        <!--
+                          One action in one place, through the whole lifecycle.
+
+                          Install, Installing, Remove, Removing are four labels on the same spot rather
+                          than controls that move: the action area does not shift under the pointer,
+                          and an operation in progress is reported where it started. Which one it is
+                          comes from the service control manager, never from what was last clicked - so
+                          nothing here claims a registration the SCM has not confirmed. Two buttons in
+                          one Panel rather than one button that changes colour, because installing and
+                          removing are not the same kind of act and should not look like it.
+                        -->
+                        <Panel HorizontalAlignment="Left" Margin="0,4,0,0">
+                          <Button x:Name="AgentInstallService"
+                                  Classes="agent-install-service"
+                                  Padding="10,5"
+                                  IsVisible="{Binding !ServiceActionIsRemoval}"
+                                  Command="{Binding InstallServiceCommand}"
+                                  AutomationProperties.Name="{Binding ServiceActionText}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <PathIcon Data="{DynamicResource NutIconService}" Width="14" Height="14" />
+                              <TextBlock VerticalAlignment="Center" Text="{Binding ServiceActionText}" />
+                            </StackPanel>
+                          </Button>
+                          <Button x:Name="AgentRemoveService"
+                                  Classes="agent-reset-https"
+                                  Padding="10,5"
+                                  IsVisible="{Binding ServiceActionIsRemoval}"
+                                  Command="{Binding RemoveServiceCommand}"
+                                  AutomationProperties.Name="{Binding ServiceActionText}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <PathIcon Data="{DynamicResource AgentIconProhibit}" Width="14" Height="14" />
+                              <TextBlock VerticalAlignment="Center" Text="{Binding ServiceActionText}" />
+                            </StackPanel>
+                          </Button>
+                        </Panel>
                         <StackPanel x:Name="AgentInstallResult"
                                     Orientation="Horizontal"
                                     Spacing="7"
@@ -1833,9 +1939,20 @@
                                      Text="{Binding InstallResultText}" />
                         </StackPanel>
                       </StackPanel>
+                    </StackPanel>
 
-                      <Border Classes="nut-divider" Height="1" />
+                  <!-- ================================================================ agent -->
 
+                    <!--
+                      Installation first, then what the machine reports.
+
+                      One surface, two sections, a rule between them - the same shape General has. The
+                      order is the order somebody needs it in: a machine with no service has one thing
+                      to do here, and it is at the top rather than under five rows of values that are
+                      all empty because the service does not exist.
+                    -->
+                    <StackPanel Spacing="10" Margin="2,14,2,2"
+                                IsVisible="{Binding IsAgentTab}">
                       <TextBlock Classes="nut-card-title"
                                  FontSize="14"
                                  Text="{Binding Strings[Settings.Agent.Section]}" />
@@ -1868,6 +1985,42 @@
                         <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-metadata"
                                    TextWrapping="Wrap" Text="{Binding HttpsPortText}" />
                       </Grid>
+
+                      <Border Classes="nut-divider" Height="1" />
+
+                      <!--
+                        Who may administer the agent, summarised here and managed on its own page.
+
+                        A summary rather than the list: choosing accounts has an empty state, a list
+                        that can grow, and a way in of its own, and folding all of that into a settings
+                        panel would either crowd this one or truncate the list. The group name is here
+                        because an administrator looking at Windows needs to know which group to look
+                        for - as a technical detail under the heading, not as the heading.
+                      -->
+                      <StackPanel x:Name="AgentPermissions" Spacing="6">
+                        <TextBlock Classes="nut-card-title"
+                                   FontSize="14"
+                                   Text="{Binding Strings[Settings.Permissions.Title]}" />
+                        <TextBlock Classes="hint"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Settings.Permissions.Summary]}" />
+                        <TextBlock Classes="nut-metadata"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding OperatorsGroupCaption}" />
+                        <Button x:Name="AgentManagePermissions"
+                                Classes="agent-install-service"
+                                Padding="10,5"
+                                Margin="0,4,0,0"
+                                HorizontalAlignment="Left"
+                                Command="{Binding OpenPermissionsCommand}"
+                                AutomationProperties.Name="{Binding Strings[Settings.Permissions.Manage]}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="{DynamicResource NutIconUsers}" Width="14" Height="14" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding Strings[Settings.Permissions.Manage]}" />
+                          </StackPanel>
+                        </Button>
+                      </StackPanel>
                     </StackPanel>
 
                   <!-- ================================================================ about -->
