@@ -866,4 +866,46 @@ public sealed class T42RefinementTests
             strings,
             StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void EndpointCopyFeedbackIsAnAnchoredNonLayoutPopup()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var popupStart = window.IndexOf("<Popup x:Name=\"EndpointCopyPopup\"", StringComparison.Ordinal);
+        var popupEnd = window.IndexOf("</Popup>", popupStart, StringComparison.Ordinal);
+        var popup = window[popupStart..popupEnd];
+
+        Assert.True(popupStart >= 0);
+        Assert.Contains("PlacementTarget=\"{Binding #CopyEndpointButton}\"", popup, StringComparison.Ordinal);
+        Assert.Contains("Placement=\"BottomEdgeAlignedRight\"", popup, StringComparison.Ordinal);
+        Assert.Contains("IsOpen=\"{Binding IsToastPopupOpen}\"", popup, StringComparison.Ordinal);
+        Assert.Contains("Classes.visible=\"{Binding IsToastVisible}\"", popup, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", popup, StringComparison.Ordinal);
+        Assert.Contains("IsHitTestVisible=\"False\"", popup, StringComparison.Ordinal);
+        Assert.Contains("Focusable=\"False\"", popup, StringComparison.Ordinal);
+        Assert.DoesNotContain("Grid.Row=", popup, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(window, "x:Name=\"EndpointCopyPopup\"").Cast<Match>());
+    }
+
+    [Fact]
+    public void EndpointCopyFeedbackUsesTheExistingIconAndCubicMotion()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        Assert.Contains("Converter={x:Static converters:AgentConfigConverters.ToastIcon}", window, StringComparison.Ordinal);
+        Assert.Contains("DoubleTransition Property=\"Opacity\" Duration=\"0:0:0.18\" Easing=\"CubicEaseOut\"", window, StringComparison.Ordinal);
+        Assert.Contains("TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.18\" Easing=\"CubicEaseOut\"", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EndpointCopyFeedbackHasTheRequiredTextInBothLanguages()
+    {
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+
+        Assert.Contains("[\"Toast.EndpointCopied\"] = \"Copiado!\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Toast.EndpointCopyFailed\"] = \"Não foi possível copiar.\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Toast.EndpointCopied\"] = \"Copied!\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Toast.EndpointCopyFailed\"] = \"Could not copy.\"", strings, StringComparison.Ordinal);
+    }
 }

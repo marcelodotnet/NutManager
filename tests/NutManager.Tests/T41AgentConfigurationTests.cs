@@ -1158,7 +1158,7 @@ public sealed class T41AgentTransportAndCertificateTests
         {
             NamedPipeEnabled = false,
             HttpsEnabled = true,
-            HttpsPrefix = "https://gandalf.sbra.local:5199/",
+            HttpsPrefix = "https://nut-server.example.local:5199/",
             CertificateThumbprint = Thumbprint,
         };
 
@@ -1212,11 +1212,11 @@ public sealed class T41AgentTransportAndCertificateTests
     }
 
     [Theory]
-    [InlineData("gandalf.sbra.local", "gandalf.sbra.local", true)]
-    [InlineData("*.sbra.local", "gandalf.sbra.local", true)]
-    [InlineData("*.sbra.local", "a.gandalf.sbra.local", false)]
-    [InlineData("*.sbra.local", "sbra.local", false)]
-    [InlineData("other.sbra.local", "gandalf.sbra.local", false)]
+    [InlineData("nut-server.example.local", "nut-server.example.local", true)]
+    [InlineData("*.example.local", "nut-server.example.local", true)]
+    [InlineData("*.example.local", "node.nut-server.example.local", false)]
+    [InlineData("*.example.local", "example.local", false)]
+    [InlineData("other.example.local", "nut-server.example.local", false)]
     public void SubjectAlternativeNameMatchingHonorsSingleLabelWildcards(string certificateName, string host, bool expected)
     {
         Assert.Equal(expected, AgentCertificateRules.MatchesHost(Certificate(names: [certificateName]), host));
@@ -1330,7 +1330,7 @@ public sealed class T41AgentTransportAndCertificateTests
     [InlineData(AgentPrincipalKind.DeletedAccount, false)]
     public void OnlyResolvedUsersAndGroupsCanBecomeOperators(AgentPrincipalKind kind, bool expected)
     {
-        var resolution = new AgentIdentityResolution(true, "principal", "S-1-5-21-1000", kind, "SBRA", null);
+        var resolution = new AgentIdentityResolution(true, "principal", "S-1-5-21-1000", kind, "EXAMPLE", null);
 
         Assert.Equal(expected, resolution.IsAddable);
     }
@@ -1347,8 +1347,8 @@ public sealed class T41AgentTransportAndCertificateTests
         Assert.Equal(expected, state.CreationAffectsDirectory);
     }
 
-    private const string Host = "gandalf.sbra.local";
-    private const string Thumbprint = "A909502DD82AE41433E6F83886B00D4277A32A7B";
+    private const string Host = "nut-server.example.local";
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF01234567";
     private static readonly DateTimeOffset Now = new(2026, 8, 27, 12, 0, 0, TimeSpan.Zero);
 
     private static AgentCertificateSummary Certificate(
@@ -1712,7 +1712,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "wrong.sbra.local";
+        context.ViewModel.HttpsHost = "wrong.example.local";
 
         Assert.True(context.ViewModel.IsDirty);
         Assert.False(context.ViewModel.CanApply);
@@ -1755,7 +1755,7 @@ public sealed class T41AgentConfigViewModelTests
         var written = Assert.Single(context.Store.Writes);
         Assert.False(written.NamedPipeIsEnabled);
         Assert.True(written.HttpsEnabled);
-        Assert.Equal("https://gandalf.sbra.local:5199/", written.HttpsPrefix);
+        Assert.Equal("https://nut-server.example.local:5199/", written.HttpsPrefix);
         Assert.Equal(["resources.apply", "store.write"], context.Events);
     }
 
@@ -1823,9 +1823,9 @@ public sealed class T41AgentConfigViewModelTests
     {
         var context = CreateContext(groupExists: true);
         context.Groups.AddResult = new AgentMembershipResult(
-            AgentMembershipOutcome.AlreadyMember, @"SBRA\operator");
+            AgentMembershipOutcome.AlreadyMember, @"EXAMPLE\operator");
         await context.ViewModel.RefreshAsync();
-        context.ViewModel.NewMemberAccount = @"SBRA\operator";
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\operator";
 
         context.ViewModel.AddMemberCommand.Execute(null);
 
@@ -2088,7 +2088,7 @@ public sealed class T41AgentConfigViewModelTests
     [Fact]
     public async Task CertificatesSharingANameStayDistinguishable()
     {
-        const string Subject = "CN=nut-server.example.local";
+        const string Subject = "CN=shared.example.local";
 
         var context = CreateContext();
         context.Certificates.Add(Certificate("AAAAAAAA11111111111111111111111111111111", Subject));
@@ -2595,7 +2595,7 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.True(context.ViewModel.IsToastVisible);
         Assert.Equal(AgentToastKind.Success, context.ViewModel.ToastKind);
-        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+        Assert.Equal("Copied!", context.ViewModel.ToastMessage);
     }
 
     /// <summary>
@@ -2612,7 +2612,7 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.True(context.ViewModel.IsToastVisible);
         Assert.Equal(AgentToastKind.Error, context.ViewModel.ToastKind);
-        Assert.Equal("The Endpoint could not be copied.", context.ViewModel.ToastMessage);
+        Assert.Equal("Could not copy.", context.ViewModel.ToastMessage);
     }
 
     [Fact]
@@ -2622,10 +2622,10 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.ReportEndpointCopy(succeeded: true);
-        Assert.Equal("Endpoint copiado", context.ViewModel.ToastMessage);
+        Assert.Equal("Copiado!", context.ViewModel.ToastMessage);
 
         context.ViewModel.ReportEndpointCopy(succeeded: false);
-        Assert.Equal("Não foi possível copiar o Endpoint.", context.ViewModel.ToastMessage);
+        Assert.Equal("Não foi possível copiar.", context.ViewModel.ToastMessage);
     }
 
     /// <summary>
@@ -2656,7 +2656,7 @@ public sealed class T41AgentConfigViewModelTests
     }
 
     /// <summary>
-    /// The copy confirmation is its own surface. Sharing the Apply banner would let "Endpoint copied"
+    /// The copy confirmation is its own surface. Sharing the Apply banner would let "Copied!"
     /// overwrite the reason an Apply was refused.
     /// </summary>
     [Fact]
@@ -2693,7 +2693,7 @@ public sealed class T41AgentConfigViewModelTests
         context.ViewModel.ReportEndpointCopy(succeeded: true);
 
         Assert.True(context.ViewModel.IsToastVisible);
-        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+        Assert.Equal("Copied!", context.ViewModel.ToastMessage);
 
         // The first copy's timer comes due. It was superseded, so it must hide nothing.
         clock.Fire(0);
@@ -3313,7 +3313,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "other.sbra.local";
+        context.ViewModel.HttpsHost = "other.example.local";
         context.ViewModel.HttpsPort = 5199;
         context.ViewModel.SelectedCertificate = Assert.Single(context.ViewModel.Certificates);
 
@@ -3348,7 +3348,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.NotNull(context.ViewModel.HttpsHostValidationMessage);
         Assert.False(context.ViewModel.ShowCertificateFeedback);
 
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         context.ViewModel.HttpsPort = 0;
 
         Assert.False(context.ViewModel.HttpsHostHasError);
@@ -3363,16 +3363,16 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext();
         await context.ViewModel.RefreshAsync();
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         var imported = new AgentCertificateSummary(
-            "B909502DD82AE41433E6F83886B00D4277A32A7C",
-            "CN=gandalf.sbra.local",
+            "1123456789ABCDEF0123456789ABCDEF01234567",
+            "CN=nut-server.example.local",
             "CN=Imported Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["gandalf.sbra.local"]);
+            SubjectAlternativeNames: ["nut-server.example.local"]);
         context.Importer.Result = AgentCertificateImportResult.Imported(imported);
 
         var result = await context.ViewModel.ImportCertificateAsync("certificate.pfx", "transient-password");
@@ -3391,16 +3391,16 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext();
         await context.ViewModel.RefreshAsync();
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         var imported = new AgentCertificateSummary(
-            "C909502DD82AE41433E6F83886B00D4277A32A7D",
-            "CN=other.sbra.local",
+            "2123456789ABCDEF0123456789ABCDEF01234567",
+            "CN=other.example.local",
             "CN=Imported Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["other.sbra.local"]);
+            SubjectAlternativeNames: ["other.example.local"]);
         context.Importer.Result = AgentCertificateImportResult.Imported(imported);
 
         await context.ViewModel.ImportCertificateAsync("certificate.cer", password: null);
@@ -3443,7 +3443,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(Thumbprint, context.ViewModel.CertificateThumbprint);
     }
 
-    private const string Thumbprint = "A909502DD82AE41433E6F83886B00D4277A32A7B";
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF01234567";
 
     private static TestContext CreateContext(
         AgentTransportConfigurationDocument? document = null,
@@ -3463,13 +3463,13 @@ public sealed class T41AgentConfigViewModelTests
         var resources = new FakeResources(events);
         var certificate = new AgentCertificateSummary(
             Thumbprint,
-            "CN=gandalf.sbra.local",
+            "CN=nut-server.example.local",
             "CN=Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["gandalf.sbra.local"]);
+            SubjectAlternativeNames: ["nut-server.example.local"]);
         var certificates = withCertificate ? new FakeCertificates(certificate) : new FakeCertificates();
         var importer = new FakeCertificateImporter(certificates);
         inventory ??= new FakeInventory();
@@ -3533,12 +3533,20 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext();
         context.Service.StartType = AgentServiceStartType.Unknown;
         context.Service.Account = string.Empty;
+        context.Service.Failure = "Win32 error 5: Access is denied.";
+        context.Service.QueryErrorCode = 5;
 
         await context.ViewModel.RefreshAsync();
 
         Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
         Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
         Assert.False(context.ViewModel.StartsWithWindows);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.AgentRegistered"]);
+        Assert.Equal(AgentDiagnosticState.Attention, diagnostic.State);
+        Assert.Contains("Win32 error 5", diagnostic.TechnicalDetail, StringComparison.Ordinal);
     }
 
     /// <summary>The runtimes the inventory found are the runtimes About reports.</summary>
@@ -3843,10 +3851,105 @@ public sealed class T41AgentConfigViewModelTests
         }
     }
 
+    [Fact]
+    public async Task AgentTransportSummaryUsesTheCurrentConfigurationForEveryCombination()
+    {
+        var namedPipeOnly = CreateContext();
+        await namedPipeOnly.ViewModel.RefreshAsync();
+        Assert.Equal("SMB (Named Pipe)", namedPipeOnly.ViewModel.ActiveTransportsText);
+        Assert.Equal("None", namedPipeOnly.ViewModel.HttpsPortText);
+
+        var httpsOnly = CreateContext(document: new AgentTransportConfigurationDocument
+        {
+            NamedPipeEnabled = false,
+            HttpsEnabled = true,
+            HttpsPrefix = "https://nut-server.example.local:5199/",
+            CertificateThumbprint = Thumbprint,
+        });
+        await httpsOnly.ViewModel.RefreshAsync();
+        Assert.Equal("HTTPS", httpsOnly.ViewModel.ActiveTransportsText);
+        Assert.Equal("5199", httpsOnly.ViewModel.HttpsPortText);
+
+        var both = CreateContext(document: HttpsDocument());
+        await both.ViewModel.RefreshAsync();
+        Assert.Equal("SMB (Named Pipe), HTTPS", both.ViewModel.ActiveTransportsText);
+        Assert.Equal("5199", both.ViewModel.HttpsPortText);
+    }
+
+    [Fact]
+    public async Task TransportSummaryNotifiesAfterLoadApplyAndReset()
+    {
+        var loaded = CreateContext(document: HttpsDocument());
+        var loadChanges = new List<string?>();
+        loaded.ViewModel.PropertyChanged += (_, args) => loadChanges.Add(args.PropertyName);
+
+        await loaded.ViewModel.RefreshAsync();
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), loadChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), loadChanges);
+
+        var applied = CreateContext();
+        await applied.ViewModel.RefreshAsync();
+        EnableValidHttps(applied.ViewModel);
+        var applyChanges = new List<string?>();
+        applied.ViewModel.PropertyChanged += (_, args) => applyChanges.Add(args.PropertyName);
+
+        await applied.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), applyChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), applyChanges);
+        Assert.Equal("SMB (Named Pipe), HTTPS", applied.ViewModel.ActiveTransportsText);
+
+        var reset = CreateContext(document: HttpsDocument());
+        await reset.ViewModel.RefreshAsync();
+        var resetChanges = new List<string?>();
+        reset.ViewModel.PropertyChanged += (_, args) => resetChanges.Add(args.PropertyName);
+
+        reset.ViewModel.ResetHttpsCommand.Execute(null);
+        await reset.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), resetChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), resetChanges);
+        Assert.Equal("SMB (Named Pipe)", reset.ViewModel.ActiveTransportsText);
+        Assert.Equal("None", reset.ViewModel.HttpsPortText);
+    }
+
+    [Fact]
+    public async Task StartupToggleRefreshesTheAgentTabFromTheSameServiceSnapshot()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal([AgentServiceStartupPreference.Automatic], context.Service.StartupChanges);
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.True(context.Service.DescribeCalls >= 2);
+    }
+
+    [Fact]
+    public async Task OpeningTheAgentTabRefreshesItsServiceSnapshot()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        var readsBeforeNavigation = context.Service.DescribeCalls;
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.Account = @"EXAMPLE\svc_nutmanager";
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        Assert.True(context.Service.DescribeCalls > readsBeforeNavigation);
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal(@"EXAMPLE\svc_nutmanager", context.ViewModel.ServiceAccountText);
+    }
+
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
     {
         viewModel.HttpsEnabled = true;
-        viewModel.HttpsHost = "gandalf.sbra.local";
+        viewModel.HttpsHost = "nut-server.example.local";
         viewModel.HttpsPort = 5199;
         viewModel.SelectedCertificate = Assert.Single(viewModel.Certificates);
         Assert.True(viewModel.HttpsIsValid, viewModel.HttpsValidationMessage);
@@ -3856,7 +3959,7 @@ public sealed class T41AgentConfigViewModelTests
     {
         NamedPipeEnabled = true,
         HttpsEnabled = true,
-        HttpsPrefix = "https://gandalf.sbra.local:5199/",
+        HttpsPrefix = "https://nut-server.example.local:5199/",
         CertificateThumbprint = Thumbprint,
     };
 
@@ -3892,7 +3995,7 @@ public sealed class T41AgentConfigViewModelTests
         public int CreateCalls { get; private set; }
         public int AddCalls { get; private set; }
         public AgentMembershipResult AddResult { get; set; } =
-            new(AgentMembershipOutcome.Added, @"SBRA\operator");
+            new(AgentMembershipOutcome.Added, @"EXAMPLE\operator");
 
         public AgentOperatorsGroupState Describe() =>
             new(exists || CreateCalls > 0, "NutManager Operators", CreateCalls > 0 || exists ? "S-1-5-32-1000" : null, role, null);
@@ -3904,7 +4007,7 @@ public sealed class T41AgentConfigViewModelTests
         }
 
         public AgentIdentityResolution ResolveIdentity(string accountName) =>
-            new(true, accountName, "S-1-5-21-1000", AgentPrincipalKind.User, "SBRA", null);
+            new(true, accountName, "S-1-5-21-1000", AgentPrincipalKind.User, "EXAMPLE", null);
 
         public AgentMembershipResult AddMember(string accountName)
         {
@@ -3912,7 +4015,7 @@ public sealed class T41AgentConfigViewModelTests
             return AddResult with { AccountName = accountName };
         }
 
-        public IReadOnlyList<string> ListMembers() => exists ? [@"SBRA\operator"] : [];
+        public IReadOnlyList<string> ListMembers() => exists ? [@"EXAMPLE\operator"] : [];
     }
 
     private sealed class FakeService(AgentServiceState state) : IAgentServiceAdministration
@@ -3920,6 +4023,7 @@ public sealed class T41AgentConfigViewModelTests
         public int StartCalls { get; private set; }
         public int StopCalls { get; private set; }
         public int RestartCalls { get; private set; }
+        public int DescribeCalls { get; private set; }
 
         /// <summary>Every start-type change asked for, so a test can prove which one and how many.</summary>
         public List<AgentServiceStartupPreference> StartupChanges { get; } = [];
@@ -3930,9 +4034,14 @@ public sealed class T41AgentConfigViewModelTests
         public AgentServiceStartType StartType { get; set; } = AgentServiceStartType.Automatic;
 
         public string Account { get; set; } = "LocalSystem";
+        public string? Failure { get; set; }
+        public int? QueryErrorCode { get; set; }
 
-        public AgentServiceSnapshot Describe() =>
-            new(state, StartType.ToString(), null, StartType, Account);
+        public AgentServiceSnapshot Describe()
+        {
+            DescribeCalls++;
+            return new(state, StartType.ToString(), Failure, StartType, Account, QueryErrorCode);
+        }
 
         public Task<AgentServiceOutcome> SetStartupAsync(
             AgentServiceStartupPreference preference, CancellationToken cancellationToken)

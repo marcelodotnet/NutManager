@@ -25,35 +25,20 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
 
     private static readonly TimeSpan TransitionTimeout = TimeSpan.FromSeconds(30);
 
-    public AgentServiceSnapshot Describe()
+    private readonly WindowsAgentServiceQuery _query;
+
+    public WindowsAgentServiceAdministration()
+        : this(new WindowsAgentServiceQuery())
     {
-        try
-        {
-            using var controller = new ServiceController(ServiceName);
-
-            // Reading Status is what proves the service exists: ServiceController's constructor does
-            // not contact the SCM, so an absent service surfaces here rather than on the line above.
-            var state = Translate(controller.Status);
-            var configuration = ReadConfiguration();
-
-            return new AgentServiceSnapshot(
-                state,
-                configuration.StartMode,
-                configuration.Failure,
-                Translate(configuration.StartMode),
-                configuration.Account);
-        }
-        catch (InvalidOperationException)
-        {
-            // The documented shape of "no such service" from ServiceController.
-            return AgentServiceSnapshot.NotInstalled();
-        }
-        catch (Exception exception)
-        {
-            return AgentServiceSnapshot.NotInstalled(
-                $"The {ServiceName} service could not be queried ({exception.GetType().Name}).");
-        }
     }
+
+    internal WindowsAgentServiceAdministration(WindowsAgentServiceQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        _query = query;
+    }
+
+    public AgentServiceSnapshot Describe() => _query.Describe(ServiceName);
 
     public Task<AgentServiceOutcome> StartAsync(CancellationToken cancellationToken) =>
         TransitionAsync(ServiceControllerStatus.Running, start: true, cancellationToken);
@@ -149,115 +134,6 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     }
 
     /// <summary>
-    /// The start type, read through WMI because ServiceController does not expose it.
-    ///
-    /// It matters on this screen for one reason: the installer registers the service as Automatic and
-    /// deliberately leaves it stopped, so an operator looking at a stopped service needs to see that
-    /// it will come up on the next boot rather than conclude the installation failed.
-    /// </summary>
-    /// <summary>
-    /// The start type as an enum, from the words Windows uses.
-    ///
-    /// "Auto" is what Win32_Service reports for automatic start, with "Automatic" appearing on some
-    /// systems, and delayed start still reads as automatic - which is correct for this screen, since
-    /// both mean the service comes up with Windows.
-    /// </summary>
-    private static AgentServiceStartType Translate(string? startMode) => startMode?.Trim() switch
-    {
-        null or "" => AgentServiceStartType.Unknown,
-        var mode when mode.StartsWith("Auto", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Automatic,
-        var mode when mode.Equals("Manual", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Manual,
-        var mode when mode.Equals("Disabled", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Disabled,
-        _ => AgentServiceStartType.Unknown,
-    };
-
-    /// <summary>
-    /// The two facts the settings page reports about how the service is set up, read together from
-    /// the service control manager.
-    ///
-    /// This was a WMI query against Win32_Service, and on a server where the service was plainly
-    /// installed and running it returned nothing at all - which the screen then showed as an unknown
-    /// start mode and an unknown account, with no way to tell a real answer from a failed read. WMI
-    /// was a second, independent way of asking about a service this file already administers through
-    /// the SCM, and it was the one that could fail quietly.
-    ///
-    /// QueryServiceConfig is the same authority the start type is written through, opened with the
-    /// same handles. Read and write can no longer disagree, nothing depends on the WMI service being
-    /// healthy, and a failure now carries a Win32 error instead of being indistinguishable from a
-    /// service that genuinely has no configured account.
-    ///
-    /// Read-only: the account is never changed from here, and the start type is changed through
-    /// ChangeServiceConfig below rather than through this call.
-    /// </summary>
-    private static (string? StartMode, string? Account, string? Failure) ReadConfiguration()
-    {
-        var manager = IntPtr.Zero;
-        var service = IntPtr.Zero;
-
-        try
-        {
-            manager = OpenSCManager(null, null, ScManagerConnect);
-            if (manager == IntPtr.Zero) return ConfigurationFailure();
-
-            service = OpenService(manager, ServiceName, ServiceQueryConfig);
-            if (service == IntPtr.Zero) return ConfigurationFailure();
-
-            // Two calls by design: the structure carries pointers into a variable-length buffer whose
-            // size depends on the strings this particular service happens to have, so the first call
-            // is what asks how much room they need.
-            QueryServiceConfig(service, IntPtr.Zero, 0, out var required);
-            if (required == 0) return ConfigurationFailure();
-
-            var buffer = Marshal.AllocHGlobal((int)required);
-            try
-            {
-                if (!QueryServiceConfig(service, buffer, required, out _)) return ConfigurationFailure();
-
-                var configuration = Marshal.PtrToStructure<QueryServiceConfigW>(buffer);
-
-                return (Describe(configuration.StartType), configuration.ServiceStartName, null);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(buffer);
-            }
-        }
-        catch (Exception exception)
-        {
-            return (null, null,
-                $"The {ServiceName} configuration could not be read ({exception.GetType().Name}).");
-        }
-        finally
-        {
-            if (service != IntPtr.Zero) CloseServiceHandle(service);
-            if (manager != IntPtr.Zero) CloseServiceHandle(manager);
-        }
-    }
-
-    private static (string? StartMode, string? Account, string? Failure) ConfigurationFailure() => (
-        null,
-        null,
-        $"The {ServiceName} configuration could not be read (Win32 error {Marshal.GetLastWin32Error()}).");
-
-    /// <summary>
-    /// The SCM start type as the word Windows itself uses for it, so the diagnostics line keeps
-    /// reading the way it did when this came from Win32_Service.
-    ///
-    /// Delayed automatic start is reported by the SCM as SERVICE_AUTO_START with a separate delayed
-    /// flag, so it reads as automatic here - which is correct for this screen: both mean the service
-    /// comes up with Windows.
-    /// </summary>
-    private static string? Describe(uint startType) => startType switch
-    {
-        ServiceBootStart => "Boot",
-        ServiceSystemStart => "System",
-        ServiceAutoStart => "Auto",
-        ServiceDemandStart => "Manual",
-        ServiceDisabled => "Disabled",
-        _ => null,
-    };
-
-    /// <summary>
     /// Changes the start type through the service control manager, and touches nothing else.
     ///
     /// ChangeServiceConfig with SERVICE_NO_CHANGE in every other field, so the binary path, the
@@ -315,16 +191,10 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
         $"The {ServiceName} start type could not be changed (Win32 error {Marshal.GetLastWin32Error()}).");
 
     private const uint ScManagerConnect = 0x0001;
-    private const uint ServiceQueryConfig = 0x0001;
     private const uint ServiceChangeConfig = 0x0002;
     private const uint ServiceNoChange = 0xFFFFFFFF;
-    private const uint ServiceBootStart = 0x00000000;
-    private const uint ServiceSystemStart = 0x00000001;
     private const uint ServiceAutoStart = 0x00000002;
     private const uint ServiceDemandStart = 0x00000003;
-
-    /// <summary>Reported by Windows, never written by this file. Disabled is not an offered choice.</summary>
-    private const uint ServiceDisabled = 0x00000004;
 
     [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint access);
@@ -346,29 +216,6 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
         string? serviceStartName,
         string? password,
         string? displayName);
-
-    [DllImport("advapi32.dll", EntryPoint = "QueryServiceConfigW", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool QueryServiceConfig(
-        IntPtr service, IntPtr configuration, uint bufferSize, out uint bytesNeeded);
-
-    /// <summary>
-    /// QUERY_SERVICE_CONFIGW. The string fields are pointers into the same buffer rather than inline
-    /// characters, which is why the caller allocates by the size the SCM asks for.
-    /// </summary>
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct QueryServiceConfigW
-    {
-        public uint ServiceType;
-        public uint StartType;
-        public uint ErrorControl;
-        [MarshalAs(UnmanagedType.LPWStr)] public string? BinaryPathName;
-        [MarshalAs(UnmanagedType.LPWStr)] public string? LoadOrderGroup;
-        public uint TagId;
-        [MarshalAs(UnmanagedType.LPWStr)] public string? Dependencies;
-        [MarshalAs(UnmanagedType.LPWStr)] public string? ServiceStartName;
-        [MarshalAs(UnmanagedType.LPWStr)] public string? DisplayName;
-    }
 
     [DllImport("advapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

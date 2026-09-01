@@ -52,8 +52,8 @@ public sealed class AgentConfigStrings
         ["Https.Certificate.Valid"] = "Certificado válido e compatível com o host.",
         ["Https.Disabled.Hint"] = "Ative HTTPS para configurar host, porta e certificado.",
         ["Https.Copy"] = "Copiar",
-        ["Toast.EndpointCopied"] = "Endpoint copiado",
-        ["Toast.EndpointCopyFailed"] = "Não foi possível copiar o Endpoint.",
+        ["Toast.EndpointCopied"] = "Copiado!",
+        ["Toast.EndpointCopyFailed"] = "Não foi possível copiar.",
         ["Https.Invalid.Host"] = "Informe um host ou FQDN explícito.",
         ["Https.Invalid.HostFormat"] = "O host deve ser um nome simples, sem esquema, porta ou caminho.",
         ["Https.Invalid.Wildcard"] = "O host deve ser um nome explícito, nunca um curinga.",
@@ -286,6 +286,8 @@ public sealed class AgentConfigStrings
         ["Service.StartType.Automatic"] = "Automático",
         ["Service.StartType.Manual"] = "Manual",
         ["Service.StartType.Disabled"] = "Desativado",
+        ["Service.StartType.Boot"] = "Inicialização do sistema",
+        ["Service.StartType.System"] = "Sistema",
 
         ["Settings.Startup.Title"] = "Iniciar NutManager Agent com o Windows",
         ["Settings.Startup.Description"] =
@@ -369,8 +371,8 @@ public sealed class AgentConfigStrings
         ["Https.Certificate.Valid"] = "Certificate is valid and matches the host.",
         ["Https.Disabled.Hint"] = "Enable HTTPS to configure the host, port and certificate.",
         ["Https.Copy"] = "Copy",
-        ["Toast.EndpointCopied"] = "Endpoint copied",
-        ["Toast.EndpointCopyFailed"] = "The Endpoint could not be copied.",
+        ["Toast.EndpointCopied"] = "Copied!",
+        ["Toast.EndpointCopyFailed"] = "Could not copy.",
         ["Https.Invalid.Host"] = "Enter an explicit host or FQDN.",
         ["Https.Invalid.HostFormat"] = "The host must be a bare name, without a scheme, port or path.",
         ["Https.Invalid.Wildcard"] = "The host must be an explicit name, never a wildcard.",
@@ -593,6 +595,8 @@ public sealed class AgentConfigStrings
         ["Service.StartType.Automatic"] = "Automatic",
         ["Service.StartType.Manual"] = "Manual",
         ["Service.StartType.Disabled"] = "Disabled",
+        ["Service.StartType.Boot"] = "Boot",
+        ["Service.StartType.System"] = "System",
 
         ["Settings.Startup.Title"] = "Start NutManager Agent with Windows",
         ["Settings.Startup.Description"] =

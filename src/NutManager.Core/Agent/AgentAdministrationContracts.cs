@@ -204,7 +204,8 @@ public sealed record AgentServiceSnapshot(
     string? StartMode,
     string? Failure,
     AgentServiceStartType StartType = AgentServiceStartType.Unknown,
-    string? Account = null)
+    string? Account = null,
+    int? QueryErrorCode = null)
 {
     public bool IsInstalled => State is not AgentServiceState.NotInstalled;
 
@@ -225,6 +226,8 @@ public sealed record AgentServiceSnapshot(
 public enum AgentServiceStartType
 {
     Unknown,
+    Boot,
+    System,
     Automatic,
     Manual,
     Disabled,

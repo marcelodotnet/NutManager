@@ -243,10 +243,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     ///
     /// Deliberately its own state rather than a reuse of the Apply banner: copying a value to the
     /// clipboard is not a configuration result, and a screen that reported both through one surface
-    /// would let "Endpoint copied" overwrite the reason an Apply was refused.
+    /// would let "Copied!" overwrite the reason an Apply was refused.
     /// </summary>
     [ObservableProperty]
     private bool _isToastVisible;
+
+    /// <summary>
+    /// Keeps the anchored popup alive while its content fades out. Popup membership and visual
+    /// visibility are separate because closing a Popup removes it before a transition can render.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isToastPopupOpen;
 
     [ObservableProperty]
     private string? _toastMessage;
@@ -281,6 +288,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         ToastKind = kind;
         ToastMessage = message;
+        IsToastPopupOpen = true;
         IsToastVisible = true;
 
         HideToastAsync(_toastLifetime.Token);
@@ -296,6 +304,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             await Task.Delay(ToastDuration, _time, cancellationToken).ConfigureAwait(true);
             IsToastVisible = false;
+            await Task.Delay(TimeSpan.FromMilliseconds(180), _time, cancellationToken).ConfigureAwait(true);
+            IsToastPopupOpen = false;
         }
         catch (OperationCanceledException)
         {
@@ -311,6 +321,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public void CancelTransientFeedback()
     {
         _toastLifetime?.Cancel();
+        IsToastVisible = false;
+        IsToastPopupOpen = false;
         _toastLifetime?.Dispose();
         _toastLifetime = null;
     }
@@ -506,6 +518,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowSettingsAction));
         OnPropertyChanged(nameof(HeaderActionText));
         OnPropertyChanged(nameof(ViewToggleText));
+
+        if (value == AgentConfigSurface.Settings && IsAgentTab) ReloadService();
     }
 
     public bool ShowConfiguration => Surface == AgentConfigSurface.Configuration;
@@ -593,6 +607,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAppearanceTab));
         OnPropertyChanged(nameof(IsAgentTab));
         OnPropertyChanged(nameof(IsAboutTab));
+
+        if (value == AgentSettingsTab.Agent) ReloadService();
     }
 
     public bool IsGeneralTab => SettingsTab == AgentSettingsTab.General;
@@ -713,6 +729,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
         OnPropertyChanged(nameof(NamedPipeStatusText));
         OnPropertyChanged(nameof(HttpsStatusText));
+        OnPropertyChanged(nameof(ActiveTransportsText));
+        OnPropertyChanged(nameof(HttpsPortText));
         OnPropertyChanged(nameof(CanResetHttps));
         OnPropertyChanged(nameof(HttpsResetBlockedReason));
         OnPropertyChanged(nameof(HttpsResetToolTip));
@@ -910,6 +928,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnHttpsPortChanged(int value)
     {
         ClearImportFeedback();
+        OnPropertyChanged(nameof(HttpsPortText));
         RefreshHttpsValidation();
         RefreshDirty();
     }
@@ -1627,6 +1646,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             }
 
             _confirmed = document;
+            OnPropertyChanged(nameof(ActiveTransportsText));
+            OnPropertyChanged(nameof(HttpsPortText));
             RefreshDirty();
             RefreshResourceState();
             RefreshHttpsValidation();
@@ -1973,6 +1994,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             }
 
             _confirmed = document;
+            OnPropertyChanged(nameof(ActiveTransportsText));
+            OnPropertyChanged(nameof(HttpsPortText));
             RefreshDirty();
             RefreshResourceState();
 
@@ -2189,6 +2212,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanToggleNamedPipe));
         OnPropertyChanged(nameof(CanToggleHttps));
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
+        OnPropertyChanged(nameof(ActiveTransportsText));
+        OnPropertyChanged(nameof(HttpsPortText));
 
         RefreshHttpsValidation();
         RefreshDirty();
@@ -2526,6 +2551,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public string ServiceStartTypeText => _serviceState.StartType switch
     {
+        AgentServiceStartType.Boot => Strings["Service.StartType.Boot"],
+        AgentServiceStartType.System => Strings["Service.StartType.System"],
         AgentServiceStartType.Automatic => Strings["Service.StartType.Automatic"],
         AgentServiceStartType.Manual => Strings["Service.StartType.Manual"],
         AgentServiceStartType.Disabled => Strings["Service.StartType.Disabled"],
@@ -2644,8 +2671,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         Diagnostics.Add(AgentStatusItemViewModel.From(
             Strings, Strings["Diagnostics.AgentRegistered"],
-            _serviceState.IsInstalled ? AgentDiagnosticState.Ready : AgentDiagnosticState.Error,
-            _serviceState.IsInstalled ? ServiceStateText : Strings["Diagnostics.NotInstalled"]));
+            !_serviceState.IsInstalled
+                ? AgentDiagnosticState.Error
+                : string.IsNullOrWhiteSpace(_serviceState.Failure)
+                    ? AgentDiagnosticState.Ready
+                    : AgentDiagnosticState.Attention,
+            _serviceState.IsInstalled ? ServiceStateText : Strings["Diagnostics.NotInstalled"],
+            technicalDetail: _serviceState.Failure));
 
         Diagnostics.Add(AgentStatusItemViewModel.From(
             Strings, Strings["Diagnostics.Nut"],
