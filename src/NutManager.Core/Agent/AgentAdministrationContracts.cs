@@ -199,7 +199,12 @@ public enum AgentServiceState
 /// the service and deliberately does not start it, so an installation reporting
 /// <see cref="AgentServiceState.Stopped"/> is a correct one rather than a broken one.
 /// </summary>
-public sealed record AgentServiceSnapshot(AgentServiceState State, string? StartMode, string? Failure)
+public sealed record AgentServiceSnapshot(
+    AgentServiceState State,
+    string? StartMode,
+    string? Failure,
+    AgentServiceStartType StartType = AgentServiceStartType.Unknown,
+    string? Account = null)
 {
     public bool IsInstalled => State is not AgentServiceState.NotInstalled;
 
@@ -207,6 +212,35 @@ public sealed record AgentServiceSnapshot(AgentServiceState State, string? Start
 
     public static AgentServiceSnapshot NotInstalled(string? failure = null) =>
         new(AgentServiceState.NotInstalled, StartMode: null, failure);
+}
+
+/// <summary>
+/// How Windows says the service starts, as read.
+///
+/// Separate from <see cref="AgentServiceStartupPreference"/> because reading and writing are not the
+/// same set: a service can be found Disabled, and the utility can observe and report that, but it
+/// offers no way to put one there. Unknown is what an unreadable configuration reports, and it is
+/// never treated as a value somebody chose.
+/// </summary>
+public enum AgentServiceStartType
+{
+    Unknown,
+    Automatic,
+    Manual,
+    Disabled,
+}
+
+/// <summary>
+/// What an operator may choose, which is two things.
+///
+/// Disabled is deliberately absent. The switch on the settings page means "start with Windows or
+/// not", and a service left Disabled cannot be started even deliberately afterwards - turning a
+/// preference off must not take away the operator's ability to start the agent by hand.
+/// </summary>
+public enum AgentServiceStartupPreference
+{
+    Automatic,
+    Manual,
 }
 
 public sealed record AgentServiceOutcome(bool Succeeded, AgentServiceState State, string? Failure);
@@ -228,4 +262,14 @@ public interface IAgentServiceAdministration
     Task<AgentServiceOutcome> StopAsync(CancellationToken cancellationToken);
 
     Task<AgentServiceOutcome> RestartAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Changes how the service starts, and changes nothing else.
+    ///
+    /// It does not start a stopped service and does not stop a running one: the start type is what
+    /// Windows does at boot, and an operator changing a boot preference has not asked for anything to
+    /// happen now. The pair is deliberately narrow - two values, one service, no name parameter.
+    /// </summary>
+    Task<AgentServiceOutcome> SetStartupAsync(
+        AgentServiceStartupPreference preference, CancellationToken cancellationToken);
 }

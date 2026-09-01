@@ -43,16 +43,27 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
-    public void AgentConfigIsPublishedAndOwnedByTheAgentMsi()
+    public void TheAgentMsiInstallsOneExecutableAndStartsItInTwoModes()
     {
+        // The service and the configuration window are one file now, told apart by one argument, and the
+        // installer is where that has to be exact. A ServiceInstall without --service would register a
+        // service that tries to open a window in session 0, and a shortcut without --config would hand an
+        // operator a shortcut that starts a service host with no console and nothing to show.
         var script = Read("scripts/build-release.ps1");
         var package = Read("installer/Agent/Package.wxs");
 
-        Assert.Contains("src\\NutManager.Agent.Config\\NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
-        Assert.Contains("NutManager.Agent.Config.exe", script, StringComparison.Ordinal);
-        Assert.Contains("NutManager.Agent.Config.exe", package, StringComparison.Ordinal);
+        Assert.DoesNotContain("NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        // The release script may still name the retired executable, but only in order to refuse it.
+        Assert.Contains("retired Agent Config apphost file", script, StringComparison.Ordinal);
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
+        var authoredPackage = WithoutComments(package);
+        Assert.DoesNotContain("NutManager.Agent.Config.exe", authoredPackage, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentConfigExecutableFile", authoredPackage, StringComparison.Ordinal);
+
+        Assert.Contains("Arguments=\"--service\"", package, StringComparison.Ordinal);
         Assert.Contains("AgentConfigStartMenuShortcut", package, StringComparison.Ordinal);
-        Assert.Contains("Target=\"[#AgentConfigExecutableFile]\"", package, StringComparison.Ordinal);
+        Assert.Contains("Target=\"[#AgentExecutableFile]\"", package, StringComparison.Ordinal);
+        Assert.Contains("Arguments=\"--config\"", package, StringComparison.Ordinal);
         Assert.Contains("On=\"uninstall\"", package, StringComparison.Ordinal);
     }
 
@@ -86,17 +97,31 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
-    public void AgentConfigStaysFrameworkDependentAndCannotAddWindowsDesktop()
+    public void AgentConfigIsALibraryInsideTheAgentHostAndAddsNoSharedFramework()
     {
+        // The configuration window has no apphost of its own any more: it is a module the agent host
+        // starts. The WindowsDesktop guard outlives that change, because WPF or WinForms here would still
+        // add a third shared framework the Agent installer neither detects nor downloads.
         var project = Read("src/NutManager.Agent.Config/NutManager.Agent.Config.csproj");
+        var host = Read("src/NutManager.Agent/NutManager.Agent.csproj");
         var script = Read("scripts/build-release.ps1");
 
-        Assert.Contains("<SelfContained>false</SelfContained>", project, StringComparison.Ordinal);
         var authoredProject = WithoutComments(project);
+        Assert.Contains("<OutputType>Library</OutputType>", authoredProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplicationManifest", authoredProject, StringComparison.Ordinal);
+        Assert.Contains("<SelfContained>false</SelfContained>", project, StringComparison.Ordinal);
         Assert.DoesNotContain("Microsoft.WindowsDesktop.App", authoredProject, StringComparison.Ordinal);
         Assert.DoesNotContain("UseWPF", authoredProject, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("UseWindowsForms", authoredProject, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Agent Config introduced an unsupported shared framework", script, StringComparison.Ordinal);
+
+        // The window is launched by hand, so the one apphost must not be a console binary, and the
+        // elevation manifest has to follow the apphost rather than stay with the library.
+        var authoredHost = WithoutComments(host);
+        Assert.Contains("<OutputType>WinExe</OutputType>", authoredHost, StringComparison.Ordinal);
+        Assert.Contains("app.manifest", authoredHost, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.csproj", authoredHost, StringComparison.Ordinal);
+
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
         Assert.Contains("Microsoft.NETCore.App", script, StringComparison.Ordinal);
     }
 
@@ -120,10 +145,15 @@ public sealed class T41InstallerAndPackagingTests
         var script = Read("scripts/build-agent-test-package.ps1");
 
         Assert.Contains("src\\NutManager.Agent\\NutManager.Agent.csproj", script, StringComparison.Ordinal);
-        Assert.Contains("src\\NutManager.Agent.Config\\NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        // One publish, one apphost. The second publish and the hash-reconciled merge that used to follow
+        // it existed only to get two executables into one directory.
+        Assert.DoesNotContain("NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(script, "dotnet publish", RegexOptions.IgnoreCase));
         Assert.Single(Regex.Matches(script, "--self-contained false", RegexOptions.IgnoreCase));
         Assert.Contains("GetRelativePath", script, StringComparison.Ordinal);
-        Assert.Contains("different versions of", script, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.exe", script, StringComparison.Ordinal);
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.dll", script, StringComparison.Ordinal);
 
         foreach (var marker in new[] { "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "System.Private.CoreLib.dll" })
         {
@@ -390,8 +420,13 @@ public sealed class T41InstallerAndPackagingTests
     {
         var files = new[]
         {
-            "src/NutManager.Agent.Config/Program.cs",
+            "src/NutManager.Agent.Config/AgentConfigHost.cs",
             "src/NutManager.Agent.Config/App.axaml.cs",
+
+            // The unified host joins the guard: it is the one place that decides between two
+            // privileged modes, and the mode switch must never become a way to run something else.
+            "src/NutManager.Agent/Program.cs",
+            "src/NutManager.Agent/AgentExecutionMode.cs",
             "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceAdministration.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentOperatorsGroupAdministration.cs",
@@ -3459,7 +3494,35 @@ public sealed class T41AgentConfigViewModelTests
         public int StopCalls { get; private set; }
         public int RestartCalls { get; private set; }
 
-        public AgentServiceSnapshot Describe() => new(state, "Automatic", null);
+        /// <summary>Every start-type change asked for, so a test can prove which one and how many.</summary>
+        public List<AgentServiceStartupPreference> StartupChanges { get; } = [];
+
+        /// <summary>Set to make the service control manager refuse the change.</summary>
+        public string? StartupFailure { get; set; }
+
+        public AgentServiceStartType StartType { get; set; } = AgentServiceStartType.Automatic;
+
+        public string Account { get; set; } = "LocalSystem";
+
+        public AgentServiceSnapshot Describe() =>
+            new(state, StartType.ToString(), null, StartType, Account);
+
+        public Task<AgentServiceOutcome> SetStartupAsync(
+            AgentServiceStartupPreference preference, CancellationToken cancellationToken)
+        {
+            StartupChanges.Add(preference);
+
+            if (StartupFailure is not null)
+            {
+                return Task.FromResult(new AgentServiceOutcome(false, state, StartupFailure));
+            }
+
+            StartType = preference is AgentServiceStartupPreference.Automatic
+                ? AgentServiceStartType.Automatic
+                : AgentServiceStartType.Manual;
+
+            return Task.FromResult(new AgentServiceOutcome(true, state, null));
+        }
 
         public Task<AgentServiceOutcome> StartAsync(CancellationToken cancellationToken)
         {

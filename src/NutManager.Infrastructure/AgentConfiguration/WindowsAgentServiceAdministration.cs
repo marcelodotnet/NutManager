@@ -1,4 +1,5 @@
 using System.Management;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.ServiceProcess;
 using NutManager.Core.Agent;
@@ -34,7 +35,14 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
             // Reading Status is what proves the service exists: ServiceController's constructor does
             // not contact the SCM, so an absent service surfaces here rather than on the line above.
             var state = Translate(controller.Status);
-            return new AgentServiceSnapshot(state, ReadStartMode(), Failure: null);
+            var configuration = ReadConfiguration();
+
+            return new AgentServiceSnapshot(
+                state,
+                configuration.StartMode,
+                Failure: null,
+                Translate(configuration.StartMode),
+                configuration.Account);
         }
         catch (InvalidOperationException)
         {
@@ -148,28 +156,142 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     /// deliberately leaves it stopped, so an operator looking at a stopped service needs to see that
     /// it will come up on the next boot rather than conclude the installation failed.
     /// </summary>
-    private static string? ReadStartMode()
+    /// <summary>
+    /// The start type as an enum, from the words Windows uses.
+    ///
+    /// "Auto" is what Win32_Service reports for automatic start, with "Automatic" appearing on some
+    /// systems, and delayed start still reads as automatic - which is correct for this screen, since
+    /// both mean the service comes up with Windows.
+    /// </summary>
+    private static AgentServiceStartType Translate(string? startMode) => startMode?.Trim() switch
+    {
+        null or "" => AgentServiceStartType.Unknown,
+        var mode when mode.StartsWith("Auto", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Automatic,
+        var mode when mode.Equals("Manual", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Manual,
+        var mode when mode.Equals("Disabled", StringComparison.OrdinalIgnoreCase) => AgentServiceStartType.Disabled,
+        _ => AgentServiceStartType.Unknown,
+    };
+
+    private static string? ReadStartMode() => ReadConfiguration().StartMode;
+
+    /// <summary>
+    /// The two facts the settings page reports about how the service is set up, read together.
+    ///
+    /// One query rather than two: they come from the same row, and asking twice would let the screen
+    /// show a start mode and an account that were true at different moments. Reading only - the
+    /// account is never changed from here, and the start type is changed through the service control
+    /// manager rather than through this query.
+    /// </summary>
+    private static (string? StartMode, string? Account) ReadConfiguration()
     {
         try
         {
             // The name is this file's own constant, so there is no caller-supplied text in the query.
             using var searcher = new ManagementObjectSearcher(
-                $"SELECT StartMode FROM Win32_Service WHERE Name = '{ServiceName}'");
+                $"SELECT StartMode, StartName FROM Win32_Service WHERE Name = '{ServiceName}'");
 
             foreach (var item in searcher.Get())
             {
                 using var service = (ManagementObject)item;
-                return service["StartMode"] as string;
+                return (service["StartMode"] as string, service["StartName"] as string);
             }
 
-            return null;
+            return (null, null);
         }
         catch (Exception)
         {
-            // A start mode that cannot be read is a missing detail, not a failure of the screen.
-            return null;
+            // Configuration that cannot be read is a missing detail, not a failure of the screen.
+            return (null, null);
         }
     }
+
+    /// <summary>
+    /// Changes the start type through the service control manager, and touches nothing else.
+    ///
+    /// ChangeServiceConfig with SERVICE_NO_CHANGE in every other field, so the binary path, the
+    /// account, the dependencies and the display name are carried through untouched - this call can
+    /// only ever move the service between starting with Windows and not. It never starts or stops
+    /// anything: the running state is a separate concern with its own explicit commands.
+    ///
+    /// The Win32 API rather than sc.exe or a WMI method call, for the same reason the rest of this
+    /// file uses it: no shell, no argument string, and a return value that says what happened.
+    /// </summary>
+    public Task<AgentServiceOutcome> SetStartupAsync(
+        AgentServiceStartupPreference preference, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var manager = IntPtr.Zero;
+        var service = IntPtr.Zero;
+
+        try
+        {
+            manager = OpenSCManager(null, null, ScManagerConnect);
+            if (manager == IntPtr.Zero) return Task.FromResult(StartupFailure());
+
+            service = OpenService(manager, ServiceName, ServiceChangeConfig);
+            if (service == IntPtr.Zero) return Task.FromResult(StartupFailure());
+
+            var startType = preference is AgentServiceStartupPreference.Automatic
+                ? ServiceAutoStart
+                : ServiceDemandStart;
+
+            var changed = ChangeServiceConfig(
+                service, ServiceNoChange, startType, ServiceNoChange,
+                null, null, IntPtr.Zero, null, null, null, null);
+
+            return Task.FromResult(changed
+                ? new AgentServiceOutcome(true, Describe().State, null)
+                : StartupFailure());
+        }
+        catch (Exception exception)
+        {
+            return Task.FromResult(new AgentServiceOutcome(
+                false, Describe().State,
+                $"The {ServiceName} start type could not be changed ({exception.GetType().Name})."));
+        }
+        finally
+        {
+            if (service != IntPtr.Zero) CloseServiceHandle(service);
+            if (manager != IntPtr.Zero) CloseServiceHandle(manager);
+        }
+    }
+
+    private static AgentServiceOutcome StartupFailure() => new(
+        false,
+        AgentServiceState.Unknown,
+        $"The {ServiceName} start type could not be changed (Win32 error {Marshal.GetLastWin32Error()}).");
+
+    private const uint ScManagerConnect = 0x0001;
+    private const uint ServiceChangeConfig = 0x0002;
+    private const uint ServiceNoChange = 0xFFFFFFFF;
+    private const uint ServiceAutoStart = 0x00000002;
+    private const uint ServiceDemandStart = 0x00000003;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint access);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenService(IntPtr manager, string serviceName, uint access);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChangeServiceConfig(
+        IntPtr service,
+        uint serviceType,
+        uint startType,
+        uint errorControl,
+        string? binaryPathName,
+        string? loadOrderGroup,
+        IntPtr tagId,
+        string? dependencies,
+        string? serviceStartName,
+        string? password,
+        string? displayName);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr handle);
 
     private static AgentServiceState Translate(ServiceControllerStatus status) => status switch
     {

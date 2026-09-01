@@ -1,9 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <!--
+      WinExe, not Exe.
+
+      This one executable is now both the service host and the configuration window, and the window is
+      the mode a person launches by hand. A console-subsystem binary would flash a console behind that
+      window every time it opened. A Windows service needs no console at all, so nothing is lost: the
+      service reports through the event log, and a bad argument reports through the exit code.
+    -->
+    <OutputType>WinExe</OutputType>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- The agent hosts a Windows service and talks to the local SCM. There is no other platform. -->
     <SelfContained>false</SelfContained>
+    <ApplicationIcon>..\NutManager.App\Assets\Branding\NutManager.ico</ApplicationIcon>
+    <!--
+      Elevation is declared, not negotiated at runtime. Everything the configuration window does is
+      machine-level - a local group, an HTTP.sys binding, a firewall rule, a file under ProgramData
+      that only SYSTEM and Administrators may write - so an unelevated instance could do nothing but
+      display failures. Asking once at launch is the documented Windows way.
+
+      It does not stand in the service's way. The SCM starts a service with the configured account's
+      own token and does not route it through the shell's elevation path, and LocalSystem already
+      holds every privilege this manifest asks for.
+    -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,9 +41,19 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Core and Infrastructure only. The agent never references the Avalonia application. -->
+    <!--
+      Core, Infrastructure, and the configuration window as a module.
+
+      The dependency runs one way only: this host may reference the UI module, and the UI module
+      references Core and Infrastructure. Nothing in Core or Infrastructure knows Avalonia exists, and
+      the service composition never touches the module - the Avalonia assemblies sit in the directory
+      and are never loaded when the process starts as a service.
+
+      It still never references NutManager.App. The desktop client remains a separate product.
+    -->
     <ProjectReference Include="..\NutManager.Core\NutManager.Core.csproj" />
     <ProjectReference Include="..\NutManager.Infrastructure\NutManager.Infrastructure.csproj" />
+    <ProjectReference Include="..\NutManager.Agent.Config\NutManager.Agent.Config.csproj" />
   </ItemGroup>
 
   <ItemGroup>

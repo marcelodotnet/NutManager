@@ -23,7 +23,6 @@ if ([string]::IsNullOrWhiteSpace($Version))
 $testRoot = Join-Path $repositoryRoot 'artifacts\test'
 $staging = Join-Path $testRoot '.staging'
 $agentPublish = Join-Path $staging 'agent'
-$configPublish = Join-Path $staging 'config'
 $packageName = "NutManager-Agent-Test-$Version"
 $payload = Join-Path $testRoot $packageName
 $zipPath = Join-Path $testRoot "$packageName.zip"
@@ -36,7 +35,7 @@ if (Test-Path -LiteralPath $testRoot)
     Remove-Item -LiteralPath $testRoot -Recurse -Force
 }
 
-New-Item -ItemType Directory -Force -Path $agentPublish, $configPublish, $payload | Out-Null
+New-Item -ItemType Directory -Force -Path $agentPublish, $payload | Out-Null
 
 function Publish-Application
 {
@@ -62,40 +61,25 @@ function Publish-Application
     }
 }
 
+# One publish, because there is one application.
+#
+# This used to publish the agent and the configuration utility separately and merge the two trees,
+# reconciling every shared assembly by hash along the way. The configuration window is a mode of the
+# agent host now, so its assembly arrives as an ordinary dependency of the single publish and there
+# is nothing left to merge or to disagree about.
 Publish-Application `
     -Project (Join-Path $repositoryRoot 'src\NutManager.Agent\NutManager.Agent.csproj') `
     -Output $agentPublish
-Publish-Application `
-    -Project (Join-Path $repositoryRoot 'src\NutManager.Agent.Config\NutManager.Agent.Config.csproj') `
-    -Output $configPublish
 
-# Merge the two clean publishes. Shared assemblies are accepted only when their bytes match; a
-# divergent collision is a dependency conflict, not something the second publish may silently win.
-foreach ($sourceRoot in @($agentPublish, $configPublish))
+foreach ($source in Get-ChildItem -LiteralPath $agentPublish -Recurse -File)
 {
-    foreach ($source in Get-ChildItem -LiteralPath $sourceRoot -Recurse -File)
-    {
-        if ($source.Extension -eq '.pdb') { continue }
+    if ($source.Extension -eq '.pdb') { continue }
 
-        $relativePath = [System.IO.Path]::GetRelativePath($sourceRoot, $source.FullName)
-        $target = Join-Path $payload $relativePath
-        $targetDirectory = Split-Path -Parent $target
-        New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
-
-        if (Test-Path -LiteralPath $target)
-        {
-            $sourceHash = (Get-FileHash -LiteralPath $source.FullName -Algorithm SHA256).Hash
-            $targetHash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
-            if ($sourceHash -ne $targetHash)
-            {
-                throw "The Agent publishes contain different versions of '$relativePath'."
-            }
-
-            continue
-        }
-
-        Copy-Item -LiteralPath $source.FullName -Destination $target
-    }
+    $relativePath = [System.IO.Path]::GetRelativePath($agentPublish, $source.FullName)
+    $target = Join-Path $payload $relativePath
+    $targetDirectory = Split-Path -Parent $target
+    New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
+    Copy-Item -LiteralPath $source.FullName -Destination $target
 }
 
 $requiredFiles = @(
@@ -103,10 +87,9 @@ $requiredFiles = @(
     'NutManager.Agent.dll',
     'NutManager.Agent.deps.json',
     'NutManager.Agent.runtimeconfig.json',
-    'NutManager.Agent.Config.exe',
-    'NutManager.Agent.Config.dll',
-    'NutManager.Agent.Config.deps.json',
-    'NutManager.Agent.Config.runtimeconfig.json'
+    # The configuration window, as a library. It has no apphost, no deps.json and no runtimeconfig of
+    # its own any more: the host it runs inside owns all three.
+    'NutManager.Agent.Config.dll'
 )
 foreach ($requiredFile in $requiredFiles)
 {
@@ -138,12 +121,28 @@ foreach ($requiredFramework in @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.
     }
 }
 
-$configFrameworks = @(Read-Frameworks (Join-Path $payload 'NutManager.Agent.Config.runtimeconfig.json'))
-if ($configFrameworks.Count -ne 1 -or
-    $configFrameworks[0].name -ne 'Microsoft.NETCore.App' -or
-    -not ([string] $configFrameworks[0].version).StartsWith('10.', [StringComparison]::Ordinal))
+# One apphost, asserted rather than assumed.
+#
+# The configuration utility used to ship its own executable beside this one, with its own runtime
+# contract. Both are gone, and a payload that still carried either would mean the unified host did
+# not actually take over - an operator would find two executables again and have to guess.
+$obsoleteApphostFiles = @(
+    'NutManager.Agent.Config.exe',
+    'NutManager.Agent.Config.deps.json',
+    'NutManager.Agent.Config.runtimeconfig.json'
+)
+foreach ($obsolete in $obsoleteApphostFiles)
 {
-    throw 'Agent Config runtimeconfig must require only Microsoft.NETCore.App 10.x.'
+    if (Test-Path -LiteralPath (Join-Path $payload $obsolete))
+    {
+        throw "Portable Agent payload still contains the retired Agent Config apphost file '$obsolete'."
+    }
+}
+
+$apphosts = @(Get-ChildItem -LiteralPath $payload -Recurse -File -Filter '*.exe')
+if ($apphosts.Count -ne 1 -or $apphosts[0].Name -ne 'NutManager.Agent.exe')
+{
+    throw "Portable Agent payload must contain exactly one executable, NutManager.Agent.exe."
 }
 
 $privateRuntimeMarkers = @(
@@ -177,10 +176,10 @@ if ($forbiddenPayload)
 
 Compress-Archive -Path (Join-Path $payload '*') -DestinationPath $zipPath -CompressionLevel Optimal
 
+# The archive and the one executable inside it. There used to be two.
 $checksumTargets = @(
     Get-Item -LiteralPath $zipPath
     Get-Item -LiteralPath (Join-Path $payload 'NutManager.Agent.exe')
-    Get-Item -LiteralPath (Join-Path $payload 'NutManager.Agent.Config.exe')
 )
 $checksumLines = foreach ($target in $checksumTargets)
 {
