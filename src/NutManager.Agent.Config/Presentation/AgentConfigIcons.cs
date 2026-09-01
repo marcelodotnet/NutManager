@@ -74,6 +74,10 @@ public static class AgentConfigIcons
         // Settings tab glyphs. Agent and About reuse the shared server and information keys above,
         // because the catalog already has exactly the right drawing for both; only these two needed
         // a key of their own.
+        // The desktop has no Home key: its first destination is an overview dashboard, and this
+        // window has no dashboard to go back to - it goes back to the configuration it opened on.
+        ("AgentIconHome", MaterialIconKind.HomeOutline),
+
         ("AgentIconTabGeneral", MaterialIconKind.TuneVariant),
         ("AgentIconTabAppearance", MaterialIconKind.PaletteOutline),
 

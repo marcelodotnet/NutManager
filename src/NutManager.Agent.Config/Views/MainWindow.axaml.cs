@@ -69,17 +69,6 @@ public sealed partial class MainWindow : Window
     private void PublishEffectiveTheme() =>
         (DataContext as AgentConfigViewModel)?.UpdateEffectiveTheme(ActualThemeVariant == ThemeVariant.Dark);
 
-    private void OnSelectPortugueseClicked(object? sender, RoutedEventArgs e) =>
-        SelectLanguage(UiLanguagePreference.PtBr);
-
-    private void OnSelectEnglishClicked(object? sender, RoutedEventArgs e) =>
-        SelectLanguage(UiLanguagePreference.EnUs);
-
-    private void SelectLanguage(UiLanguagePreference language)
-    {
-        if (DataContext is AgentConfigViewModel viewModel) viewModel.SelectedLanguage = language;
-    }
-
     /// <summary>
     /// Copies the value the button carries, and reports what actually happened.
     ///

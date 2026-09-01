@@ -1,3 +1,4 @@
+using NutManager.Core.Models;
 using System.Globalization;
 using NutManager.Agent.Config.Localization;
 using NutManager.Core.Agent;
@@ -390,3 +391,26 @@ public enum AgentConfigSurface
     /// </summary>
     Terms,
 }
+
+/// <summary>
+/// Which panel of the settings surface is showing.
+///
+/// The strip that selects these is four buttons rather than a TabControl: the desktop draws this
+/// pattern as a list of items with dividers between them, and a TabControl generates its own strip
+/// with nothing to put a divider into.
+/// </summary>
+public enum AgentSettingsTab
+{
+    General,
+    Appearance,
+    Agent,
+    About,
+}
+
+/// <summary>
+/// One entry of the language list: the preference, and the name of that language in that language.
+///
+/// Autonyms, exactly as the desktop application lists them - "Português (Brasil)" reads the same in
+/// an English interface, because somebody looking for their own language looks for its own name.
+/// </summary>
+public sealed record AgentLanguageOption(UiLanguagePreference Value, string Title);

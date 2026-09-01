@@ -356,52 +356,86 @@
     </Style>
 
     <!--
-      The tab strip.
-
-      Fluent sizes TabItem headers for a document-level tab bar, which is far too loud for four
-      panels inside a settings card - they read as the heading of the page rather than as a way to
-      move around it. This brings them under the card title and leaves the hierarchy intact.
+      The house does not turn. A cog turns because that is what a cog does; a house doing it would be
+      the animation talking about itself. It lifts very slightly instead, on the transition every
+      Button PathIcon already carries.
     -->
-    <Style Selector="TabItem">
-      <Setter Property="FontSize" Value="17" />
-      <Setter Property="MinHeight" Value="0" />
-      <Setter Property="Padding" Value="11,7" />
-      <Setter Property="Foreground" Value="{DynamicResource NutTextSecondaryBrush}" />
-    </Style>
-    <Style Selector="TabItem:selected">
-      <Setter Property="Foreground" Value="{DynamicResource NutAccentBrightBrush}" />
-      <Setter Property="FontWeight" Value="SemiBold" />
+    <Style Selector="Button.agent-settings-button:pointerover PathIcon.agent-home-glyph">
+      <Setter Property="RenderTransform" Value="scale(1.08)" />
     </Style>
 
     <!--
-      Selection is a tinted surface, not an underline.
+      The section strip, as the desktop application draws it in Administration.
 
-      The blue line under the active tab was Fluent drawing its own selection pipe; recolouring it to
-      the product accent only made a foreign marker match the palette. NutManager marks a selected
-      navigation item with a low-contrast sheen and a heavier label - "emphasis rather than a filled
-      control", as the shell styles put it - so that is what these do, and the pipe goes.
+      Mirrored from ListBox.nut-section-tabs in NutShellStyles, which is the desktop shell and cannot
+      be linked here: same 13,9 padding, same 14 corner radius, the same two-pixel bottom border that
+      is transparent until the item is current, and the same pair of brush transitions. A test holds
+      these values against that file so the two cannot drift.
+
+      The bottom border belongs to the item, not to the strip: it runs the width of the button it
+      marks. Sheen and accent line together, because that is what the desktop does - the sheen alone
+      turned each item into a small card, which is what this replaces.
+
+      No Width and no equal columns. Each item is as wide as its own label plus the standard padding.
     -->
-    <Style Selector="TabItem /template/ Border#PART_LayoutRoot">
-      <Setter Property="CornerRadius" Value="8" />
+    <Style Selector="Button.agent-section-tab">
+      <Setter Property="Padding" Value="13,9" />
+      <Setter Property="MinHeight" Value="0" />
+      <Setter Property="FontSize" Value="17" />
+      <Setter Property="CornerRadius" Value="14" />
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Margin" Value="0,0,4,0" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource NutTextSecondaryBrush}" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
-    <Style Selector="TabItem:pointerover /template/ Border#PART_LayoutRoot">
-      <Setter Property="Background" Value="{DynamicResource NutSurfaceHoverBrush}" />
+    <Style Selector="Button.agent-section-tab /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0,0,0,2" />
+      <!--
+        Rounded on top, square at the bottom.
+
+        A uniform radius curves a bottom-only border up both sides, and what should read as a line
+        under the item reads as an outline around it. Squaring the two bottom corners is what leaves
+        the accent as a straight rule along the edge it marks.
+      -->
+      <Setter Property="CornerRadius" Value="12,12,0,0" />
+      <Setter Property="Transitions">
+        <Transitions>
+          <BrushTransition Property="Background" Duration="0:0:0.14" />
+          <BrushTransition Property="BorderBrush" Duration="0:0:0.18" />
+        </Transitions>
+      </Setter>
     </Style>
-    <Style Selector="TabItem:selected /template/ Border#PART_LayoutRoot">
+    <Style Selector="Button.agent-section-tab:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NutGlassRowHoverBrush}" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
+    </Style>
+    <Style Selector="Button.agent-section-tab.selected /template/ ContentPresenter">
       <Setter Property="Background" Value="{DynamicResource NutSelectedSheenBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource NutAccentBrush}" />
+      <Setter Property="TextElement.Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
     </Style>
-    <Style Selector="TabItem /template/ Border#PART_SelectedPipe">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
-    <Style Selector="TabItem:selected /template/ Border#PART_SelectedPipe">
-      <Setter Property="Background" Value="Transparent" />
-      <Setter Property="IsVisible" Value="False" />
-    </Style>
-    <Style Selector="TabItem:pointerover">
+    <Style Selector="Button.agent-section-tab.selected">
       <Setter Property="Foreground" Value="{DynamicResource NutTextPrimaryBrush}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.agent-section-tab.selected PathIcon">
+      <Setter Property="Foreground" Value="{DynamicResource NutAccentBrightBrush}" />
+    </Style>
+
+    <!--
+      A hairline between the items, shorter than they are and centred against them, so it separates
+      without drawing a grid. It is the subtle border brush the rest of the window already uses.
+    -->
+    <Style Selector="Border.agent-section-divider">
+      <Setter Property="Width" Value="1" />
+      <Setter Property="Height" Value="20" />
+      <Setter Property="Margin" Value="3,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Background" Value="{DynamicResource NutBorderSubtleBrush}" />
     </Style>
 
     <!--
@@ -498,11 +532,12 @@
       <Setter Property="Background" Value="{DynamicResource NutAccentBrightBrush}" />
     </Style>
 
-    <!-- The glyph takes the header colour, so active, inactive and hover carry through to it. -->
-    <Style Selector="TabItem PathIcon.agent-tab-icon">
+    <!-- The glyph takes the item colour, so active, inactive and hover carry through to it. -->
+    <Style Selector="Button.agent-section-tab PathIcon.agent-tab-icon">
       <Setter Property="Width" Value="17" />
       <Setter Property="Height" Value="17" />
-      <Setter Property="Foreground" Value="{Binding $parent[TabItem].Foreground}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{Binding $parent[Button].Foreground}" />
     </Style>
 
     <Style Selector="Button.agent-reset-https">
@@ -651,13 +686,32 @@
                 <Button x:Name="SettingsButton"
                         Classes="agent-settings-button"
                         VerticalAlignment="Center"
-                        Command="{Binding ToggleSettingsCommand}"
-                        ToolTip.Tip="{Binding Strings[Settings.Title]}"
-                        AutomationProperties.Name="{Binding Strings[Settings.Title]}">
-                  <PathIcon Classes="nut-icon-gear"
-                            Data="{DynamicResource NutIconSettings}"
-                            Width="19"
-                            Height="19" />
+                        Command="{Binding HeaderActionCommand}"
+                        ToolTip.Tip="{Binding HeaderActionText}"
+                        AutomationProperties.Name="{Binding HeaderActionText}">
+                  <!--
+                    Two glyphs, one visible at a time, rather than one glyph with a swapped geometry.
+
+                    The gear carries the shared nut-icon-gear class and the turn that comes with it;
+                    the house must not. Separate elements are what keeps the rotation off the house -
+                    a single PathIcon changing its Data would keep the class, and the house would
+                    turn like a cog.
+
+                    Same button, same 36px circle, same place in the row: only the glyph and what it
+                    means change.
+                  -->
+                  <Panel Width="19" Height="19">
+                    <PathIcon Classes="nut-icon-gear"
+                              Data="{DynamicResource NutIconSettings}"
+                              Width="19"
+                              Height="19"
+                              IsVisible="{Binding ShowSettingsAction}" />
+                    <PathIcon Classes="agent-home-glyph"
+                              Data="{DynamicResource AgentIconHome}"
+                              Width="19"
+                              Height="19"
+                              IsVisible="{Binding ShowHomeAction}" />
+                  </Panel>
                 </Button>
                 <Button VerticalAlignment="Center"
                         Padding="11,6"
@@ -1320,24 +1374,60 @@
                 </StackPanel>
 
                 <!--
-                  Four tabs, in the order somebody needs them: what the agent does at boot, how this
-                  window looks, what the machine currently reports, and what this build is. The
-                  TabControl keeps its own selection, so no view-model state exists whose only job
-                  would be to remember which tab is open.
+                  Four destinations, in the order somebody needs them: what the agent does at boot,
+                  how this window looks, what the machine currently reports, and what this build is.
+
+                  Buttons and dividers rather than a TabControl. The desktop draws this pattern in
+                  Administration as a row of items sharing one surface, each marked when current by an
+                  accent line along its own bottom edge - and a TabControl generates its own strip,
+                  which leaves nowhere to put a divider. The values below are that pattern: 13,9
+                  padding, the sheen and the accent bottom border together, the hover row brush.
+
+                  Each item is as wide as its own label. Four equal columns would make "Geral" carry
+                  the width of "Aparência" for no reason other than symmetry.
                 -->
-                <TabControl x:Name="SettingsTabs">
+                <StackPanel x:Name="SettingsTabs" Orientation="Horizontal" Spacing="0">
+                  <Button Classes="agent-section-tab"
+                          Classes.selected="{Binding IsGeneralTab}"
+                          Command="{Binding SelectGeneralTabCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabGeneral}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.General]}" />
+                    </StackPanel>
+                  </Button>
+                  <Border Classes="agent-section-divider" />
+                  <Button Classes="agent-section-tab"
+                          Classes.selected="{Binding IsAppearanceTab}"
+                          Command="{Binding SelectAppearanceTabCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabAppearance}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.Appearance]}" />
+                    </StackPanel>
+                  </Button>
+                  <Border Classes="agent-section-divider" />
+                  <Button Classes="agent-section-tab"
+                          Classes.selected="{Binding IsAgentTab}"
+                          Command="{Binding SelectAgentTabCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource NutIconService}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.Agent]}" />
+                    </StackPanel>
+                  </Button>
+                  <Border Classes="agent-section-divider" />
+                  <Button Classes="agent-section-tab"
+                          Classes.selected="{Binding IsAboutTab}"
+                          Command="{Binding SelectAboutTabCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource NutIconInfo}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.About]}" />
+                    </StackPanel>
+                  </Button>
+                </StackPanel>
+
                   <!-- ================================================================ general -->
-                  <TabItem>
-                    <TabItem.Header>
-                      <StackPanel Orientation="Horizontal" Spacing="7">
-                        <PathIcon Classes="agent-tab-icon"
-                                  Data="{DynamicResource AgentIconTabGeneral}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding Strings[Settings.Tab.General]}" />
-                      </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Spacing="16" Margin="2,14,2,2">
+
+                    <StackPanel Spacing="16" Margin="2,14,2,2"
+                                IsVisible="{Binding IsGeneralTab}">
                       <StackPanel Spacing="6">
                         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="14">
                           <TextBlock Grid.Column="0"
@@ -1416,20 +1506,11 @@
                         </Border>
                       </StackPanel>
                     </StackPanel>
-                  </TabItem>
 
                   <!-- ================================================================ appearance -->
-                  <TabItem>
-                    <TabItem.Header>
-                      <StackPanel Orientation="Horizontal" Spacing="7">
-                        <PathIcon Classes="agent-tab-icon"
-                                  Data="{DynamicResource AgentIconTabAppearance}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding Strings[Settings.Tab.Appearance]}" />
-                      </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Spacing="16" Margin="2,14,2,2">
+
+                    <StackPanel Spacing="16" Margin="2,14,2,2"
+                                IsVisible="{Binding IsAppearanceTab}">
                       <StackPanel Spacing="8">
                         <TextBlock Classes="nut-card-title"
                                    FontSize="14"
@@ -1500,62 +1581,45 @@
                                      VerticalAlignment="Center"
                                      Text="{Binding Strings[Settings.Appearance.Language]}" />
                           <!--
-                            Still a flyout of radio items bound one-way, not a ComboBox.
+                            The same control the desktop application uses, showing the same thing: a
+                            ComboBox of language names, each written in its own language.
 
-                            A ComboBox writes its selection back as soon as it materialises, which once
-                            overwrote the saved preference with whatever happened to be first. These
-                            items only report what is chosen; nothing but a click changes it.
+                            It used to be a flyout showing "PT-BR", which named the code rather than
+                            the language and looked like nothing else in the product. The reason it
+                            was a flyout was that a list control assigns its selection while it
+                            materialises, and that assignment once overwrote a saved preference. That
+                            is handled in the view model now - the initial value never goes through
+                            the setter, and an echo of the current value is not a change - so the
+                            control can be the ordinary one.
+
+                            Width 200, as on the desktop: enough for "English (United States)"
+                            without a dropdown that spans the card.
                           -->
-                          <Button Grid.Column="1"
-                                  x:Name="LanguageSelector"
-                                  Classes="agent-language-selector"
-                                  VerticalAlignment="Center"
-                                  ToolTip.Tip="{Binding Strings[Language.Label]}"
-                                  AutomationProperties.Name="{Binding Strings[Language.Label]}">
-                            <Button.Flyout>
-                              <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                <MenuItem Header="{Binding Strings[Language.Portuguese]}"
-                                          ToggleType="Radio"
-                                          GroupName="AgentConfigLanguage"
-                                          IsChecked="{Binding IsPortugueseSelected, Mode=OneWay}"
-                                          Click="OnSelectPortugueseClicked" />
-                                <MenuItem Header="{Binding Strings[Language.English]}"
-                                          ToggleType="Radio"
-                                          GroupName="AgentConfigLanguage"
-                                          IsChecked="{Binding IsEnglishSelected, Mode=OneWay}"
-                                          Click="OnSelectEnglishClicked" />
-                              </MenuFlyout>
-                            </Button.Flyout>
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <TextBlock VerticalAlignment="Center"
-                                         FontWeight="SemiBold"
-                                         Text="{Binding SelectedLanguageCode}" />
-                              <PathIcon Data="{DynamicResource NutIconChevronDown}"
-                                        Width="11"
-                                        Height="11"
-                                        VerticalAlignment="Center" />
-                            </StackPanel>
-                          </Button>
+                          <ComboBox Grid.Column="1"
+                                    x:Name="LanguageSelector"
+                                    VerticalAlignment="Center"
+                                    Width="200"
+                                    ItemsSource="{Binding LanguageOptions}"
+                                    SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
+                                    ToolTip.Tip="{Binding Strings[Language.Label]}"
+                                    AutomationProperties.Name="{Binding Strings[Language.Label]}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate DataType="viewModels:AgentLanguageOption">
+                                <TextBlock Text="{Binding Title}" />
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
                         </Grid>
                         <TextBlock Classes="hint"
                                    TextWrapping="Wrap"
                                    Text="{Binding Strings[Settings.Appearance.Language.Description]}" />
                       </StackPanel>
                     </StackPanel>
-                  </TabItem>
 
                   <!-- ================================================================ agent -->
-                  <TabItem>
-                    <TabItem.Header>
-                      <StackPanel Orientation="Horizontal" Spacing="7">
-                        <PathIcon Classes="agent-tab-icon"
-                                  Data="{DynamicResource NutIconService}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding Strings[Settings.Tab.Agent]}" />
-                      </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Spacing="10" Margin="2,14,2,2">
+
+                    <StackPanel Spacing="10" Margin="2,14,2,2"
+                                IsVisible="{Binding IsAgentTab}">
                       <TextBlock Classes="hint"
                                  TextWrapping="Wrap"
                                  Text="{Binding Strings[Settings.Agent.Description]}" />
@@ -1589,20 +1653,11 @@
                                    TextWrapping="Wrap" Text="{Binding HttpsPortText}" />
                       </Grid>
                     </StackPanel>
-                  </TabItem>
 
                   <!-- ================================================================ about -->
-                  <TabItem>
-                    <TabItem.Header>
-                      <StackPanel Orientation="Horizontal" Spacing="7">
-                        <PathIcon Classes="agent-tab-icon"
-                                  Data="{DynamicResource NutIconInfo}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock VerticalAlignment="Center"
-                                   Text="{Binding Strings[Settings.Tab.About]}" />
-                      </StackPanel>
-                    </TabItem.Header>
-                    <StackPanel Spacing="7" Margin="2,10,2,2">
+
+                    <StackPanel Spacing="7" Margin="2,10,2,2"
+                                IsVisible="{Binding IsAboutTab}">
                       <!-- What this is, before what it is made of. No mark: the window already wears it. -->
                       <TextBlock Classes="nut-card-title"
                                  FontSize="15"
@@ -1690,8 +1745,6 @@
                                 Content="{Binding Strings[About.Terms.View]}" />
                       </StackPanel>
                     </StackPanel>
-                  </TabItem>
-                </TabControl>
               </StackPanel>
             </Border>
           </ScrollViewer>

@@ -112,6 +112,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // A third stored state here would be a preference nobody set masquerading as one they did.
         _selectedTheme = _preferences.ReadTheme() ?? ThemePreference.System;
         _strings = new AgentConfigStrings(_selectedLanguage);
+
+        LanguageOptions =
+        [
+            new AgentLanguageOption(UiLanguagePreference.PtBr, _strings["Language.Portuguese"]),
+            new AgentLanguageOption(UiLanguagePreference.EnUs, _strings["Language.English"]),
+        ];
+
+        // The field, not the property: assigning through the setter here would be the control
+        // reporting a selection nobody made, which is the write this guard exists to prevent.
+        _selectedLanguageOption = LanguageOptions.First(option => option.Value == _selectedLanguage);
     }
 
     // ---------------------------------------------------------------- language
@@ -130,7 +140,35 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private UiLanguagePreference _selectedLanguage;
 
-    public string SelectedLanguageCode => SelectedLanguage == UiLanguagePreference.EnUs ? "EN-US" : "PT-BR";
+    /// <summary>
+    /// The two languages this product ships, named in themselves.
+    ///
+    /// Built once. Both cultures give these entries the same text - a language is called what it
+    /// calls itself - so there is nothing here for a language change to rewrite.
+    /// </summary>
+    public IReadOnlyList<AgentLanguageOption> LanguageOptions { get; }
+
+    /// <summary>
+    /// The entry the selector shows.
+    ///
+    /// Two-way, and guarded. A list control assigns its selection as it materialises, and that
+    /// assignment once reached the preference store and overwrote a saved choice with whatever
+    /// happened to be first. The guard is what makes the control safe to bind: the initial value is
+    /// put in place without going through the setter, and an echo of the current value is not a
+    /// change.
+    /// </summary>
+    [ObservableProperty]
+    private AgentLanguageOption? _selectedLanguageOption;
+
+    /// <summary>Set while the selector is being brought in line with the preference.</summary>
+    private bool _syncingLanguage;
+
+    partial void OnSelectedLanguageOptionChanged(AgentLanguageOption? value)
+    {
+        if (_syncingLanguage || value is null) return;
+
+        SelectedLanguage = value.Value;
+    }
 
     /// <summary>
     /// The selector's two states, as booleans rather than as a selected object.
@@ -165,7 +203,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnSelectedLanguageChanged(UiLanguagePreference value)
     {
         Strings = new AgentConfigStrings(value);
-        OnPropertyChanged(nameof(SelectedLanguageCode));
+
+        // The selector follows the preference when the change came from somewhere else, and echoing
+        // it back is not a second change.
+        _syncingLanguage = true;
+        try
+        {
+            SelectedLanguageOption = LanguageOptions.FirstOrDefault(option => option.Value == value);
+        }
+        finally
+        {
+            _syncingLanguage = false;
+        }
+
         _preferences.WriteLanguage(value);
 
         // The terms are a document, not a string table: switching language means reading the other
@@ -452,6 +502,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowSettings));
         OnPropertyChanged(nameof(ShowTerms));
         OnPropertyChanged(nameof(ShowActionBar));
+        OnPropertyChanged(nameof(ShowHomeAction));
+        OnPropertyChanged(nameof(ShowSettingsAction));
+        OnPropertyChanged(nameof(HeaderActionText));
         OnPropertyChanged(nameof(ViewToggleText));
     }
 
@@ -487,14 +540,31 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         Surface = ShowDiagnostics ? AgentConfigSurface.Configuration : AgentConfigSurface.Diagnostics;
 
     /// <summary>
-    /// Settings, and back to the configuration surface.
+    /// Whether the header button offers to go home rather than to open settings.
     ///
-    /// Settings is a place you visit and leave, not a third destination in a rotation, so leaving it
-    /// returns to the window's purpose rather than to whatever was showing before.
+    /// The glyph is the action, not the location. From the configuration surface - and from
+    /// diagnostics, which keeps its own labelled control for getting back - the button opens
+    /// settings, so it is a gear. From settings and from the terms it returns to the configuration
+    /// surface, so it is a house. A gear that did not open settings would be a lie about what
+    /// pressing it does.
+    /// </summary>
+    public bool ShowHomeAction => ShowSettings || ShowTerms;
+
+    public bool ShowSettingsAction => !ShowHomeAction;
+
+    /// <summary>The tooltip and the accessible name, which are deliberately the same string.</summary>
+    public string HeaderActionText => ShowHomeAction ? Strings["Header.Home"] : Strings["Settings.Title"];
+
+    /// <summary>
+    /// Opens settings, or goes home.
+    ///
+    /// Going home is navigation and nothing else. It does not cancel, does not discard the draft and
+    /// does not re-read anything: an operator who edited a field, looked at a preference and came
+    /// back finds their edit exactly where they left it, with Apply still offering to save it.
     /// </summary>
     [RelayCommand]
-    private void ToggleSettings() =>
-        Surface = ShowSettings ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;
+    private void HeaderAction() =>
+        Surface = ShowHomeAction ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;
 
     /// <summary>
     /// The canonical terms, as blocks the page can style.
@@ -505,7 +575,47 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public ObservableCollection<AgentTermsBlock> TermsBlocks { get; } = [];
 
-    /// <summary>Opens the terms from About, loading them the first time and after a language change.</summary>
+    // ---------------------------------------------------------------- which settings panel
+
+    /// <summary>
+    /// The open panel of the settings surface.
+    ///
+    /// View-model state rather than a TabControl selection, because the strip is built from buttons
+    /// and dividers. It also means the panel survives a trip home and back, which is what somebody
+    /// expects of a place they were just looking at.
+    /// </summary>
+    [ObservableProperty]
+    private AgentSettingsTab _settingsTab = AgentSettingsTab.General;
+
+    partial void OnSettingsTabChanged(AgentSettingsTab value)
+    {
+        OnPropertyChanged(nameof(IsGeneralTab));
+        OnPropertyChanged(nameof(IsAppearanceTab));
+        OnPropertyChanged(nameof(IsAgentTab));
+        OnPropertyChanged(nameof(IsAboutTab));
+    }
+
+    public bool IsGeneralTab => SettingsTab == AgentSettingsTab.General;
+
+    public bool IsAppearanceTab => SettingsTab == AgentSettingsTab.Appearance;
+
+    public bool IsAgentTab => SettingsTab == AgentSettingsTab.Agent;
+
+    public bool IsAboutTab => SettingsTab == AgentSettingsTab.About;
+
+    [RelayCommand]
+    private void SelectGeneralTab() => SettingsTab = AgentSettingsTab.General;
+
+    [RelayCommand]
+    private void SelectAppearanceTab() => SettingsTab = AgentSettingsTab.Appearance;
+
+    [RelayCommand]
+    private void SelectAgentTab() => SettingsTab = AgentSettingsTab.Agent;
+
+    [RelayCommand]
+    private void SelectAboutTab() => SettingsTab = AgentSettingsTab.About;
+
+    /// <summary>Opens the terms from About.</summary>
     [RelayCommand]
     private void OpenTerms()
     {

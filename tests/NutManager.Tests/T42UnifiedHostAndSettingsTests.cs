@@ -213,58 +213,146 @@ public sealed class T42UnifiedHostTests
 /// </summary>
 public sealed class T42SettingsSurfaceTests
 {
+    /// <summary>
+    /// One header button with two jobs: it opens settings, or it goes home.
+    ///
+    /// The glyph is the action rather than the location. A gear that did not open settings would be
+    /// a lie about what pressing it does, so from settings and from the terms - where pressing it
+    /// returns to the configuration surface - it is a house instead.
+    /// </summary>
     [Fact]
-    public void TheGearOpensSettingsFromTheHeader()
+    public void TheHeaderButtonOffersSettingsOrHome()
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
 
         var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
         var markup = window[header..surface];
 
-        var gear = markup.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
+        var button = markup.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
         var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
 
-        Assert.True(gear >= 0, "The header must carry the settings button.");
-        Assert.True(diagnostics > gear, "The gear sits to the left of Diagnostics.");
+        Assert.True(button >= 0, "The header must carry the settings button.");
+        Assert.True(diagnostics > button, "It sits to the left of Diagnostics.");
 
-        Assert.Contains("Command=\"{Binding ToggleSettingsCommand}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"{Binding Strings[Settings.Title]}\"", markup, StringComparison.Ordinal);
-
-        // The same round shape as the theme button it replaced, so the header keeps one vocabulary.
+        Assert.Contains("Command=\"{Binding HeaderActionCommand}\"", markup, StringComparison.Ordinal);
         Assert.Contains("Classes=\"agent-settings-button\"", markup, StringComparison.Ordinal);
         Assert.Contains("Button.agent-settings-button", window, StringComparison.Ordinal);
+
+        // Two glyphs, one shown at a time, so the rotation class can belong to the gear alone.
+        Assert.Contains("IsVisible=\"{Binding ShowSettingsAction}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowHomeAction}\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Data=\"{DynamicResource AgentIconHome}\"", markup, StringComparison.Ordinal);
+
+        // Home goes to the configuration surface; the gear opens settings. One command, two answers.
+        Assert.Contains("public bool ShowHomeAction => ShowSettings || ShowTerms;", viewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "Surface = ShowHomeAction ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;",
+            viewModel,
+            StringComparison.Ordinal);
+
+        // Navigation only: going home never cancels, discards or re-reads anything.
+        var command = viewModel[viewModel.IndexOf("private void HeaderAction()", StringComparison.Ordinal)..];
+        command = command[..command.IndexOf(';', StringComparison.Ordinal)];
+        foreach (var forbidden in new[] { "Cancel", "Discard", "Reset", "Reload", "Refresh" })
+        {
+            Assert.DoesNotContain(forbidden, command, StringComparison.Ordinal);
+        }
     }
 
+    /// <summary>
+    /// Four destinations in one strip, drawn the way the desktop draws its administration sections:
+    /// items sharing a surface, separated by hairlines, the current one carrying an accent line along
+    /// its own bottom edge.
+    /// </summary>
     [Fact]
-    public void TheSettingsSurfaceHasFourTabs()
+    public void TheSettingsSurfaceHasFourSectionsSeparatedByDividers()
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
         Assert.Contains("IsVisible=\"{Binding ShowSettings}\"", window, StringComparison.Ordinal);
 
-        // Each header is an icon beside its localized name, so the strip reads as navigation rather
-        // than as four headings.
         foreach (var tab in new[] { "General", "Appearance", "Agent", "About" })
         {
             Assert.Contains($"Text=\"{{Binding Strings[Settings.Tab.{tab}]}}\"", window, StringComparison.Ordinal);
         }
 
-        Assert.Equal(4, Regex.Matches(window, "<TabItem>").Count);
-        Assert.Equal(4, Regex.Matches(window, "<TabItem.Header>").Count);
+        // Four items, four glyphs, and three hairlines between them - not four either side.
+        Assert.Equal(4, Regex.Matches(window, "Classes=\"agent-section-tab\"").Count);
         Assert.Equal(4, Regex.Matches(window, "Classes=\"agent-tab-icon\"").Count);
-        Assert.Single(Regex.Matches(window, "<TabControl "));
+        Assert.Equal(3, Regex.Matches(window, "Classes=\"agent-section-divider\"").Count);
 
-        // Under the card title, not over it: these move you around the page, they are not the page.
-        Assert.Contains("<Style Selector=\"TabItem\">", window, StringComparison.Ordinal);
+        // The strip lives directly on the settings card. A TabControl would bring its own strip, and
+        // a second card would make the navigation look like a panel of its own.
+        Assert.DoesNotContain("<TabControl", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<TabItem", window, StringComparison.Ordinal);
+
+        var strip = window[window.IndexOf("x:Name=\"SettingsTabs\"", StringComparison.Ordinal)..];
+        strip = strip[..strip.IndexOf("Settings.Tab.About", StringComparison.Ordinal)];
+        Assert.DoesNotContain("agent-shell-card", strip, StringComparison.Ordinal);
+        Assert.DoesNotContain("nut-card", strip, StringComparison.Ordinal);
+
+        // Each item is as wide as its own label: no fixed widths, no equal columns.
+        Assert.DoesNotContain("Width=\"", strip, StringComparison.Ordinal);
+        Assert.DoesNotContain("<UniformGrid", strip, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnDefinitions", strip, StringComparison.Ordinal);
+
+        // Compact, and still clearly under the card title rather than over it.
+        Assert.Contains("<Setter Property=\"FontSize\" Value=\"17\" />", window, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The current section is marked by an accent line along the bottom of its own button, with the
+    /// same low-contrast sheen behind it that the desktop uses.
+    ///
+    /// The sheen on its own was the whole marker for one round, and it made each item read as a small
+    /// filled card. The desktop uses both together, and the line is what actually says "this one".
+    /// </summary>
+    [Fact]
+    public void TheCurrentSectionIsMarkedByAnAccentLineOnItsOwnButton()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var shell = T42UnifiedHostTests.Read("src/NutManager.App/Presentation/Themes/NutShellStyles.axaml");
+
+        // The line is a bottom border on the item, so it can only ever be as wide as the item.
         Assert.Contains(
-            "<Setter Property=\"FontSize\" Value=\"17\" />",
+            "<Setter Property=\"BorderThickness\" Value=\"0,0,0,2\" />",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"BorderThickness\" Value=\"0,0,0,2\" />",
+            shell,
+            StringComparison.Ordinal);
 
-        // Selected takes the accent; the rest stay secondary.
-        Assert.Contains("TabItem:selected", window, StringComparison.Ordinal);
-        Assert.Contains("TabItem:pointerover", window, StringComparison.Ordinal);
+        var selected = window[window.IndexOf(
+            "Button.agent-section-tab.selected /template/ ContentPresenter", StringComparison.Ordinal)..];
+        selected = selected[..selected.IndexOf("</Style>", StringComparison.Ordinal)];
+        Assert.Contains("NutAccentBrush", selected, StringComparison.Ordinal);
+        Assert.Contains("NutSelectedSheenBrush", selected, StringComparison.Ordinal);
+
+        // Accent, never a semantic colour.
+        Assert.DoesNotContain("NutCriticalBrush", selected, StringComparison.Ordinal);
+        Assert.DoesNotContain("NutWarningBrush", selected, StringComparison.Ordinal);
+
+        // The desktop values, mirrored: padding, radius, and both brush transitions.
+        foreach (var expected in new[]
+                 {
+                     "<Setter Property=\"Padding\" Value=\"13,9\" />",
+                     "<Setter Property=\"CornerRadius\" Value=\"14\" />",
+                     "<BrushTransition Property=\"Background\" Duration=\"0:0:0.14\" />",
+                     "<BrushTransition Property=\"BorderBrush\" Duration=\"0:0:0.18\" />",
+                     "NutGlassRowHoverBrush",
+                 })
+        {
+            Assert.Contains(expected, shell, StringComparison.Ordinal);
+            Assert.Contains(expected, window, StringComparison.Ordinal);
+        }
+
+        // The glyph of the current item takes the accent, as it does in the shell.
+        Assert.Contains("Button.agent-section-tab.selected PathIcon", window, StringComparison.Ordinal);
+        Assert.Contains("<Setter Property=\"FontWeight\" Value=\"SemiBold\" />", window, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -288,16 +376,16 @@ public sealed class T42SettingsSurfaceTests
     }
 
     /// <summary>
-    /// The Agent tab reports and does not act. Every binding on it is a read, and no command, button
-    /// or editable field appears in it.
+    /// The Agent panel reports and does not act. Every binding on it is a read, and no command,
+    /// button or editable field appears in it.
     /// </summary>
     [Fact]
     public void TheAgentTabIsReadOnly()
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
-        var start = window.IndexOf("Strings[Settings.Tab.Agent]", StringComparison.Ordinal);
-        var end = window.IndexOf("Strings[Settings.Tab.About]", start, StringComparison.Ordinal);
+        var start = window.IndexOf("IsVisible=\"{Binding IsAgentTab}\"", StringComparison.Ordinal);
+        var end = window.IndexOf("IsVisible=\"{Binding IsAboutTab}\"", start, StringComparison.Ordinal);
         var tab = window[start..end];
 
         foreach (var reported in new[]
@@ -326,7 +414,7 @@ public sealed class T42SettingsSurfaceTests
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
-        var about = window[window.IndexOf("Strings[Settings.Tab.About]", StringComparison.Ordinal)..];
+        var about = window[window.IndexOf("IsVisible=\"{Binding IsAboutTab}\"", StringComparison.Ordinal)..];
 
         foreach (var reported in new[]
                  {
@@ -691,29 +779,66 @@ public sealed class T42RefinementTests
     }
 
     /// <summary>
-    /// The gear announces itself in both languages, and the name it gives is the one the tooltip
-    /// shows - a button whose accessible name differed from its tooltip would be two controls to
-    /// anyone reading it through a screen reader.
+    /// The header button announces what pressing it does, in both languages, and the name it gives is
+    /// the one the tooltip shows - a button whose accessible name differed from its tooltip would be
+    /// two controls to anyone reading it through a screen reader.
     /// </summary>
     [Fact]
-    public void TheGearIsNamedInBothLanguages()
+    public void TheHeaderButtonIsNamedForItsActionInBothLanguages()
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
         var strings = T42UnifiedHostTests.Read(
             "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
 
-        var gear = window.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
-        var closing = window.IndexOf("</Button>", gear, StringComparison.Ordinal);
-        var markup = window[gear..closing];
+        var button = window.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
+        var closing = window.IndexOf("</Button>", button, StringComparison.Ordinal);
+        var markup = window[button..closing];
 
-        Assert.Contains("ToolTip.Tip=\"{Binding Strings[Settings.Title]}\"", markup, StringComparison.Ordinal);
+        // One string for both, and it follows the glyph rather than naming a fixed destination.
+        Assert.Contains("ToolTip.Tip=\"{Binding HeaderActionText}\"", markup, StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"{Binding Strings[Settings.Title]}\"",
+            "AutomationProperties.Name=\"{Binding HeaderActionText}\"",
             markup,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "HeaderActionText => ShowHomeAction ? Strings[\"Header.Home\"] : Strings[\"Settings.Title\"];",
+            viewModel,
             StringComparison.Ordinal);
 
         Assert.Contains("[\"Settings.Title\"] = \"Configurações\"", strings, StringComparison.Ordinal);
         Assert.Contains("[\"Settings.Title\"] = \"Settings\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Header.Home\"] = \"Início\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Header.Home\"] = \"Home\"", strings, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The house does not turn like a cog.
+    ///
+    /// The rotation comes from a class, so the class must not be on the house. Two elements rather
+    /// than one with a swapped geometry is what guarantees that.
+    /// </summary>
+    [Fact]
+    public void TheHomeGlyphDoesNotTakeTheGearRotation()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var home = window.IndexOf("Data=\"{DynamicResource AgentIconHome}\"", StringComparison.Ordinal);
+        var element = window.LastIndexOf("<PathIcon", home, StringComparison.Ordinal);
+        Assert.DoesNotContain("nut-icon-gear", window[element..home], StringComparison.Ordinal);
+
+        Assert.Contains(
+            "<Style Selector=\"Button.agent-settings-button:pointerover PathIcon.agent-home-glyph\">",
+            window,
+            StringComparison.Ordinal);
+
+        // It lifts rather than spins, and still never loops.
+        var motion = window[window.IndexOf(
+            "Button.agent-settings-button:pointerover PathIcon.agent-home-glyph", StringComparison.Ordinal)..];
+        motion = motion[..motion.IndexOf("</Style>", StringComparison.Ordinal)];
+        Assert.Contains("scale(1.08)", motion, StringComparison.Ordinal);
+        Assert.DoesNotContain("rotate", motion, StringComparison.Ordinal);
     }
 
     /// <summary>

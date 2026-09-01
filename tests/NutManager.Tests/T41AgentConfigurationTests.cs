@@ -1045,36 +1045,53 @@ public sealed class T41AgentConfigSurfaceTests
     }
 
     /// <summary>
-    /// The language selector moved to Appearance and still offers exactly what ships.
+    /// The language selector is the desktop application control, showing what the desktop shows:
+    /// each language written in its own name.
     ///
-    /// Still a flyout of radio menu items bound one-way, and still never a ComboBox: a ComboBox writes
-    /// its selection back the moment it materialises, which is how the saved preference was once
-    /// overwritten by whichever entry happened to be first.
+    /// It used to be a flyout labelled "PT-BR", which names a culture code rather than a language.
+    /// The flyout existed because a list control assigns its selection while it materialises, and
+    /// that assignment once overwrote a saved preference - which is handled in the view model now,
+    /// so the control can be the ordinary ComboBox the desktop uses.
     /// </summary>
     [Fact]
-    public void TheLanguageSelectorSitsInAppearance()
+    public void TheLanguageSelectorIsAComboBoxOfLanguageNames()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var strings = Read("src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+        var desktop = Read("src/NutManager.App/Views/SettingsPageView.axaml");
 
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", StringComparison.Ordinal);
         var selector = window.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
-
         Assert.True(selector > surface, "The language selector belongs in the settings surface.");
 
-        var markup = window[selector..];
-        Assert.Contains("<MenuFlyout", markup, StringComparison.Ordinal);
-        Assert.Contains("Header=\"{Binding Strings[Language.Portuguese]}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Header=\"{Binding Strings[Language.English]}\"", markup, StringComparison.Ordinal);
-        Assert.Equal(2, Regex.Matches(markup, "ToggleType=\"Radio\"").Count);
-        Assert.Contains("Text=\"{Binding SelectedLanguageCode}\"", markup, StringComparison.Ordinal);
+        var markup = window[selector..(selector + 1200)];
+        Assert.Contains("ItemsSource=\"{Binding LanguageOptions}\"", markup, StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{Binding SelectedLanguageOption, Mode=TwoWay}\"",
+            markup,
+            StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding Title}\"", markup, StringComparison.Ordinal);
 
-        // One selector in the window, and the checked state is reported rather than written.
+        // The same width the desktop gives its own preference dropdowns.
+        Assert.Contains("Width=\"200\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Width=\"200\"", desktop, StringComparison.Ordinal);
+
+        // The culture code is gone from the window entirely, and the names are autonyms: both
+        // cultures spell them the same way, because a language is called what it calls itself.
+        Assert.DoesNotContain("SelectedLanguageCode", window, StringComparison.Ordinal);
+
+        // The control itself, not the comment above it: the markup explains at length that "PT-BR"
+        // is what this used to show, and that sentence is not the label coming back.
+        Assert.DoesNotContain("PT-BR", markup, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(strings, Regex.Escape("Português (Brasil)")).Count);
+        Assert.Equal(2, Regex.Matches(strings, Regex.Escape("English (United States)")).Count);
+
+        // One selector, and no radio flyout left behind.
         Assert.Single(Regex.Matches(window, "x:Name=\"LanguageSelector\""));
-        Assert.Single(Regex.Matches(window, "SelectedLanguageCode"));
-        Assert.Equal(2, Regex.Matches(window, "Mode=OneWay").Count);
-        Assert.DoesNotContain("<ComboBox", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<MenuFlyout", window, StringComparison.Ordinal);
         Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
     }
+
 
     private static string Read(string relativePath) =>
         File.ReadAllText(Path.Combine(RepositoryRoot(), relativePath));
@@ -3599,7 +3616,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(viewModel.ShowConfiguration);
         Assert.True(viewModel.ShowActionBar);
 
-        viewModel.ToggleSettingsCommand.Execute(null);
+        viewModel.HeaderActionCommand.Execute(null);
         Assert.True(viewModel.ShowSettings);
         Assert.False(viewModel.ShowActionBar);
 
@@ -3613,7 +3630,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.False(viewModel.ShowTerms);
         Assert.False(viewModel.ShowActionBar);
 
-        viewModel.ToggleSettingsCommand.Execute(null);
+        viewModel.HeaderActionCommand.Execute(null);
         Assert.True(viewModel.ShowConfiguration);
         Assert.True(viewModel.ShowActionBar);
     }
@@ -3628,6 +3645,202 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.True(context.ViewModel.ShowDiagnostics);
         Assert.True(context.ViewModel.ShowActionBar);
+    }
+
+    // ---------------------------------------------------------------- T42: navigation and language
+
+    /// <summary>
+    /// The selector opens on the saved language and does not write anything on the way.
+    ///
+    /// This is the regression that made the control a flyout in the first place: a list control
+    /// assigns its selection while it materialises, and that assignment reached the preference store.
+    /// The saved value must survive a window that is merely opened and closed.
+    /// </summary>
+    [Fact]
+    public void OpeningTheWindowDoesNotWriteTheLanguagePreference()
+    {
+        var preferences = new FakePreferences(saved: UiLanguagePreference.EnUs);
+        var context = CreateContext(preferences: preferences, language: null);
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguage);
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguageOption?.Value);
+        Assert.Equal(0, preferences.Writes);
+        Assert.Equal(UiLanguagePreference.EnUs, preferences.Saved);
+    }
+
+    /// <summary>The list names each language in its own language, exactly as the desktop lists them.</summary>
+    [Fact]
+    public void TheLanguageListNamesEachLanguageInItself()
+    {
+        var context = CreateContext();
+
+        Assert.Collection(
+            context.ViewModel.LanguageOptions,
+            option =>
+            {
+                Assert.Equal(UiLanguagePreference.PtBr, option.Value);
+                Assert.Equal("Português (Brasil)", option.Title);
+            },
+            option =>
+            {
+                Assert.Equal(UiLanguagePreference.EnUs, option.Value);
+                Assert.Equal("English (United States)", option.Title);
+            });
+    }
+
+    /// <summary>
+    /// Choosing a language applies it at once and saves it, and touches nothing that belongs to the
+    /// configuration draft.
+    /// </summary>
+    [Fact]
+    public async Task ChoosingALanguageAppliesAndPersistsItWithoutTouchingTheDraft()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences, language: UiLanguagePreference.PtBr);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.SelectedLanguageOption =
+            context.ViewModel.LanguageOptions.Single(option => option.Value == UiLanguagePreference.EnUs);
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguage);
+        Assert.Equal("Settings", context.ViewModel.Strings["Settings.Title"]);
+        Assert.Equal(UiLanguagePreference.EnUs, preferences.Saved);
+        Assert.Equal(1, preferences.Writes);
+
+        // A window preference is not a configuration change.
+        Assert.False(context.ViewModel.IsDirty);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>A language set from elsewhere brings the selector with it, and is not echoed back.</summary>
+    [Fact]
+    public void TheSelectorFollowsALanguageChangedElsewhere()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences, language: UiLanguagePreference.PtBr);
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.EnUs;
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguageOption?.Value);
+        Assert.Equal(1, preferences.Writes);
+    }
+
+    /// <summary>
+    /// The header button offers the action that is actually available: settings from the configuration
+    /// surface and from diagnostics, home from settings and from the terms.
+    /// </summary>
+    [Fact]
+    public void TheHeaderButtonOffersSettingsUntilYouAreInThem()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        Assert.True(viewModel.ShowSettingsAction);
+        Assert.Equal("Settings", viewModel.HeaderActionText);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.True(viewModel.ShowHomeAction);
+        Assert.Equal("Home", viewModel.HeaderActionText);
+
+        // From the terms it still goes home, and home is the configuration surface - not settings.
+        viewModel.OpenTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowHomeAction);
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+
+        // Diagnostics keeps its own labelled control for getting back, so the gear still offers the
+        // one thing it is for.
+        viewModel.ToggleDiagnosticsCommand.Execute(null);
+        Assert.True(viewModel.ShowDiagnostics);
+        Assert.True(viewModel.ShowSettingsAction);
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+    }
+
+    /// <summary>
+    /// Going home is navigation. An operator who edits a field, looks at a preference and comes back
+    /// finds the edit where they left it, with Apply still offering to save it.
+    /// </summary>
+    [Fact]
+    public async Task GoingHomeKeepsTheDraftExactlyAsItWas()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        EnableValidHttps(context.ViewModel);
+        Assert.True(context.ViewModel.IsDirty);
+        Assert.True(context.ViewModel.CanApply);
+
+        var host = context.ViewModel.HttpsHost;
+        var port = context.ViewModel.HttpsPort;
+        var certificate = context.ViewModel.SelectedCertificate;
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowSettings);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowConfiguration);
+
+        Assert.True(context.ViewModel.IsDirty);
+        Assert.True(context.ViewModel.CanApply);
+        Assert.Equal(host, context.ViewModel.HttpsHost);
+        Assert.Equal(port, context.ViewModel.HttpsPort);
+        Assert.Same(certificate, context.ViewModel.SelectedCertificate);
+
+        // Nothing was saved and nothing was rolled back: the trip wrote no configuration at all.
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>
+    /// The panel you were reading is the panel you come back to. Nothing resets it to the first one.
+    /// </summary>
+    [Fact]
+    public void TheSettingsPanelSurvivesATripHome()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        viewModel.HeaderActionCommand.Execute(null);
+        viewModel.SelectAboutTabCommand.Execute(null);
+        Assert.True(viewModel.IsAboutTab);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.True(viewModel.IsAboutTab);
+        Assert.False(viewModel.IsGeneralTab);
+    }
+
+    /// <summary>One panel at a time, and always exactly one.</summary>
+    [Fact]
+    public void ExactlyOneSettingsPanelIsShown()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        foreach (var select in new Action[]
+                 {
+                     () => viewModel.SelectGeneralTabCommand.Execute(null),
+                     () => viewModel.SelectAppearanceTabCommand.Execute(null),
+                     () => viewModel.SelectAgentTabCommand.Execute(null),
+                     () => viewModel.SelectAboutTabCommand.Execute(null),
+                 })
+        {
+            select();
+
+            var shown = new[]
+            {
+                viewModel.IsGeneralTab,
+                viewModel.IsAppearanceTab,
+                viewModel.IsAgentTab,
+                viewModel.IsAboutTab,
+            };
+
+            Assert.Single(shown, flag => flag);
+        }
     }
 
     private static void EnableValidHttps(AgentConfigViewModel viewModel)

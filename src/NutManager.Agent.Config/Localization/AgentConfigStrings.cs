@@ -23,6 +23,7 @@ public sealed class AgentConfigStrings
         ["Window.Title"] = "NutManager Agent Config",
         ["Header.Subtitle"] = "Configure os protocolos e o acesso do NutManager Agent.",
         ["Header.Diagnostics"] = "Diagnóstico",
+        ["Header.Home"] = "Início",
         ["Header.Configuration"] = "Configuração",
 
         ["Transport.Title"] = "Transporte",
@@ -339,6 +340,7 @@ public sealed class AgentConfigStrings
         ["Window.Title"] = "NutManager Agent Config",
         ["Header.Subtitle"] = "Configure the NutManager Agent's protocols and access.",
         ["Header.Diagnostics"] = "Diagnostics",
+        ["Header.Home"] = "Home",
         ["Header.Configuration"] = "Configuration",
 
         ["Transport.Title"] = "Transport",
