@@ -380,4 +380,13 @@ public enum AgentConfigSurface
 
     /// <summary>Preferences, the startup choice, and the one destructive action.</summary>
     Settings,
+
+    /// <summary>
+    /// The full terms of use, reached from About and returning to it.
+    ///
+    /// A surface rather than a second window or a browser: the terms are part of this product, and
+    /// sending an operator out to a browser to read what they have already installed - on a server
+    /// that may have no browser at all - is not reading the terms, it is hoping.
+    /// </summary>
+    Terms,
 }

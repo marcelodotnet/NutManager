@@ -167,6 +167,13 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         Strings = new AgentConfigStrings(value);
         OnPropertyChanged(nameof(SelectedLanguageCode));
         _preferences.WriteLanguage(value);
+
+        // The terms are a document, not a string table: switching language means reading the other
+        // file. Cleared rather than re-read here, so a session that never opens the page never pays
+        // for it - and one that is looking at it gets the other language on the next open.
+        TermsBlocks.Clear();
+        if (ShowTerms) LoadTerms();
+
         RelocalizeSurface();
     }
 
@@ -293,11 +300,40 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool ShowDarkThemeAction => !ShowLightThemeAction;
 
     /// <summary>
-    /// The tooltip and the accessible name, which are deliberately the same string.
+    /// The two halves of the segmented control, each naming the theme it selects.
     ///
-    /// It names the action, not the state: in dark mode the button says "Enable light mode" and shows
-    /// a sun. A button that announced the theme it is already in would leave somebody using a screen
-    /// reader with no idea what pressing it does.
+    /// A pair of explicit choices rather than one toggle: the control shows both destinations at
+    /// once, and its filled half says which one you are in. Choosing writes Light or Dark outright,
+    /// which is the honest consequence of showing two positions - once somebody has chosen, this
+    /// window stops following Windows.
+    ///
+    /// Nothing here touches the Agent: no dirty flag, no Apply, no store, no service, no HTTP.sys.
+    /// </summary>
+    [RelayCommand]
+    private void SelectLightTheme() => SelectedTheme = ThemePreference.Light;
+
+    [RelayCommand]
+    private void SelectDarkTheme() => SelectedTheme = ThemePreference.Dark;
+
+    /// <summary>
+    /// Which theme is selected, resolving System against what is actually on screen.
+    ///
+    /// Reported rather than set: the two commands above are how it changes. Kept because the settings
+    /// tests read it, and because it states in one place what "currently dark" means.
+    /// </summary>
+    public bool IsDarkThemeSelected => SelectedTheme switch
+    {
+        ThemePreference.Dark => true,
+        ThemePreference.Light => false,
+        _ => IsEffectiveDark,
+    };
+
+    /// <summary>
+    /// The sentence beside the control, and the accessible name of each half.
+    ///
+    /// It names the action rather than the state: in dark mode it reads "Enable light mode". A label
+    /// that announced the theme you are already in would leave somebody using a screen reader with no
+    /// idea what the control does.
     /// </summary>
     public string ThemeActionText => ShowLightThemeAction
         ? Strings["Theme.EnableLight"]
@@ -317,6 +353,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowLightThemeAction));
         OnPropertyChanged(nameof(ShowDarkThemeAction));
         OnPropertyChanged(nameof(ThemeActionText));
+        OnPropertyChanged(nameof(IsDarkThemeSelected));
     }
 
     /// <summary>
@@ -413,6 +450,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowConfiguration));
         OnPropertyChanged(nameof(ShowDiagnostics));
         OnPropertyChanged(nameof(ShowSettings));
+        OnPropertyChanged(nameof(ShowTerms));
+        OnPropertyChanged(nameof(ShowActionBar));
         OnPropertyChanged(nameof(ViewToggleText));
     }
 
@@ -421,6 +460,21 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool ShowDiagnostics => Surface == AgentConfigSurface.Diagnostics;
 
     public bool ShowSettings => Surface == AgentConfigSurface.Settings;
+
+    public bool ShowTerms => Surface == AgentConfigSurface.Terms;
+
+    /// <summary>
+    /// Whether Apply and Cancel belong on screen.
+    ///
+    /// They are the draft controls of the configuration surface: they save the transport document and
+    /// nothing else. Settings changes the theme, the language and a service start type, and every one
+    /// of those takes effect when it is made; the terms are a document. Showing Apply beside either
+    /// would promise that something on the page is waiting to be saved, and nothing is.
+    ///
+    /// Diagnostics keeps them, because it is a read-only view of the same configuration the draft
+    /// belongs to and losing the buttons on the way there was never part of this.
+    /// </summary>
+    public bool ShowActionBar => !ShowSettings && !ShowTerms;
 
     /// <summary>
     /// The toggle's label names where it goes, not where you are. Localized text belongs on the view
@@ -441,6 +495,40 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [RelayCommand]
     private void ToggleSettings() =>
         Surface = ShowSettings ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;
+
+    /// <summary>
+    /// The canonical terms, as blocks the page can style.
+    ///
+    /// Filled on first use rather than at construction: most sessions never open this page, and
+    /// parsing three hundred lines of a document nobody asked for is work done on the way to the
+    /// window appearing.
+    /// </summary>
+    public ObservableCollection<AgentTermsBlock> TermsBlocks { get; } = [];
+
+    /// <summary>Opens the terms from About, loading them the first time and after a language change.</summary>
+    [RelayCommand]
+    private void OpenTerms()
+    {
+        LoadTerms();
+        Surface = AgentConfigSurface.Terms;
+    }
+
+    private void LoadTerms()
+    {
+        if (TermsBlocks.Count > 0) return;
+
+        foreach (var block in AgentTermsDocument.Read(SelectedLanguage)) TermsBlocks.Add(block);
+    }
+
+    /// <summary>
+    /// Back to settings, which comes back showing About.
+    ///
+    /// The tab strip holds its own selection, so returning here lands on the tab the reader left from
+    /// rather than resetting to the first one - which is the whole difference between going back and
+    /// starting over.
+    /// </summary>
+    [RelayCommand]
+    private void CloseTerms() => Surface = AgentConfigSurface.Settings;
 
     // ---------------------------------------------------------------- transports
 
@@ -1903,6 +1991,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             var certificates = _certificates.List();
             _machine = await _inventory.DescribeAsync(cancellationToken).ConfigureAwait(true);
 
+            // About binds these once. Diagnostics survived without this because it rebuilds an
+            // observable collection, so the two views disagreed: the same machine reading appeared in
+            // the diagnostics list and stayed "unknown" on the About tab.
+            OnPropertyChanged(nameof(AboutDotNetRuntime));
+            OnPropertyChanged(nameof(AboutAspNetCoreRuntime));
+
             ReloadCertificates(null, null, certificates);
 
             _confirmed = document;
@@ -2362,14 +2456,37 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         typeof(AgentConfigViewModel).Assembly.GetName().Version?.ToString(3) ?? Strings["About.Unknown"];
 
     /// <summary>
-    /// The full informational version, which carries whatever the build stamped onto it. Shown as the
-    /// build rather than parsed: a version string is the build's statement about itself.
+    /// The build, which is the commit the version was stamped from rather than the version again.
+    ///
+    /// An informational version reads "1.0.1+bd49437e6f63249..." - correct, and forty characters of
+    /// it are a number nobody reads at that length. The version is already on the line above, so what
+    /// is useful here is the part after the plus: short enough to take in at a glance, long enough to
+    /// find. A build with no commit metadata shows the version it does have rather than nothing.
     /// </summary>
-    public string AboutBuild =>
+    public string AboutBuild => ShortenBuild(
         typeof(AgentConfigViewModel).Assembly
             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
             .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
-            .FirstOrDefault()?.InformationalVersion ?? AboutVersion;
+            .FirstOrDefault()?.InformationalVersion,
+        AboutVersion);
+
+    /// <summary>
+    /// The commit out of an informational version, abbreviated. Separated from the property so the
+    /// policy can be exercised against strings this build does not happen to produce.
+    /// </summary>
+    internal static string ShortenBuild(string? informational, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(informational)) return fallback;
+
+        var plus = informational.IndexOf('+', StringComparison.Ordinal);
+        if (plus < 0 || plus == informational.Length - 1) return informational;
+
+        var metadata = informational[(plus + 1)..];
+        return metadata.Length <= ShortCommitLength ? metadata : metadata[..ShortCommitLength];
+    }
+
+    /// <summary>Seven characters, which is what Git itself abbreviates to.</summary>
+    private const int ShortCommitLength = 7;
 
     /// <summary>Read from the same inventory the diagnostics list reports, so the two cannot disagree.</summary>
     public string AboutDotNetRuntime => _machine.DotNetRuntimeVersion ?? Strings["About.Unknown"];

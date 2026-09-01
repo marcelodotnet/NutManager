@@ -1,5 +1,7 @@
 using System.Text.RegularExpressions;
 using NutManager.Agent;
+using NutManager.Agent.Config.Localization;
+using NutManager.Agent.Config.ViewModels;
 using NutManager.Core.Agent;
 using Xunit;
 
@@ -241,13 +243,28 @@ public sealed class T42SettingsSurfaceTests
 
         Assert.Contains("IsVisible=\"{Binding ShowSettings}\"", window, StringComparison.Ordinal);
 
+        // Each header is an icon beside its localized name, so the strip reads as navigation rather
+        // than as four headings.
         foreach (var tab in new[] { "General", "Appearance", "Agent", "About" })
         {
-            Assert.Contains($"Header=\"{{Binding Strings[Settings.Tab.{tab}]}}\"", window, StringComparison.Ordinal);
+            Assert.Contains($"Text=\"{{Binding Strings[Settings.Tab.{tab}]}}\"", window, StringComparison.Ordinal);
         }
 
-        Assert.Equal(4, Regex.Matches(window, "<TabItem ").Count);
+        Assert.Equal(4, Regex.Matches(window, "<TabItem>").Count);
+        Assert.Equal(4, Regex.Matches(window, "<TabItem.Header>").Count);
+        Assert.Equal(4, Regex.Matches(window, "Classes=\"agent-tab-icon\"").Count);
         Assert.Single(Regex.Matches(window, "<TabControl "));
+
+        // Under the card title, not over it: these move you around the page, they are not the page.
+        Assert.Contains("<Style Selector=\"TabItem\">", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"FontSize\" Value=\"17\" />",
+            window,
+            StringComparison.Ordinal);
+
+        // Selected takes the accent; the rest stay secondary.
+        Assert.Contains("TabItem:selected", window, StringComparison.Ordinal);
+        Assert.Contains("TabItem:pointerover", window, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -279,8 +296,8 @@ public sealed class T42SettingsSurfaceTests
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
-        var start = window.IndexOf("Header=\"{Binding Strings[Settings.Tab.Agent]}\"", StringComparison.Ordinal);
-        var end = window.IndexOf("Header=\"{Binding Strings[Settings.Tab.About]}\"", start, StringComparison.Ordinal);
+        var start = window.IndexOf("Strings[Settings.Tab.Agent]", StringComparison.Ordinal);
+        var end = window.IndexOf("Strings[Settings.Tab.About]", start, StringComparison.Ordinal);
         var tab = window[start..end];
 
         foreach (var reported in new[]
@@ -309,7 +326,7 @@ public sealed class T42SettingsSurfaceTests
     {
         var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
-        var about = window[window.IndexOf("Header=\"{Binding Strings[Settings.Tab.About]}\"", StringComparison.Ordinal)..];
+        var about = window[window.IndexOf("Strings[Settings.Tab.About]", StringComparison.Ordinal)..];
 
         foreach (var reported in new[]
                  {
@@ -324,15 +341,32 @@ public sealed class T42SettingsSurfaceTests
             Assert.Contains(reported, about, StringComparison.Ordinal);
         }
 
+        // The product names itself before listing what it is made of.
+        Assert.Contains("Strings[About.Product]", about, StringComparison.Ordinal);
+
         Assert.Contains("Strings[About.Terms]", about, StringComparison.Ordinal);
         Assert.DoesNotContain("<Image", about, StringComparison.Ordinal);
         Assert.DoesNotContain("Licen", about, StringComparison.Ordinal);
+
+        // The address is the link: one control, in the desktop application textual link style, rather
+        // than an address to read and a separate button to press.
+        Assert.Contains("Classes=\"nut-link\"", about, StringComparison.Ordinal);
+        Assert.Contains("Content=\"{Binding AboutProjectPageUrl}\"", about, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Content=\"{Binding Strings[About.ProjectPage.Open]}\"",
+            about,
+            StringComparison.Ordinal);
 
         // The command takes nothing. There is no text box, and no parameter, by which a target could
         // be supplied from the window.
         Assert.Contains("Command=\"{Binding OpenProjectPageCommand}\"", about, StringComparison.Ordinal);
         Assert.DoesNotContain("CommandParameter", about, StringComparison.Ordinal);
         Assert.DoesNotContain("<TextBox", about, StringComparison.Ordinal);
+
+        // The terms are reached from here, and the long legal text no longer sits inline.
+        Assert.Contains("Command=\"{Binding OpenTermsCommand}\"", about, StringComparison.Ordinal);
+        Assert.Contains("Strings[About.Terms.View]", about, StringComparison.Ordinal);
+        Assert.DoesNotContain("About.Terms.Text", window, StringComparison.Ordinal);
     }
 }
 
@@ -480,5 +514,231 @@ public sealed class T42ServiceStartupContractTests
                 Assert.DoesNotContain(forbidden, source, StringComparison.OrdinalIgnoreCase);
             }
         }
+    }
+}
+
+/// <summary>
+/// The build line, the terms document, and the pages this round added or moved.
+/// </summary>
+public sealed class T42RefinementTests
+{
+    /// <summary>
+    /// The build shows the commit, abbreviated, and leaves the version to the line above it.
+    ///
+    /// "1.0.1+bd49437e6f63249..." is correct and unreadable at that length, and it repeats a version
+    /// already on screen. What is useful is the part after the plus, short enough to take in.
+    /// </summary>
+    [Theory]
+    [InlineData("1.0.1+bd49437e6f632492b4ac0b0ee7ab9d8a1f0e6c11", "bd49437")]
+    [InlineData("1.0.1+abcdef123456", "abcdef1")]
+    [InlineData("1.0.1+abc", "abc")]
+    public void TheBuildIsTheCommitAbbreviated(string informational, string expected) =>
+        Assert.Equal(expected, AgentConfigViewModel.ShortenBuild(informational, "1.0.1"));
+
+    /// <summary>
+    /// A build with no commit metadata reports what it does have rather than nothing, and never
+    /// invents a hash.
+    /// </summary>
+    [Theory]
+    [InlineData("1.0.1", "1.0.1")]
+    [InlineData("1.0.1+", "1.0.1+")]
+    public void ABuildWithoutCommitMetadataFallsBack(string informational, string expected) =>
+        Assert.Equal(expected, AgentConfigViewModel.ShortenBuild(informational, "1.0.1"));
+
+    [Fact]
+    public void AnAbsentInformationalVersionFallsBackToTheVersion() =>
+        Assert.Equal("1.0.1", AgentConfigViewModel.ShortenBuild(null, "1.0.1"));
+
+    /// <summary>
+    /// The terms are the canonical documents, parsed - not a paraphrase kept beside them.
+    ///
+    /// The repository maintenance notes in those files say which copy is canonical and what still has
+    /// to be regenerated. They are not part of the legal text and must never reach an operator, which
+    /// is the same rule the installer RTF generator applies to the same two files.
+    /// </summary>
+    [Fact]
+    public void TheTermsParserKeepsTheLegalTextAndDropsTheMaintenanceNotes()
+    {
+        var markdown = string.Join(
+            "\n",
+            "# Terms of Use",
+            "",
+            "<!--",
+            "  TRANSLATION. Regenerate the RTF after editing.",
+            "  PENDING: re-synchronise before tagging.",
+            "-->",
+            "",
+            "**Last updated:** 27 August 2026",
+            "",
+            "## 1. About",
+            "",
+            "NutManager is **open-source** software.",
+            "",
+            "- A first item",
+            "- A second item",
+            "",
+            "---");
+
+        var blocks = AgentTermsDocument.Parse(markdown);
+
+        Assert.Equal(AgentTermsBlockKind.Title, blocks[0].Kind);
+        Assert.Equal("Terms of Use", blocks[0].Text);
+
+        // Nothing from inside the comment survives, on any line of it.
+        Assert.DoesNotContain(blocks, block => block.Text.Contains("TRANSLATION", StringComparison.Ordinal));
+        Assert.DoesNotContain(blocks, block => block.Text.Contains("Regenerate", StringComparison.Ordinal));
+        Assert.DoesNotContain(blocks, block => block.Text.Contains("PENDING", StringComparison.Ordinal));
+
+        Assert.Contains(blocks, block =>
+            block.Kind == AgentTermsBlockKind.Heading && block.Text == "1. About");
+
+        // Emphasis markers are presentation and go; the words between them are the term and stay.
+        Assert.Contains(blocks, block =>
+            block.Kind == AgentTermsBlockKind.Paragraph &&
+            block.Text == "NutManager is open-source software.");
+        Assert.DoesNotContain(blocks, block => block.Text.Contains("**", StringComparison.Ordinal));
+
+        Assert.Equal(2, blocks.Count(block => block.Kind == AgentTermsBlockKind.Bullet));
+
+        // A rule is a separator, and the headings already separate the sections.
+        Assert.DoesNotContain(blocks, block => block.Text == "---");
+    }
+
+    /// <summary>Both canonical documents are shipped, so neither language opens an empty page.</summary>
+    [Fact]
+    public void BothCanonicalTermsDocumentsAreLinkedIntoTheWindow()
+    {
+        var project = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/NutManager.Agent.Config.csproj");
+
+        Assert.Contains("TERMS-OF-USE.md", project, StringComparison.Ordinal);
+        Assert.Contains("TERMS-OF-USE.en-US.md", project, StringComparison.Ordinal);
+
+        // Linked from docs rather than copied: one document, two renderings - this window and the RTF
+        // the installer shows. A copy here would drift the first time either was edited.
+        Assert.Contains("AvaloniaResource", project, StringComparison.Ordinal);
+        Assert.True(File.Exists(Path.Combine(T42UnifiedHostTests.RepositoryRoot(), "docs/TERMS-OF-USE.md")));
+        Assert.True(File.Exists(Path.Combine(T42UnifiedHostTests.RepositoryRoot(), "docs/TERMS-OF-USE.en-US.md")));
+    }
+
+    /// <summary>
+    /// Terms is a surface of this window, reached from About and returning to it. Not a browser, not
+    /// a second window, and not another process.
+    /// </summary>
+    [Fact]
+    public void TheTermsPageIsInternalAndScrollsOnItsOwn()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+
+        Assert.Contains("IsVisible=\"{Binding ShowTerms}\"", window, StringComparison.Ordinal);
+        Assert.Contains("Surface == AgentConfigSurface.Terms", viewModel, StringComparison.Ordinal);
+
+        // There and back, and back lands on Settings so About is still the open tab.
+        Assert.Contains("private void OpenTerms()", viewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "private void CloseTerms() => Surface = AgentConfigSurface.Settings;",
+            viewModel,
+            StringComparison.Ordinal);
+
+        var page = window[window.IndexOf("IsVisible=\"{Binding ShowTerms}\"", StringComparison.Ordinal)..];
+        page = page[..page.IndexOf("settings -->", StringComparison.Ordinal)];
+
+        Assert.Contains("x:Name=\"TermsBack\"", page, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding CloseTermsCommand}\"", page, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"{Binding Strings[Terms.Back]}\"", page, StringComparison.Ordinal);
+
+        // The page scrolls; the window does not grow and does not resize.
+        Assert.Contains("<ScrollViewer", page, StringComparison.Ordinal);
+        Assert.Contains("Width=\"800\"", window, StringComparison.Ordinal);
+        Assert.Contains("Height=\"600\"", window, StringComparison.Ordinal);
+        Assert.Contains("CanResize=\"False\"", window, StringComparison.Ordinal);
+
+        // Nothing on this page opens anything outside the process.
+        Assert.DoesNotContain("OpenProjectPageCommand", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Apply and Cancel belong to the configuration draft. Settings applies each change as it is made
+    /// and the terms are a document, so a Save button beside either would promise something is
+    /// waiting to be saved.
+    /// </summary>
+    [Fact]
+    public void ApplyAndCancelAreHiddenOutsideTheDraft()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+
+        // Diagnostics is absent from the condition on purpose: it is a read-only view of the very
+        // configuration the draft belongs to, and it keeps the buttons.
+        Assert.Contains(
+            "public bool ShowActionBar => !ShowSettings && !ShowTerms;",
+            viewModel,
+            StringComparison.Ordinal);
+
+        var apply = window.IndexOf("x:Name=\"ApplyReasonHost\"", StringComparison.Ordinal);
+        var group = window.LastIndexOf("<StackPanel Grid.Column=\"2\"", apply, StringComparison.Ordinal);
+        Assert.Contains("IsVisible=\"{Binding ShowActionBar}\"", window[group..apply], StringComparison.Ordinal);
+
+        // The service actions are not part of the draft and stay on every surface.
+        var restart = window.IndexOf("x:Name=\"RestartServiceAction\"", StringComparison.Ordinal);
+        var restartEnd = window.IndexOf("</Button>", restart, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "IsVisible=\"{Binding ShowActionBar}\"",
+            window[restart..restartEnd],
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The gear announces itself in both languages, and the name it gives is the one the tooltip
+    /// shows - a button whose accessible name differed from its tooltip would be two controls to
+    /// anyone reading it through a screen reader.
+    /// </summary>
+    [Fact]
+    public void TheGearIsNamedInBothLanguages()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+
+        var gear = window.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
+        var closing = window.IndexOf("</Button>", gear, StringComparison.Ordinal);
+        var markup = window[gear..closing];
+
+        Assert.Contains("ToolTip.Tip=\"{Binding Strings[Settings.Title]}\"", markup, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{Binding Strings[Settings.Title]}\"",
+            markup,
+            StringComparison.Ordinal);
+
+        Assert.Contains("[\"Settings.Title\"] = \"Configurações\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Settings.Title\"] = \"Settings\"", strings, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The reset section heading states what it is; the question mark belongs to the confirmation,
+    /// which is the thing that actually asks.
+    /// </summary>
+    [Fact]
+    public void TheResetSectionHeadingIsNotAQuestion()
+    {
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+
+        Assert.Contains(
+            "[\"Settings.Https.Reset.Title\"] = \"Resetar configuração HTTPS\"",
+            strings,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "[\"Settings.Https.Reset.Title\"] = \"Reset HTTPS configuration\"",
+            strings,
+            StringComparison.Ordinal);
+
+        // The confirmation still asks, and still ends in a question mark.
+        Assert.Contains(
+            "[\"Https.Reset.Title\"] = \"Resetar configuração HTTPS?\"",
+            strings,
+            StringComparison.Ordinal);
     }
 }

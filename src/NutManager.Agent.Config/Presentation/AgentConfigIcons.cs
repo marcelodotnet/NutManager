@@ -26,6 +26,9 @@ public static class AgentConfigIcons
     /// </summary>
     private static readonly (string Key, MaterialIconKind Kind)[] SharedMap =
     [
+        // The desktop maps this key to the cog as well. The catalog drawing behind it is a set of
+        // sliders, which is a fine glyph for a settings page and the wrong one for a gear button.
+        ("NutIconSettings", MaterialIconKind.CogOutline),
         ("NutIconDiagnostics", MaterialIconKind.Pulse),
         ("NutIconNetwork", MaterialIconKind.Web),
         ("NutIconTls", MaterialIconKind.LockOutline),
@@ -68,6 +71,12 @@ public static class AgentConfigIcons
         ("AgentIconStateAttention", MaterialIconKind.Alert),
         ("AgentIconStateError", MaterialIconKind.CloseCircle),
         ("AgentIconStateNotConfigured", MaterialIconKind.MinusCircleOutline),
+        // Settings tab glyphs. Agent and About reuse the shared server and information keys above,
+        // because the catalog already has exactly the right drawing for both; only these two needed
+        // a key of their own.
+        ("AgentIconTabGeneral", MaterialIconKind.TuneVariant),
+        ("AgentIconTabAppearance", MaterialIconKind.PaletteOutline),
+
         ("AgentIconImport", MaterialIconKind.FileImportOutline),
         ("AgentIconProhibit", MaterialIconKind.CancelOutline),
     ];

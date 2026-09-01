@@ -4,6 +4,8 @@ using Avalonia.Media;
 
 using NutManager.Agent.Config.ViewModels;
 
+using NutManager.Agent.Config.Localization;
+
 namespace NutManager.Agent.Config.Presentation;
 
 /// <summary>
@@ -107,6 +109,24 @@ public static class AgentConfigConverters
     public static readonly IValueConverter ToastBrush =
         new FuncValueConverter<AgentToastKind, IBrush?>(kind => Resource<IBrush>(
             kind is AgentToastKind.Success ? "NutHealthyBrush" : "NutCriticalBrush"));
+
+    /// <summary>
+    /// One converter per block kind, so the terms page can pick a style per line without a selector.
+    ///
+    /// A DataTemplateSelector would be the other way to do this, and it would mean a class per kind
+    /// plus a resource entry each, to choose between four TextBlocks that differ by a font size.
+    /// These read the discriminator the parser already produced.
+    /// </summary>
+    public static readonly IValueConverter IsTermsTitle = Kind(AgentTermsBlockKind.Title);
+
+    public static readonly IValueConverter IsTermsHeading = Kind(AgentTermsBlockKind.Heading);
+
+    public static readonly IValueConverter IsTermsParagraph = Kind(AgentTermsBlockKind.Paragraph);
+
+    public static readonly IValueConverter IsTermsBullet = Kind(AgentTermsBlockKind.Bullet);
+
+    private static IValueConverter Kind(AgentTermsBlockKind kind) =>
+        new FuncValueConverter<AgentTermsBlockKind, bool>(value => value == kind);
 
     /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager

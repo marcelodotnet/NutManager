@@ -295,8 +295,15 @@ public sealed class AgentConfigStrings
         ["Settings.Startup.Manual.Done"] = "O serviço passará a exigir início manual.",
         ["Settings.Startup.Failed"] = "Não foi possível alterar o modo de início do serviço.",
 
+        ["Settings.Https.Reset.Title"] = "Resetar configuração HTTPS",
+        ["Settings.Https.Reset.Description"] =
+            "Remove o binding SSL, a reserva de URL e a regra de firewall criados por este produto " +
+            "e esquece o endpoint salvo. O certificado nunca é removido.",
+
         ["Settings.Appearance.Theme"] = "Tema",
         ["Settings.Appearance.Theme.Description"] = "Alterna entre o tema claro e o escuro desta janela.",
+        ["Settings.Appearance.Theme.Light"] = "Claro",
+        ["Settings.Appearance.Theme.Dark"] = "Escuro",
         ["Settings.Appearance.Language"] = "Idioma",
         ["Settings.Appearance.Language.Description"] = "Idioma da interface desta janela.",
 
@@ -316,11 +323,15 @@ public sealed class AgentConfigStrings
         ["About.ProjectPage"] = "GitHub",
         ["About.ProjectPage.Open"] = "Abrir página do projeto",
         ["About.ProjectPage.Failed"] = "Não foi possível abrir o navegador. Copie o endereço acima.",
+        ["About.Product"] = "NutManager Agent",
         ["About.Terms"] = "Termos",
-        ["About.Terms.Text"] =
-            "NutManager é fornecido no estado em que se encontra, sem garantias. " +
-            "NUT (Network UPS Tools) é um projeto independente e não é distribuído com este produto.",
+        ["About.Terms.Description"] =
+            "Consulte os termos de uso e as informações legais do NutManager.",
+        ["About.Terms.View"] = "Ver termos",
         ["About.Unknown"] = "Desconhecido",
+
+        ["Terms.Title"] = "Termos",
+        ["Terms.Back"] = "Voltar",
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -590,8 +601,15 @@ public sealed class AgentConfigStrings
         ["Settings.Startup.Manual.Done"] = "The service will now have to be started by hand.",
         ["Settings.Startup.Failed"] = "The service start mode could not be changed.",
 
+        ["Settings.Https.Reset.Title"] = "Reset HTTPS configuration",
+        ["Settings.Https.Reset.Description"] =
+            "Removes the SSL binding, the URL reservation and the firewall rule this product created, " +
+            "and forgets the saved endpoint. The certificate is never removed.",
+
         ["Settings.Appearance.Theme"] = "Theme",
         ["Settings.Appearance.Theme.Description"] = "Switches this window between the light and dark themes.",
+        ["Settings.Appearance.Theme.Light"] = "Light",
+        ["Settings.Appearance.Theme.Dark"] = "Dark",
         ["Settings.Appearance.Language"] = "Language",
         ["Settings.Appearance.Language.Description"] = "The interface language of this window.",
 
@@ -611,11 +629,15 @@ public sealed class AgentConfigStrings
         ["About.ProjectPage"] = "GitHub",
         ["About.ProjectPage.Open"] = "Open the project page",
         ["About.ProjectPage.Failed"] = "The browser could not be opened. Copy the address above.",
+        ["About.Product"] = "NutManager Agent",
         ["About.Terms"] = "Terms",
-        ["About.Terms.Text"] =
-            "NutManager is provided as is, without warranty. " +
-            "NUT (Network UPS Tools) is an independent project and is not distributed with this product.",
+        ["About.Terms.Description"] =
+            "Read the NutManager terms of use and legal information.",
+        ["About.Terms.View"] = "View terms",
         ["About.Unknown"] = "Unknown",
+
+        ["Terms.Title"] = "Terms",
+        ["Terms.Back"] = "Back",
     };
 
     private readonly IReadOnlyDictionary<string, string> _strings;

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Microsoft.Win32;
 using NutManager.Core.Agent;
@@ -46,7 +47,7 @@ public sealed class WindowsAgentRuntimeInventory : IAgentRuntimeInventory
         var nut = await DescribeNutAsync(cancellationToken).ConfigureAwait(false);
 
         return new AgentRuntimeInventorySnapshot(
-            FindSharedFramework(DotNetRuntimeName),
+            DescribeRunningRuntime(),
             FindSharedFramework(AspNetCoreRuntimeName),
             IsEventLogSourceRegistered(),
             nut.Detected,
@@ -98,32 +99,65 @@ public sealed class WindowsAgentRuntimeInventory : IAgentRuntimeInventory
     /// shape and the one the host resolves against at startup, so it is the same answer arrived at
     /// without a shell.
     /// </summary>
+    /// <summary>
+    /// The .NET runtime this process is running on, asked of the runtime itself.
+    ///
+    /// This used to be a directory scan under Program Files, and on a server with .NET plainly
+    /// installed it reported nothing - which the screen showed as an unknown runtime while running on
+    /// that very runtime. A process cannot be wrong about its own version, and no install location or
+    /// environment variable can make it wrong, so that is what is asked.
+    ///
+    /// FrameworkDescription first because it carries the servicing version as shipped (".NET 10.0.11");
+    /// Environment.Version is the same number through a different door and covers a description that
+    /// does not parse.
+    /// </summary>
+    private static string? DescribeRunningRuntime()
+    {
+        var description = RuntimeInformation.FrameworkDescription;
+        var numeric = new string(description.SkipWhile(character => !char.IsDigit(character)).ToArray());
+
+        if (Version.TryParse(numeric.Split('-', 2)[0], out var described)) return described.ToString();
+
+        var version = Environment.Version;
+        return version.Major >= RequiredMajorVersion ? version.ToString() : null;
+    }
+
+    /// <summary>
+    /// The newest compatible build of a shared framework this machine has installed.
+    ///
+    /// ASP.NET Core cannot be read off the running process the way the runtime above can: the
+    /// configuration window never loads it, and the version that matters is the one the service will
+    /// resolve when it starts. So this still reads the disk - but from every place the framework can
+    /// legitimately be, rather than from one guess that fails silently.
+    /// </summary>
     private static string? FindSharedFramework(string frameworkName)
     {
         try
         {
-            var root = ResolveDotNetRoot();
-            if (root is null) return null;
-
-            var directory = Path.Combine(root, "shared", frameworkName);
-            if (!Directory.Exists(directory)) return null;
-
-            Version? newest = null;
-
-            foreach (var candidate in Directory.EnumerateDirectories(directory))
+            foreach (var root in DotNetRoots())
             {
-                var name = Path.GetFileName(candidate);
+                var directory = Path.Combine(root, "shared", frameworkName);
+                if (!Directory.Exists(directory)) continue;
 
-                // Preview and release-candidate directories carry a suffix after a hyphen. The numeric
-                // part is what decides compatibility.
-                var numeric = name.Split('-', 2)[0];
+                Version? newest = null;
 
-                if (!Version.TryParse(numeric, out var version)) continue;
-                if (version.Major != RequiredMajorVersion) continue;
-                if (newest is null || version > newest) newest = version;
+                foreach (var candidate in Directory.EnumerateDirectories(directory))
+                {
+                    var name = Path.GetFileName(candidate);
+
+                    // Preview and release-candidate directories carry a suffix after a hyphen. The
+                    // numeric part is what decides compatibility.
+                    var numeric = name.Split('-', 2)[0];
+
+                    if (!Version.TryParse(numeric, out var version)) continue;
+                    if (version.Major != RequiredMajorVersion) continue;
+                    if (newest is null || version > newest) newest = version;
+                }
+
+                if (newest is not null) return newest.ToString();
             }
 
-            return newest?.ToString();
+            return null;
         }
         catch (Exception)
         {
@@ -135,16 +169,43 @@ public sealed class WindowsAgentRuntimeInventory : IAgentRuntimeInventory
     /// Where .NET is installed. DOTNET_ROOT first, because a machine that sets it means it; otherwise
     /// the default 64-bit location, which is where the runtime installer this product offers puts it.
     /// </summary>
-    private static string? ResolveDotNetRoot()
+    /// <summary>
+    /// Every place this machine may keep its shared frameworks, most authoritative first.
+    ///
+    /// The installation this process is running out of comes first, because it is the one place that
+    /// cannot be a guess: a framework-dependent app loads its runtime from
+    /// {root}/shared/Microsoft.NETCore.App/{version}, so walking three levels up from the assembly
+    /// that defines object lands on the root by construction.
+    ///
+    /// The previous version returned the first candidate that merely existed and gave up if the
+    /// framework was not under it. DOTNET_ROOT pointing at a directory with no shared frameworks -
+    /// which is a normal thing for it to do - was therefore enough to make an installed runtime
+    /// invisible. These are candidates now, and the caller keeps looking.
+    /// </summary>
+    private static IEnumerable<string> DotNetRoots()
     {
+        var running = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (!string.IsNullOrWhiteSpace(running))
+        {
+            var root = Path.GetFullPath(Path.Combine(running, "..", "..", ".."));
+            if (Directory.Exists(root)) yield return root;
+        }
+
         var configured = Environment.GetEnvironmentVariable("DOTNET_ROOT");
-        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)) return configured;
+        if (!string.IsNullOrWhiteSpace(configured) && Directory.Exists(configured)) yield return configured;
 
-        var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        if (string.IsNullOrWhiteSpace(programFiles)) return null;
+        foreach (var folder in new[]
+                 {
+                     Environment.SpecialFolder.ProgramFiles,
+                     Environment.SpecialFolder.ProgramFilesX86,
+                 })
+        {
+            var programFiles = Environment.GetFolderPath(folder);
+            if (string.IsNullOrWhiteSpace(programFiles)) continue;
 
-        var root = Path.Combine(programFiles, "dotnet");
-        return Directory.Exists(root) ? root : null;
+            var root = Path.Combine(programFiles, "dotnet");
+            if (Directory.Exists(root)) yield return root;
+        }
     }
 
     /// <summary>

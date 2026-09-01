@@ -73,6 +73,20 @@
     -->
   </ItemGroup>
 
+  <!--
+    The canonical terms of use, linked rather than copied.
+
+    The same two files generate the RTF the installers display. Linking them means the text an
+    operator accepts at install time and the text this window shows are one document; a copy here
+    would be a second set of terms that drifts the first time either is edited.
+  -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\docs\TERMS-OF-USE.md"
+                      Link="Assets\Terms\TERMS-OF-USE.md" />
+    <AvaloniaResource Include="..\..\docs\TERMS-OF-USE.en-US.md"
+                      Link="Assets\Terms\TERMS-OF-USE.en-US.md" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- The product mark, shared with the desktop and the installers. -->
     <AvaloniaResource Include="..\NutManager.App\Assets\Branding\NutManager.ico"

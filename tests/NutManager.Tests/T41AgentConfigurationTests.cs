@@ -563,18 +563,16 @@ public sealed class T41AgentConfigSurfaceTests
     }
 
     /// <summary>
-    /// The theme control is one circular button, and it is in Appearance rather than the header.
+    /// The theme control in Appearance is the desktop application segmented pill, not a switch.
     ///
-    /// It is a window preference, and it now sits with the other window preference instead of in the
-    /// row that changes what you are looking at. The control itself did not change: still one button,
-    /// still never a checkbox or a segmented pair.
+    /// It was a circular button in the header whose glyph showed the theme it would move to. Correct,
+    /// and a control that says only one of the two things it does. This is the control NutManager
+    /// already has: a pill holding a sun and a moon, the current one filled.
     ///
-    /// Circular is asserted through the shape rather than through a screenshot: equal width and
-    /// height with a radius far beyond half of either is a disc at any scaling, whereas a rounded
-    /// rectangle is what you get the moment somebody drops the explicit size.
+    /// The preferences are out of the header entirely now; the gear is what took their place.
     /// </summary>
     [Fact]
-    public void TheThemeControlIsOneCircularButtonInAppearance()
+    public void TheThemeControlIsTheSegmentedPillInAppearance()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
@@ -582,79 +580,99 @@ public sealed class T41AgentConfigSurfaceTests
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
         var headerMarkup = window[header..surface];
 
-        // Neither preference is in the header any more. The gear is what replaced them.
-        Assert.DoesNotContain("x:Name=\"ThemeToggle\"", headerMarkup, StringComparison.Ordinal);
-        Assert.DoesNotContain("ToggleThemeCommand", headerMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-theme-toggle", headerMarkup, StringComparison.Ordinal);
         Assert.DoesNotContain("agent-language-selector", headerMarkup, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"SettingsButton\"", headerMarkup, StringComparison.Ordinal);
 
-        var theme = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
-        Assert.True(theme > surface, "The theme button belongs in the settings surface.");
+        var toggle = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
+        Assert.True(toggle > surface, "The theme control belongs in the settings surface.");
 
-        // One theme control in the window, not one per surface.
-        Assert.Single(Regex.Matches(window, "Command=\"{Binding ToggleThemeCommand}\""));
+        // Two halves, each selecting its own theme outright rather than flipping whatever is current.
+        var pill = window[toggle..(toggle + 2600)];
+        Assert.Contains("Classes=\"agent-theme-toggle\"", pill, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(pill, "Classes=\"agent-theme-option").Count);
+        Assert.Contains("Command=\"{Binding SelectLightThemeCommand}\"", pill, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding SelectDarkThemeCommand}\"", pill, StringComparison.Ordinal);
 
-        // The only ToggleSwitch in this window is the startup preference, which is a machine setting
-        // with two states rather than an action. The theme control is still never one.
+        // The filled half is the theme you are in: the sun is lit while the offer is to go dark.
+        Assert.Contains("Classes.selected=\"{Binding ShowDarkThemeAction}\"", pill, StringComparison.Ordinal);
+        Assert.Contains("Classes.selected=\"{Binding ShowLightThemeAction}\"", pill, StringComparison.Ordinal);
+
+        // Never a switch for the theme. The one ToggleSwitch left is the startup preference, which is
+        // a machine setting with two states rather than a choice between two named things.
         Assert.Single(Regex.Matches(window, "<ToggleSwitch"));
         Assert.Contains("x:Name=\"StartWithWindowsSwitch\"", window, StringComparison.Ordinal);
         Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
-
-        var style = window[window.IndexOf("Button.agent-theme-button", StringComparison.Ordinal)..];
-        Assert.Contains("<Setter Property=\"Width\" Value=\"36\" />", style, StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"Height\" Value=\"36\" />", style, StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"999\" />", style, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The glyph is the action, not the state, and the markup is where that is decided: the sun is
-    /// shown when the button offers light, the moon when it offers dark. Reversing these two bindings
-    /// is the whole failure mode of this control.
+    /// The pill is the desktop application one, to the value: same sizes, same brushes, same glyph
+    /// movement. Mirrored rather than linked, because NutShellStyles is the desktop shell and depends
+    /// on controls this utility does not have - so a test is what keeps the two from drifting.
     /// </summary>
     [Fact]
-    public void TheThemeGlyphShowsTheActionRatherThanTheCurrentTheme()
-    {
-        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
-
-        var button = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
-        var end = window.IndexOf("</Button>", button, StringComparison.Ordinal);
-        var markup = window[button..end];
-
-        var sun = markup.IndexOf("NutIconSun", StringComparison.Ordinal);
-        var moon = markup.IndexOf("NutIconMoon", StringComparison.Ordinal);
-        Assert.True(sun >= 0 && moon >= 0, "Both glyphs must be present.");
-
-        // The sun sits under ShowLightThemeAction and the moon under ShowDarkThemeAction.
-        var sunGate = markup.LastIndexOf("IsVisible=", sun, StringComparison.Ordinal);
-        var moonGate = markup.LastIndexOf("IsVisible=", moon, StringComparison.Ordinal);
-        Assert.Contains("ShowLightThemeAction", markup[sunGate..sun], StringComparison.Ordinal);
-        Assert.Contains("ShowDarkThemeAction", markup[moonGate..moon], StringComparison.Ordinal);
-
-        // Tooltip and accessible name are the action, and they are the same string.
-        Assert.Contains("ToolTip.Tip=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// The glyph movement is the desktop application's, to the millisecond. Reused values rather than
-    /// a second animation that merely looks similar.
-    /// </summary>
-    [Fact]
-    public void TheThemeGlyphUsesTheDesktopMotionValues()
+    public void TheThemePillUsesTheDesktopValues()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
         var shell = Read("src/NutManager.App/Presentation/Themes/NutShellStyles.axaml");
 
         foreach (var expected in new[]
         {
+            "<Setter Property=\"Width\" Value=\"34\" />",
+            "<Setter Property=\"Height\" Value=\"30\" />",
             "<TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.34\" Easing=\"CubicEaseOut\" />",
             "rotate(45deg) scale(1.08)",
             "rotate(-18deg) scale(1.06)",
+            "NutWarningSoftBrush",
+            "NutAccentSoftBrush",
         })
         {
             Assert.Contains(expected, shell, StringComparison.Ordinal);
             Assert.Contains(expected, window, StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// The gear turns under the pointer, and only when the pointer is on the gear.
+    ///
+    /// The shared rule is ":pointerover PathIcon.nut-icon-gear" - an ancestor selector with nothing in
+    /// front of it, so it matches whenever any ancestor is hovered. In the desktop shell the nearest
+    /// hoverable ancestor is a navigation item; here the window itself is one, so pointing anywhere in
+    /// the application turned the gear. The values stay shared; only the scope is fixed.
+    /// </summary>
+    [Fact]
+    public void TheSettingsGearTurnsOnlyWhenThePointerIsOnIt()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var styles = Read("src/NutManager.App/Presentation/Themes/NutControlStyles.axaml");
+
+        // The shared definition, and the transition that carries it.
+        Assert.Contains("<Style Selector=\"PathIcon.nut-icon-gear\">", styles, StringComparison.Ordinal);
+        Assert.Contains("rotate(25deg)", styles, StringComparison.Ordinal);
+        Assert.Contains(
+            "<TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.22\" Easing=\"CubicEaseOut\" />",
+            styles,
+            StringComparison.Ordinal);
+
+        // The button wears the shared class, and takes the shared angle.
+        var gear = window.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
+        var closing = window.IndexOf("</Button>", gear, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"nut-icon-gear\"", window[gear..closing], StringComparison.Ordinal);
+        Assert.Contains(
+            "<Style Selector=\"Button.agent-settings-button:pointerover PathIcon.nut-icon-gear\">",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("rotate(25deg)", window, StringComparison.Ordinal);
+
+        // Hovering the window at large leaves it at rest.
+        Assert.Contains(
+            "<Style Selector=\"Window:pointerover PathIcon.nut-icon-gear\">",
+            window,
+            StringComparison.Ordinal);
+
+        // Never a loop: nothing here repeats.
+        Assert.DoesNotContain("IterationCount", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("RepeatBehavior", window, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -3418,7 +3436,8 @@ public sealed class T41AgentConfigViewModelTests
         FakePreferences? preferences = null,
         UiLanguagePreference? language = UiLanguagePreference.EnUs,
         bool withCertificate = true,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        FakeInventory? inventory = null)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
@@ -3436,7 +3455,7 @@ public sealed class T41AgentConfigViewModelTests
             SubjectAlternativeNames: ["gandalf.sbra.local"]);
         var certificates = withCertificate ? new FakeCertificates(certificate) : new FakeCertificates();
         var importer = new FakeCertificateImporter(certificates);
-        var inventory = new FakeInventory();
+        inventory ??= new FakeInventory();
         var uiPreferences = preferences ?? new FakePreferences();
         var viewModel = new AgentConfigViewModel(
             store, groups, service, resources, certificates, inventory, language,
@@ -3446,6 +3465,169 @@ public sealed class T41AgentConfigViewModelTests
 
         return new TestContext(
             viewModel, store, groups, service, resources, certificates, importer, events);
+    }
+
+    // ---------------------------------------------------------------- T42: settings presentation
+
+    /// <summary>
+    /// The start type and the account shown on the Agent tab are the ones the service control manager
+    /// reported, not defaults chosen by the screen.
+    ///
+    /// Both read "Desconhecido" on a real server while the service was installed and running, because
+    /// the values came from a WMI query that failed quietly. Nothing may put a plausible-looking value
+    /// in their place: an account this window invents is worse than one it admits it could not read.
+    /// </summary>
+    [Fact]
+    public async Task TheAgentTabReportsTheStartTypeAndAccountTheSnapshotCarries()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.Account = @"EXAMPLE\\svc_nutmanager";
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal(@"EXAMPLE\\svc_nutmanager", context.ViewModel.ServiceAccountText);
+    }
+
+    [Fact]
+    public async Task AnAutomaticServiceRunningAsLocalSystemReadsBackAsItself()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        // The same fact drives the startup switch, so the two tabs cannot disagree.
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>
+    /// A configuration that genuinely could not be read still says so. The fix was to stop the read
+    /// from failing, not to stop it from being able to fail.
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableServiceConfigurationSaysUnknownRatherThanGuessing()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+        Assert.False(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>The runtimes the inventory found are the runtimes About reports.</summary>
+    [Fact]
+    public async Task AboutReportsTheRuntimesTheInventoryFound()
+    {
+        var context = CreateContext();
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("10.0.0", context.ViewModel.AboutDotNetRuntime);
+        Assert.Equal("10.0.0", context.ViewModel.AboutAspNetCoreRuntime);
+    }
+
+    /// <summary>
+    /// A runtime that truly cannot be determined is reported as unknown. This is the fail-safe, and it
+    /// is meant to be rare: on a machine with the runtimes installed, both resolve.
+    /// </summary>
+    [Fact]
+    public async Task AbsentRuntimesFallBackToUnknown()
+    {
+        var context = CreateContext(inventory: new FakeInventory(dotNet: null, aspNetCore: null));
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.AboutDotNetRuntime);
+        Assert.Equal("Unknown", context.ViewModel.AboutAspNetCoreRuntime);
+    }
+
+    /// <summary>
+    /// Each half of the segmented control selects its own theme outright, and nothing else: it writes
+    /// a user preference and does not put the configuration draft into a state that needs applying.
+    /// </summary>
+    [Fact]
+    public async Task TheThemeControlWritesThePreferenceAndLeavesTheDraftAlone()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.SelectDarkThemeCommand.Execute(null);
+        Assert.Equal(ThemePreference.Dark, context.ViewModel.SelectedTheme);
+        Assert.True(context.ViewModel.IsDarkThemeSelected);
+
+        context.ViewModel.SelectLightThemeCommand.Execute(null);
+        Assert.Equal(ThemePreference.Light, context.ViewModel.SelectedTheme);
+        Assert.False(context.ViewModel.IsDarkThemeSelected);
+
+        Assert.False(context.ViewModel.IsDirty);
+    }
+
+    /// <summary>
+    /// The switch reports the theme as well as setting it, so reading it back cannot drift from what
+    /// was chosen.
+    /// </summary>
+    [Fact]
+    public void TheThemeControlReadsBackTheChosenTheme()
+    {
+        var context = CreateContext();
+
+        context.ViewModel.SelectedTheme = ThemePreference.Dark;
+        Assert.True(context.ViewModel.IsDarkThemeSelected);
+
+        context.ViewModel.SelectedTheme = ThemePreference.Light;
+        Assert.False(context.ViewModel.IsDarkThemeSelected);
+    }
+
+    /// <summary>Settings, the terms, and back - and the draft controls stay out of both.</summary>
+    [Fact]
+    public void TheTermsPageIsReachedFromSettingsAndReturnsToIt()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        Assert.True(viewModel.ShowConfiguration);
+        Assert.True(viewModel.ShowActionBar);
+
+        viewModel.ToggleSettingsCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.OpenTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowTerms);
+        Assert.False(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.CloseTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowTerms);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.ToggleSettingsCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+        Assert.True(viewModel.ShowActionBar);
+    }
+
+    /// <summary>Diagnostics is not settings: it keeps the draft controls it always had.</summary>
+    [Fact]
+    public void DiagnosticsKeepsTheDraftControls()
+    {
+        var context = CreateContext();
+
+        context.ViewModel.ToggleDiagnosticsCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowDiagnostics);
+        Assert.True(context.ViewModel.ShowActionBar);
     }
 
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
@@ -3717,9 +3899,10 @@ public sealed class T41AgentConfigViewModelTests
         }
     }
 
-    private sealed class FakeInventory : IAgentRuntimeInventory
+    private sealed class FakeInventory(string? dotNet = "10.0.0", string? aspNetCore = "10.0.0")
+        : IAgentRuntimeInventory
     {
         public Task<AgentRuntimeInventorySnapshot> DescribeAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new AgentRuntimeInventorySnapshot("10.0.0", "10.0.0", true, true, "NUT"));
+            Task.FromResult(new AgentRuntimeInventorySnapshot(dotNet, aspNetCore, true, true, "NUT"));
     }
 }
