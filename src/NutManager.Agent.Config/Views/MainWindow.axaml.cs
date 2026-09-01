@@ -30,9 +30,21 @@ public sealed partial class MainWindow : Window
 
         DataContextChanged += OnDataContextChanged;
 
-        // A toast counts down on a task. Closing the window while one is in flight would leave that
-        // delay to resume against a view model whose window is gone.
-        Closed += (_, _) => (DataContext as AgentConfigViewModel)?.CancelTransientFeedback();
+        // The listener is the one state on this screen that changes while nobody touches the
+        // window: the service is stopped from somewhere else, or its prefix fails to open. It is
+        // watched for exactly as long as there is a window to show it in.
+        Opened += (_, _) => (DataContext as AgentConfigViewModel)?.StartListenerMonitor();
+
+        // A toast counts down on a task, and the listener monitor waits on another. Closing the
+        // window while either is in flight would leave it to resume against a view model whose
+        // window is gone.
+        Closed += (_, _) =>
+        {
+            if (DataContext is not AgentConfigViewModel viewModel) return;
+
+            viewModel.CancelTransientFeedback();
+            viewModel.StopListenerMonitor();
+        };
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);

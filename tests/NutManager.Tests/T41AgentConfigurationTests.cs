@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -3454,7 +3455,8 @@ public sealed class T41AgentConfigViewModelTests
         UiLanguagePreference? language = UiLanguagePreference.EnUs,
         bool withCertificate = true,
         TimeProvider? clock = null,
-        FakeInventory? inventory = null)
+        FakeInventory? inventory = null,
+        FakeListener? listener = null)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
@@ -3474,14 +3476,16 @@ public sealed class T41AgentConfigViewModelTests
         var importer = new FakeCertificateImporter(certificates);
         inventory ??= new FakeInventory();
         var uiPreferences = preferences ?? new FakePreferences();
+        listener ??= new FakeListener();
         var viewModel = new AgentConfigViewModel(
             store, groups, service, resources, certificates, inventory, language,
             timeProvider: clock,
             certificateImporter: importer,
-            preferences: uiPreferences);
+            preferences: uiPreferences,
+            listenerProbe: listener);
 
         return new TestContext(
-            viewModel, store, groups, service, resources, certificates, importer, events);
+            viewModel, store, groups, service, resources, certificates, importer, listener, events);
     }
 
     // ---------------------------------------------------------------- T42: settings presentation
@@ -3946,6 +3950,671 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(@"EXAMPLE\svc_nutmanager", context.ViewModel.ServiceAccountText);
     }
 
+    // ---------------------------------------------------------------- T42: the listener, watched
+
+    /// <summary>
+    /// A running service is not a running listener, and the row says which one it is.
+    ///
+    /// This is the machine the composed answer got wrong: HTTPS enabled, the endpoint valid, the SSL
+    /// binding, the URL reservation and the firewall rule all NutManager owned, the service
+    /// comfortably Running - and nothing accepting connections, because HTTP.sys refused the prefix.
+    /// The old row added those facts up and showed a green light. The three configuration rows are
+    /// still correct and stay green; only the row that made a claim about the endpoint changes,
+    /// because only that row was wrong.
+    /// </summary>
+    [Fact]
+    public async Task TheListenerIsObservedRatherThanInferredFromEverythingAroundIt()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused: no listener.");
+        await context.ViewModel.RefreshAsync();
+
+        var status = context.ViewModel.ResourceStatus;
+        Assert.Equal(4, status.Count);
+
+        // Everything that is genuinely configured still reports as configured.
+        Assert.Equal(AgentDiagnosticState.Ready, status[0].State);
+        Assert.Equal(AgentDiagnosticState.Ready, status[1].State);
+        Assert.Equal(AgentDiagnosticState.Ready, status[2].State);
+
+        // And the one fact nobody verified is now the one fact somebody asked about.
+        Assert.Equal(AgentDiagnosticState.Attention, status[3].State);
+        Assert.Equal("Listener unavailable", status[3].Detail);
+        Assert.Contains("nothing is listening", status[3].TechnicalDetail, StringComparison.Ordinal);
+        Assert.Contains("ConnectionRefused", status[3].TechnicalDetail, StringComparison.Ordinal);
+
+        // The service card is untouched by any of it: it reports the service, which is running.
+        Assert.True(context.ViewModel.ServiceIsRunning);
+    }
+
+    /// <summary>An endpoint that answers is reported as listening, and names itself.</summary>
+    [Fact]
+    public async Task AnEndpointThatAnswersIsReportedActive()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Ready, listener.State);
+        Assert.Equal("Active", listener.Detail);
+        Assert.Contains("https://nut-server.example.local:5199/", listener.TechnicalDetail, StringComparison.Ordinal);
+
+        // Asked about the endpoint the rest of the strip describes, not one of its own.
+        var target = Assert.Single(context.Listener.Targets);
+        Assert.Equal("nut-server.example.local", target.Host);
+        Assert.Equal(5199, target.Port);
+    }
+
+    /// <summary>
+    /// The row follows the endpoint on its own, with nobody touching the window.
+    ///
+    /// Down, then up, then down again, across three periods of the clock - no navigation, no Refresh,
+    /// and no reopening. This is the whole point of the monitor, so it is asserted as one sequence
+    /// rather than three tests that each prove a single edge.
+    /// </summary>
+    [Fact]
+    public async Task TheRowFollowsTheEndpointAcrossPeriodsWithoutAnybodyTouchingTheWindow()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+
+        context.ViewModel.StartListenerMonitor();
+
+        // It comes up.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var active = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(1);
+        clock.Tick();
+        await active;
+
+        // It goes away again.
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        var gone = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await gone;
+
+        // And it comes back.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var back = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(3);
+        clock.Tick();
+        await back;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// With the transport off there is nothing on the network to ask about, and nothing is asked.
+    ///
+    /// Several periods, and the count stays at zero. A monitor that probed a disabled endpoint would
+    /// be attempting a connection to whatever happens to be on that port on a machine whose
+    /// administrator has deliberately turned the transport off.
+    /// </summary>
+    [Fact]
+    public async Task DisabledHttpsIsNeverProbed()
+    {
+        var clock = new ManualClock();
+        var context = CreateContext(clock: clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(0, context.Listener.Calls);
+        Assert.Equal("HTTPS disabled", context.ViewModel.ResourceStatus[3].Detail);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A stopped service costs no network call.
+    ///
+    /// The row already names the reason - the service is stopped - and a connection attempt could add
+    /// nothing to it. Asking anyway, once a second, for as long as the window is open, is the version
+    /// of this feature that would have been rejected.
+    /// </summary>
+    [Fact]
+    public async Task AStoppedServiceIsNeverProbed()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Stopped, clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(0, context.Listener.Calls);
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Attention, listener.State);
+        Assert.Equal("Listener unavailable", listener.Detail);
+        Assert.Contains("stopped", listener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Starting the service asks at once, and the green light waits for the answer.
+    ///
+    /// The order matters and is asserted as an order: the service reaches Running, the endpoint is
+    /// asked, it is not ready yet and the row says so, and only a later successful answer turns it
+    /// green. A screen that went green on the start succeeding would be reporting an intention.
+    /// </summary>
+    [Fact]
+    public async Task StartingTheServiceAsksAtOnceAndWaitsForARealAnswer()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Stopped, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        // The prefix is not open yet, which is the normal state of a service one moment old.
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.StartServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsRunning);
+
+        // Asked immediately, without waiting for the period to elapse.
+        await context.Listener.WaitForCallsAsync(1);
+        await WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+
+        // And green only once the endpoint actually answers.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var active = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await active;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Stopping the service reports it at once, and asks nothing.
+    ///
+    /// The row does not wait for a period, and it does not attempt a connection to an endpoint whose
+    /// service has just been stopped: the reason is known, and it is the one shown.
+    /// </summary>
+    [Fact]
+    public async Task StoppingTheServiceReportsTheListenerAtOnce()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        var probesBefore = context.Listener.Calls;
+        await context.ViewModel.StopServiceCommand.ExecuteAsync(null);
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Attention, listener.State);
+        Assert.Equal("Listener unavailable", listener.Detail);
+        Assert.Contains("stopped", listener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(probesBefore, context.Listener.Calls);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A restart goes down and comes back, and the row goes with it.
+    ///
+    /// Restart leaves the service Running the moment it returns, so this is the case where reporting
+    /// the service state as the listener state would be least visible and most wrong.
+    /// </summary>
+    [Fact]
+    public async Task RestartingTheServiceGoesDownAndComesBack()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        var down = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await context.ViewModel.RestartServiceCommand.ExecuteAsync(null);
+        await down;
+
+        Assert.True(context.ViewModel.ServiceIsRunning);
+
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var up = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await up;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Applying refreshes the row and still does not restart anything.
+    ///
+    /// The product rule that Apply never restarts the agent is older than this feature and outranks
+    /// it: what a saved configuration changes is what the listener will be after somebody restarts
+    /// it, and until then the row keeps reporting the listener that is actually there.
+    /// </summary>
+    [Fact]
+    public async Task ApplyingAsksAgainWithoutRestartingTheService()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        var probesBefore = context.Listener.Calls;
+        context.ViewModel.HttpsPort = 5443;
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        await context.Listener.WaitForCallsAsync(probesBefore + 1);
+        Assert.Equal(0, context.Service.RestartCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+
+        // The new endpoint is the one now being asked about.
+        Assert.Equal(5443, context.Listener.Targets[^1].Port);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// After a reset there is no endpoint left, so nothing is asked about one.
+    ///
+    /// Continuing to probe a removed binding would be a connection attempt against whatever inherits
+    /// the port, once a second, for a transport the operator has just switched off.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsStopsAskingAboutTheEndpoint()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.False(context.ViewModel.HttpsEnabled);
+
+        var probesAfterReset = context.Listener.Calls;
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(probesAfterReset, context.Listener.Calls);
+        Assert.Equal("HTTPS disabled", context.ViewModel.ResourceStatus[3].Detail);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A slow endpoint is never asked twice at once.
+    ///
+    /// The tick that arrives while a probe is still waiting is dropped, not queued. Queueing is how a
+    /// connection attempt that takes longer than the period turns one probe per second into a backlog
+    /// that outlives the window.
+    /// </summary>
+    [Fact]
+    public async Task ASlowEndpointIsNeverAskedTwiceAtOnce()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Listener.Held = held;
+
+        var opening = context.ViewModel.RefreshAsync();
+        await context.Listener.WaitForCallsAsync(1);
+
+        context.ViewModel.StartListenerMonitor();
+
+        // Three periods elapse while the first probe is still waiting for an answer.
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(1, context.Listener.Calls);
+
+        context.Listener.Held = null;
+        held.SetResult();
+        await opening;
+
+        Assert.Equal(1, context.Listener.MaximumConcurrent);
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// An answer that has not changed does not redraw anything.
+    ///
+    /// Twenty minutes of a healthy listener is over a thousand identical answers, and repopulating the
+    /// strip for each of them would rebuild an observable collection once a second underneath the
+    /// operator. Ten periods, one answer, and the collection is left alone.
+    /// </summary>
+    [Fact]
+    public async Task AnUnchangedAnswerRedrawsNothing()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        var redraws = 0;
+        context.ViewModel.ResourceStatus.CollectionChanged += (_, _) => redraws++;
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 10; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+            await context.Listener.WaitForCallsAsync(period + 1);
+        }
+
+        Assert.Equal(0, redraws);
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Closing the window while a probe is in flight updates nothing afterwards.
+    ///
+    /// The connection attempt cannot be recalled, so what matters is that its answer lands nowhere: a
+    /// late write into a view model whose window is gone is the bug this asserts is absent.
+    /// </summary>
+    [Fact]
+    public async Task ClosingTheWindowDuringAProbeUpdatesNothing()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Listener.Held = held;
+
+        // Opening the window left a request standing, so the monitor asks straight away - and the
+        // endpoint takes its time answering.
+        context.ViewModel.StartListenerMonitor();
+        await context.Listener.WaitForCallsAsync(2);
+
+        // The window closes with the answer still outstanding, and the answer then arrives.
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        held.SetResult();
+
+        var probes = context.Listener.Calls;
+        clock.Tick();
+
+        // Nothing further was asked, and the answer that arrived late changed nothing on screen.
+        Assert.Equal(probes, context.Listener.Calls);
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+    }
+
+    /// <summary>
+    /// One failed probe is one failed probe, not the end of the monitor.
+    ///
+    /// An adapter is expected to translate its own failures, so a throw is unexpected by definition -
+    /// and a loop that died on the first unexpected thing would leave a window whose listener row
+    /// silently stopped being true.
+    /// </summary>
+    [Fact]
+    public async Task AThrownProbeDoesNotEndTheLoop()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.Listener.Throws = new InvalidOperationException("the adapter fell over");
+        var failed = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await clock.WaitForTimerCountAsync(1);
+        clock.Tick();
+        await failed;
+
+        Assert.Contains(
+            "InvalidOperationException",
+            context.ViewModel.ResourceStatus[3].TechnicalDetail,
+            StringComparison.Ordinal);
+
+        // And the next period asks again.
+        context.Listener.Throws = null;
+        var recovered = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await recovered;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// One window, one loop. Starting it again does not add a second one.
+    ///
+    /// Two loops on interleaved clocks would double the connection attempts and race each other to
+    /// publish, which is the failure mode a window that starts its monitor from more than one place
+    /// would produce. A period is one probe however many times Start was called.
+    /// </summary>
+    [Fact]
+    public async Task StartingTheMonitorTwiceLeavesOneLoop()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        var opening = context.Listener.Calls;
+
+        context.ViewModel.StartListenerMonitor();
+        context.ViewModel.StartListenerMonitor();
+        context.ViewModel.StartListenerMonitor();
+        Assert.True(context.ViewModel.IsListenerMonitorRunning);
+
+        // Opening the window left a request standing, and it is served once however many times the
+        // monitor was started. One timer then waits for the next period - not three.
+        await context.Listener.WaitForCallsAsync(opening + 1);
+        await clock.WaitForTimerCountAsync(1);
+        Assert.Equal(1, clock.TimerCount);
+
+        var served = context.Listener.Calls;
+        clock.Tick();
+
+        await context.Listener.WaitForCallsAsync(served + 1);
+        await clock.WaitForTimerCountAsync(2);
+
+        Assert.Equal(served + 1, context.Listener.Calls);
+        Assert.Equal(2, clock.TimerCount);
+
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+    }
+
+    /// <summary>
+    /// The monitor ends with the window, and schedules nothing after it.
+    ///
+    /// Asserted on the clock rather than on the loop: a timer scheduled after the window closed is a
+    /// loop still running, whatever the loop believes about itself.
+    /// </summary>
+    [Fact]
+    public async Task TheMonitorStopsWithTheWindow()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+        await clock.WaitForTimerCountAsync(1);
+
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+
+        var scheduled = clock.TimerCount;
+        var probes = context.Listener.Calls;
+
+        clock.Tick();
+        clock.Tick();
+
+        Assert.Equal(scheduled, clock.TimerCount);
+        Assert.Equal(probes, context.Listener.Calls);
+
+        // Safe to call again on a window that is already closed.
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>The row is written in the window language, in both of them.</summary>
+    [Fact]
+    public async Task TheListenerRowIsLocalized()
+    {
+        var portuguese = ConfiguredContext(AgentServiceState.Running, language: UiLanguagePreference.PtBr);
+        portuguese.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await portuguese.ViewModel.RefreshAsync();
+
+        var row = portuguese.ViewModel.ResourceStatus[3];
+        Assert.Equal("Listener HTTPS", row.Label);
+        Assert.Equal("Listener indisponível", row.Detail);
+        Assert.Contains("nada está ouvindo", row.TechnicalDetail, StringComparison.Ordinal);
+
+        var english = ConfiguredContext(AgentServiceState.Running);
+        await english.ViewModel.RefreshAsync();
+        Assert.Equal("HTTPS listener", english.ViewModel.ResourceStatus[3].Label);
+        Assert.Equal("Active", english.ViewModel.ResourceStatus[3].Detail);
+    }
+
+    /// <summary>
+    /// Coming back to the configuration surface asks again, so the row is current when it reappears.
+    /// </summary>
+    [Fact]
+    public async Task ReturningToTheConfigurationSurfaceAsksAgain()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        var probes = context.Listener.Calls;
+
+        context.ViewModel.Surface = AgentConfigSurface.Configuration;
+        await context.Listener.WaitForCallsAsync(probes + 1);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// The periodic monitor is a listener monitor, and nothing more.
+    ///
+    /// This is the constraint that keeps a one-second cadence acceptable. The SSL binding, the URL
+    /// reservation and the firewall rule are HTTP.sys and firewall queries; the service configuration
+    /// is a service control manager call; the document is a file read. Repeating any of them every
+    /// second, on every open window, is a machine-wide poll wearing a listener row as a disguise -
+    /// so ten periods here move exactly one counter.
+    /// </summary>
+    [Fact]
+    public async Task ThePeriodicMonitorAsksNothingButTheEndpoint()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        var reads = context.Store.Reads;
+        var resources = context.Resources.DescribeCalls;
+        var certificates = context.Certificates.ListCalls;
+        var service = context.Service.DescribeCalls;
+        var groups = context.Groups.DescribeCalls;
+
+        context.ViewModel.StartListenerMonitor();
+        await context.Listener.WaitForCallsAsync(2);
+
+        for (var period = 1; period <= 10; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+            await context.Listener.WaitForCallsAsync(period + 2);
+        }
+
+        // Eleven observations of the endpoint.
+        Assert.True(context.Listener.Calls >= 11, $"Expected the endpoint to be asked, saw {context.Listener.Calls}.");
+
+        // And not one query of anything else.
+        Assert.Equal(reads, context.Store.Reads);
+        Assert.Equal(resources, context.Resources.DescribeCalls);
+        Assert.Equal(certificates, context.Certificates.ListCalls);
+        Assert.Equal(service, context.Service.DescribeCalls);
+        Assert.Equal(groups, context.Groups.DescribeCalls);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A window with everything HTTPS needs: enabled, valid, every resource owned by NutManager, and
+    /// a service in whichever state the case under test requires.
+    /// </summary>
+    private static TestContext ConfiguredContext(
+        AgentServiceState serviceState,
+        TimeProvider? clock = null,
+        UiLanguagePreference? language = UiLanguagePreference.EnUs)
+    {
+        var context = CreateContext(
+            document: HttpsDocument(), serviceState: serviceState, clock: clock, language: language);
+
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager));
+
+        return context;
+    }
+
+    /// <summary>
+    /// Waits for the listener row to reach a state, driven by the collection rather than by the clock.
+    ///
+    /// The monitor publishes from a thread pool thread, so a test that asserted immediately after
+    /// ticking would be asserting on a race. Waiting on the redraw itself keeps these tests off the
+    /// wall clock; the timeout exists only so a broken monitor fails the test rather than hanging it.
+    /// </summary>
+    private static async Task WaitForListenerAsync(AgentConfigViewModel viewModel, AgentDiagnosticState state)
+    {
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        bool Matches() =>
+            viewModel.ResourceStatus.Count == 4 && viewModel.ResourceStatus[3].State == state;
+
+        void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (Matches()) reached.TrySetResult();
+        }
+
+        viewModel.ResourceStatus.CollectionChanged += OnChanged;
+
+        try
+        {
+            if (Matches()) return;
+
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            viewModel.ResourceStatus.CollectionChanged -= OnChanged;
+        }
+    }
+
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
     {
         viewModel.HttpsEnabled = true;
@@ -3971,6 +4640,7 @@ public sealed class T41AgentConfigViewModelTests
         FakeResources Resources,
         FakeCertificates Certificates,
         FakeCertificateImporter Importer,
+        FakeListener Listener,
         List<string> Events);
 
     private sealed class FakeStore(AgentTransportConfigurationDocument document, List<string> events)
@@ -3980,7 +4650,14 @@ public sealed class T41AgentConfigViewModelTests
         public AgentConfigurationWriteResult WriteResult { get; set; } = AgentConfigurationWriteResult.Success;
         public string Path => "agent.json";
         public bool Exists => true;
-        public AgentTransportConfigurationDocument Read() => document;
+
+        public int Reads { get; private set; }
+
+        public AgentTransportConfigurationDocument Read()
+        {
+            Reads++;
+            return document;
+        }
 
         public AgentConfigurationWriteResult Write(AgentTransportConfigurationDocument value)
         {
@@ -3997,8 +4674,18 @@ public sealed class T41AgentConfigViewModelTests
         public AgentMembershipResult AddResult { get; set; } =
             new(AgentMembershipOutcome.Added, @"EXAMPLE\operator");
 
-        public AgentOperatorsGroupState Describe() =>
-            new(exists || CreateCalls > 0, "NutManager Operators", CreateCalls > 0 || exists ? "S-1-5-32-1000" : null, role, null);
+        public int DescribeCalls { get; private set; }
+
+        public AgentOperatorsGroupState Describe()
+        {
+            DescribeCalls++;
+            return new(
+                exists || CreateCalls > 0,
+                "NutManager Operators",
+                CreateCalls > 0 || exists ? "S-1-5-32-1000" : null,
+                role,
+                null);
+        }
 
         public AgentGroupCreationResult Create()
         {
@@ -4020,6 +4707,15 @@ public sealed class T41AgentConfigViewModelTests
 
     private sealed class FakeService(AgentServiceState state) : IAgentServiceAdministration
     {
+        /// <summary>
+        /// What the service control manager would say now.
+        ///
+        /// Settable, and moved by the operations below, because a fake that answers Stopped after a
+        /// successful start cannot exercise the rule that matters: a service reaching Running is not
+        /// the same event as its listener opening.
+        /// </summary>
+        public AgentServiceState State { get; set; } = state;
+
         public int StartCalls { get; private set; }
         public int StopCalls { get; private set; }
         public int RestartCalls { get; private set; }
@@ -4040,7 +4736,7 @@ public sealed class T41AgentConfigViewModelTests
         public AgentServiceSnapshot Describe()
         {
             DescribeCalls++;
-            return new(state, StartType.ToString(), Failure, StartType, Account, QueryErrorCode);
+            return new(State, StartType.ToString(), Failure, StartType, Account, QueryErrorCode);
         }
 
         public Task<AgentServiceOutcome> SetStartupAsync(
@@ -4050,31 +4746,34 @@ public sealed class T41AgentConfigViewModelTests
 
             if (StartupFailure is not null)
             {
-                return Task.FromResult(new AgentServiceOutcome(false, state, StartupFailure));
+                return Task.FromResult(new AgentServiceOutcome(false, State, StartupFailure));
             }
 
             StartType = preference is AgentServiceStartupPreference.Automatic
                 ? AgentServiceStartType.Automatic
                 : AgentServiceStartType.Manual;
 
-            return Task.FromResult(new AgentServiceOutcome(true, state, null));
+            return Task.FromResult(new AgentServiceOutcome(true, State, null));
         }
 
         public Task<AgentServiceOutcome> StartAsync(CancellationToken cancellationToken)
         {
             StartCalls++;
+            State = AgentServiceState.Running;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Running, null));
         }
 
         public Task<AgentServiceOutcome> StopAsync(CancellationToken cancellationToken)
         {
             StopCalls++;
+            State = AgentServiceState.Stopped;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Stopped, null));
         }
 
         public Task<AgentServiceOutcome> RestartAsync(CancellationToken cancellationToken)
         {
             RestartCalls++;
+            State = AgentServiceState.Running;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Running, null));
         }
     }
@@ -4086,7 +4785,13 @@ public sealed class T41AgentConfigViewModelTests
         public int ApplyCalls { get; private set; }
         public List<AgentHttpsCleanupRequest> RemoveRequests { get; } = [];
 
-        public AgentHttpsResourceSnapshot Describe(AgentHttpsBinding binding) => Snapshot;
+        public int DescribeCalls { get; private set; }
+
+        public AgentHttpsResourceSnapshot Describe(AgentHttpsBinding binding)
+        {
+            DescribeCalls++;
+            return Snapshot;
+        }
 
         public AgentHttpsResourceResult Apply(AgentHttpsBinding binding)
         {
@@ -4110,7 +4815,13 @@ public sealed class T41AgentConfigViewModelTests
     {
         private readonly List<AgentCertificateSummary> _certificates = [.. certificates];
 
-        public IReadOnlyList<AgentCertificateSummary> List() => _certificates;
+        public int ListCalls { get; private set; }
+
+        public IReadOnlyList<AgentCertificateSummary> List()
+        {
+            ListCalls++;
+            return _certificates;
+        }
 
         public void Add(AgentCertificateSummary certificate)
         {
@@ -4157,27 +4868,91 @@ public sealed class T41AgentConfigViewModelTests
     /// </summary>
     private sealed class ManualClock : TimeProvider
     {
+        private readonly Lock _gate = new();
         private readonly List<ManualTimer> _timers = [];
+        private TaskCompletionSource _scheduled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public int TimerCount => _timers.Count;
+        public int TimerCount
+        {
+            get
+            {
+                lock (_gate) return _timers.Count;
+            }
+        }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             var timer = new ManualTimer(callback, state);
-            _timers.Add(timer);
+
+            lock (_gate)
+            {
+                _timers.Add(timer);
+                _scheduled.TrySetResult();
+                _scheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
             return timer;
         }
 
         /// <summary>Fires one timer by creation order, whether or not it still matters.</summary>
-        public void Fire(int index) => _timers[index].Fire();
+        public void Fire(int index)
+        {
+            ManualTimer timer;
+            lock (_gate) timer = _timers[index];
+            timer.Fire();
+        }
+
+        /// <summary>
+        /// Fires every timer that has been scheduled and not yet fired.
+        ///
+        /// This is one tick of the polling period for anything waiting on the clock. It is separate
+        /// from <see cref="Fire(int)"/> because that one deliberately re-fires a stale timer to prove
+        /// it does nothing, and a period is the opposite: everything currently waiting, once.
+        /// </summary>
+        public void Tick()
+        {
+            List<ManualTimer> due;
+            lock (_gate) due = _timers.Where(timer => timer.IsPending).ToList();
+            foreach (var timer in due) timer.Fire();
+        }
+
+        /// <summary>
+        /// Completes once at least this many timers have been scheduled.
+        ///
+        /// A loop that waits on the clock schedules its timer from a thread pool thread, so a test
+        /// that ticked immediately would usually tick nothing. Waiting on the schedule rather than on
+        /// elapsed milliseconds is what keeps these tests off the wall clock.
+        /// </summary>
+        public async Task WaitForTimerCountAsync(int expected)
+        {
+            while (true)
+            {
+                Task wait;
+
+                lock (_gate)
+                {
+                    if (_timers.Count >= expected) return;
+                    wait = _scheduled.Task;
+                }
+
+                await wait.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
 
         private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
         {
             private bool _disposed;
+            private bool _fired;
+
+            /// <summary>Still waiting: neither fired nor abandoned.</summary>
+            public bool IsPending => !_disposed && !_fired;
 
             public void Fire()
             {
-                if (!_disposed) callback(state);
+                if (_disposed) return;
+
+                _fired = true;
+                callback(state);
             }
 
             public bool Change(TimeSpan dueTime, TimeSpan period) => true;
@@ -4188,6 +4963,81 @@ public sealed class T41AgentConfigViewModelTests
             {
                 _disposed = true;
                 return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    /// <summary>
+    /// An endpoint that answers what a test tells it to, when a test lets it.
+    ///
+    /// It counts, so a test can prove that a stopped service and a disabled transport cost no network
+    /// call at all; it records the endpoint it was handed, so a test can prove which one is being
+    /// asked about; and it tracks how many probes were in flight at once, because one at a time is a
+    /// rule rather than an accident of how fast the fake answers.
+    /// </summary>
+    private sealed class FakeListener : IAgentHttpsListenerProbe
+    {
+        private readonly Lock _gate = new();
+        private TaskCompletionSource _called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _active;
+
+        public int Calls { get; private set; }
+
+        public int MaximumConcurrent { get; private set; }
+
+        public List<AgentHttpsBinding> Targets { get; } = [];
+
+        public AgentListenerObservation Answer { get; set; } = AgentListenerObservation.Listening;
+
+        /// <summary>Set to hold a probe open until the test releases it.</summary>
+        public TaskCompletionSource? Held { get; set; }
+
+        /// <summary>Set to make the adapter itself fail, which the loop has to survive.</summary>
+        public Exception? Throws { get; set; }
+
+        public async Task<AgentListenerObservation> ProbeAsync(
+            AgentHttpsBinding binding, CancellationToken cancellationToken)
+        {
+            TaskCompletionSource? held;
+
+            lock (_gate)
+            {
+                Calls++;
+                Targets.Add(binding);
+                _active++;
+                MaximumConcurrent = Math.Max(MaximumConcurrent, _active);
+                _called.TrySetResult();
+                _called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                held = Held;
+            }
+
+            try
+            {
+                if (held is not null) await held.Task.WaitAsync(cancellationToken);
+                if (Throws is { } failure) throw failure;
+
+                return Answer;
+            }
+            finally
+            {
+                lock (_gate) _active--;
+            }
+        }
+
+        /// <summary>Completes once the endpoint has been asked at least this many times.</summary>
+        public async Task WaitForCallsAsync(int expected)
+        {
+            while (true)
+            {
+                Task wait;
+
+                lock (_gate)
+                {
+                    if (Calls >= expected) return;
+                    wait = _called.Task;
+                }
+
+                await wait.WaitAsync(TimeSpan.FromSeconds(10));
             }
         }
     }

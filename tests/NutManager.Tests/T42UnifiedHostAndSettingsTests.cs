@@ -1,8 +1,12 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Runtime.Versioning;
 using System.Text.RegularExpressions;
 using NutManager.Agent;
 using NutManager.Agent.Config.Localization;
 using NutManager.Agent.Config.ViewModels;
 using NutManager.Core.Agent;
+using NutManager.Infrastructure.AgentConfiguration;
 using Xunit;
 
 namespace NutManager.Tests;
@@ -907,5 +911,229 @@ public sealed class T42RefinementTests
         Assert.Contains("[\"Toast.EndpointCopyFailed\"] = \"Não foi possível copiar.\"", strings, StringComparison.Ordinal);
         Assert.Contains("[\"Toast.EndpointCopied\"] = \"Copied!\"", strings, StringComparison.Ordinal);
         Assert.Contains("[\"Toast.EndpointCopyFailed\"] = \"Could not copy.\"", strings, StringComparison.Ordinal);
+    }
+}
+
+/// <summary>
+/// The listener observation, and the boundary it lives behind.
+///
+/// The row that reports whether the agent is reachable is the one piece of this window that changes
+/// while nobody is touching it, and it is now observed rather than composed. What is asserted here is
+/// the adapter that does the observing - against an ephemeral loopback socket this test owns, never a
+/// real agent, a real service or a real certificate - and the rules that keep the observation cheap
+/// and read-only.
+/// </summary>
+public sealed class T42ListenerProbeTests
+{
+    /// <summary>
+    /// An endpoint that is there answers, and the answer names no failure.
+    ///
+    /// The socket is bound to IPv4 while the name is asked for by "localhost", which resolves to the
+    /// IPv6 loopback first on Windows. That is the case that fails when the addresses are attempted in
+    /// order: a connection to the IPv6 loopback with nothing behind it is not refused, it hangs, so
+    /// the first address consumes the whole budget and a listener that is up reports as unreachable.
+    /// It is the shape of the real thing - an agent host normally resolves to both families.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task AnOpenPortIsReportedListening()
+    {
+        using var endpoint = new LoopbackEndpoint();
+        var probe = new WindowsAgentHttpsListenerProbe();
+
+        var observation = await probe.ProbeAsync(endpoint.Binding, CancellationToken.None);
+
+        Assert.Equal(AgentListenerReachability.Listening, observation.State);
+        Assert.Null(observation.Detail);
+    }
+
+    /// <summary>
+    /// A port nobody is on is reported unreachable, and says which socket error said so.
+    ///
+    /// The port is one this test held and released, so it is free on this machine at this moment
+    /// without guessing at a number somebody else might be using.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task AClosedPortIsReportedUnreachableWithItsSocketError()
+    {
+        int port;
+        using (var endpoint = new LoopbackEndpoint()) port = endpoint.Binding.Port;
+
+        var probe = new WindowsAgentHttpsListenerProbe();
+        var binding = new AgentHttpsBinding("localhost", port, Thumbprint);
+
+        var observation = await probe.ProbeAsync(binding, CancellationToken.None);
+
+        Assert.Equal(AgentListenerReachability.Unreachable, observation.State);
+        Assert.False(string.IsNullOrWhiteSpace(observation.Detail));
+        Assert.DoesNotContain("   at ", observation.Detail!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Cancelling the observation is not a verdict about the endpoint.
+    ///
+    /// It has to propagate rather than be recorded as unreachable: the window closing while a probe is
+    /// in flight would otherwise write a red row on its way out.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public async Task CancellationIsNotAnAnswer()
+    {
+        using var endpoint = new LoopbackEndpoint();
+        var probe = new WindowsAgentHttpsListenerProbe();
+
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => probe.ProbeAsync(endpoint.Binding, cancelled.Token));
+    }
+
+    /// <summary>
+    /// The timeout is short enough to live inside the polling period, and long enough to be true.
+    ///
+    /// A probe that could wait as long as the named-pipe client does would spend most of a one-second
+    /// cadence waiting, and one that gave up in a few milliseconds would report a live endpoint as
+    /// dead on any machine under load.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void TheProbeTimeoutFitsInsideThePollingPeriod()
+    {
+        Assert.True(WindowsAgentHttpsListenerProbe.DefaultTimeout < TimeSpan.FromSeconds(2));
+        Assert.True(WindowsAgentHttpsListenerProbe.DefaultTimeout >= TimeSpan.FromMilliseconds(500));
+    }
+
+    /// <summary>
+    /// The observation opens a socket and does nothing else.
+    ///
+    /// No process, no shell, no netsh, no sc.exe, no netstat, no WMI - and no request, no credential
+    /// and no write. This runs once a second on an elevated administrative window, so the list of
+    /// things it is allowed to do is asserted rather than remembered.
+    /// </summary>
+    [Fact]
+    public void TheProbeRunsNoProcessAndWritesNothing()
+    {
+        var probe = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentHttpsListenerProbe.cs");
+
+        foreach (var forbidden in new[]
+                 {
+                     "Process.Start", "ProcessStartInfo", "ShellExecute", "powershell", "pwsh",
+                     "cmd.exe", "netsh", "sc.exe", "netstat", "wmic", "ManagementObjectSearcher",
+                     "Registry", "File.", "Directory.",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, probe, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // It connects, and that is all it does with the connection.
+        Assert.Contains("new TcpClient(address.AddressFamily)", probe, StringComparison.Ordinal);
+        Assert.Contains("ConnectAsync", probe, StringComparison.Ordinal);
+        Assert.DoesNotContain("SendAsync", probe, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetStream", probe, StringComparison.Ordinal);
+        Assert.DoesNotContain("AuthenticateAsClient", probe, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The monitor belongs to the window, and the service host has never heard of it.
+    ///
+    /// The whole point of the unified host is that one image runs two things that share no state. A
+    /// timer the configuration window needs must not appear on the branch that runs as a service,
+    /// where there is no window to update and nobody to watch it.
+    /// </summary>
+    [Fact]
+    public void OnlyTheConfigurationWindowRunsTheMonitor()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml.cs");
+
+        Assert.Contains("Opened += ", window, StringComparison.Ordinal);
+        Assert.Contains("StartListenerMonitor()", window, StringComparison.Ordinal);
+        Assert.Contains("StopListenerMonitor()", window, StringComparison.Ordinal);
+
+        foreach (var path in new[]
+                 {
+                     "src/NutManager.Agent/Program.cs",
+                     "src/NutManager.Agent/NutAgentWindowsService.cs",
+                     "src/NutManager.Agent.Config/AgentConfigHost.cs",
+                 })
+        {
+            var source = T42UnifiedHostTests.Read(path);
+            Assert.DoesNotContain("ListenerMonitor", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("IAgentHttpsListenerProbe", source, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>The real adapter is the one the window is given.</summary>
+    [Fact]
+    public void TheWindowIsComposedWithTheRealProbe()
+    {
+        var app = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/App.axaml.cs");
+
+        Assert.Contains("listenerProbe: new WindowsAgentHttpsListenerProbe()", app, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The monitor observes and never acts.
+    ///
+    /// Everything that changes the machine stays where an operator put it behind a button. A watcher
+    /// that started a service because it found the listener down would be taking an administrative
+    /// action nobody asked for, once a second, from a background loop.
+    /// </summary>
+    [Fact]
+    public void TheMonitorNeverActsOnWhatItObserves()
+    {
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+
+        var start = viewModel.IndexOf("---------------- listener monitor", StringComparison.Ordinal);
+        var end = viewModel.IndexOf("---------------- status and diagnostics", StringComparison.Ordinal);
+
+        Assert.True(start > 0 && end > start, "The listener monitor section was not found.");
+        var monitor = viewModel[start..end];
+
+        foreach (var forbidden in new[]
+                 {
+                     "_service.StartAsync", "_service.RestartAsync", "_service.StopAsync",
+                     "_resources.Apply", "_resources.Remove", "_store.Write",
+                     "_certificates.", "SetStartupAsync",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, monitor, StringComparison.Ordinal);
+        }
+
+        // One loop, cancelled with the window, and one probe at a time.
+        Assert.Contains("if (_listenerMonitor is not null) return;", monitor, StringComparison.Ordinal);
+        Assert.Contains("monitor.Cancel();", monitor, StringComparison.Ordinal);
+        Assert.Contains("_listenerProbeGate.WaitAsync(0,", monitor, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromSeconds(1)", monitor, StringComparison.Ordinal);
+    }
+
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF01234567";
+
+    /// <summary>
+    /// An ephemeral socket on the loopback interface, owned and closed by the test.
+    ///
+    /// Port zero, so the operating system picks one that is free rather than the test claiming a
+    /// number that might belong to something on the machine running it. Nothing is ever sent over it;
+    /// it exists to be connectable, which is the entire question the probe asks.
+    /// </summary>
+    private sealed class LoopbackEndpoint : IDisposable
+    {
+        private readonly TcpListener _listener;
+
+        public LoopbackEndpoint()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+
+            var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            Binding = new AgentHttpsBinding("localhost", port, Thumbprint);
+        }
+
+        public AgentHttpsBinding Binding { get; }
+
+        public void Dispose() => _listener.Stop();
     }
 }

@@ -44,7 +44,8 @@ public sealed class App : Application
                 new WindowsAgentRuntimeInventory(),
                 certificateImporter: new WindowsAgentCertificateImporter(),
                 preferences: new AgentConfigUiPreferences(),
-                projectPage: new WindowsAgentProjectPageLauncher());
+                projectPage: new WindowsAgentProjectPageLauncher(),
+                listenerProbe: new WindowsAgentHttpsListenerProbe());
 
             desktop.MainWindow = new MainWindow { DataContext = viewModel };
 

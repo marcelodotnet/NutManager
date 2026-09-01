@@ -35,6 +35,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private readonly IAgentCertificateCatalog _certificates;
     private readonly IAgentRuntimeInventory _inventory;
 
+    /// <summary>
+    /// Absent in the tests that have nothing to say about the listener, which then reports that it has
+    /// not been checked rather than reporting a state nobody observed.
+    /// </summary>
+    private readonly IAgentHttpsListenerProbe? _listenerProbe;
+
     /// <summary>Absent in tests and on any host that has no browser to hand a link to.</summary>
     private readonly IAgentProjectPageLauncher? _projectPage;
     private readonly IAgentCertificateImporter? _certificateImporter;
@@ -82,7 +88,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         TimeProvider? timeProvider = null,
         IAgentCertificateImporter? certificateImporter = null,
         IAgentConfigUiPreferences? preferences = null,
-        IAgentProjectPageLauncher? projectPage = null)
+        IAgentProjectPageLauncher? projectPage = null,
+        IAgentHttpsListenerProbe? listenerProbe = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(groups);
@@ -99,6 +106,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _inventory = inventory;
         _certificateImporter = certificateImporter;
         _projectPage = projectPage;
+        _listenerProbe = listenerProbe;
         _preferences = preferences ?? AgentConfigUiPreferences.None;
         _time = timeProvider ?? TimeProvider.System;
 
@@ -520,6 +528,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ViewToggleText));
 
         if (value == AgentConfigSurface.Settings && IsAgentTab) ReloadService();
+
+        // Back on the surface that shows the row. The monitor kept running while the operator was
+        // elsewhere, so this is not a catch-up - it is the answer being fresh at the moment it becomes
+        // visible again, rather than up to a second old.
+        if (value == AgentConfigSurface.Configuration) RequestListenerRefresh();
     }
 
     public bool ShowConfiguration => Surface == AgentConfigSurface.Configuration;
@@ -700,6 +713,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // would put a blocking Windows query on the UI thread every time a checkbox is clicked.
         RebuildResourceStatus();
         RebuildDiagnostics();
+
+        // Turning the transport off means there is nothing left to probe, and turning it on means
+        // there may be. Either way the standing observation no longer describes the current state.
+        RequestListenerRefresh();
     }
 
     /// <summary>
@@ -1440,7 +1457,18 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowStopServiceAction));
         SyncStartupFromService();
         RefreshCommandStates();
+
+        // The listener row reads the service state, so re-reading the service has to redraw the strip
+        // and not only the diagnostics list. Without this the card said "running" beside a listener
+        // row still describing the service as stopped, which is the disagreement an operator sees
+        // first and trusts least.
+        RebuildResourceStatus();
         RebuildDiagnostics();
+
+        // Starting, stopping or restarting changes what the endpoint will say. Asked now rather than
+        // at the next tick, and never assumed: a service that has just been started is running long
+        // before its prefix is open, so the row stays unavailable until a probe actually succeeds.
+        RequestListenerRefresh();
     }
 
     /// <summary>
@@ -2138,6 +2166,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ReloadGroup();
             ReloadService();
             RefreshResourceState();
+
+            // Awaited, so the window opens on what the endpoint said rather than on "checking" and a
+            // correction a moment later. Both calls above have already queued an immediate refresh;
+            // this is the same observation, taken once, before anybody sees the strip.
+            await RefreshListenerAsync(cancellationToken).ConfigureAwait(true);
         }
         finally
         {
@@ -2247,6 +2280,238 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         RebuildResourceStatus();
         RebuildDiagnostics();
+
+        // Apply, Reset and every endpoint change arrive here. The endpoint that was just described is
+        // the one the probe targets, so the observation is asked for in the same place the target
+        // changes rather than repeated at each of the callers.
+        RequestListenerRefresh();
+    }
+
+    // ---------------------------------------------------------------- listener monitor
+
+    /// <summary>
+    /// How often the listener is asked whether it is still there.
+    ///
+    /// One second, because this is the state an administrator watches change: they stop the service
+    /// and look at the row. Anything slower makes the screen look broken, and anything faster buys
+    /// nothing a person can perceive while costing a connect attempt per tick.
+    /// </summary>
+    private static readonly TimeSpan ListenerPollingInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The last thing the endpoint said. Unknown until something is asked, and back to Unknown as
+    /// soon as there is nothing to ask - a stale "listening" outliving the service that served it is
+    /// the exact failure this whole section exists to remove.
+    /// </summary>
+    private AgentListenerObservation _listener = AgentListenerObservation.Unknown;
+
+    /// <summary>Cancelled when the window closes. Nothing here survives it.</summary>
+    private CancellationTokenSource? _listenerMonitor;
+
+    /// <summary>
+    /// One probe at a time, across every path that can start one - the tick, an immediate request and
+    /// the startup read all pass through this. A tick that arrives while a probe is still running is
+    /// dropped rather than queued: the answer it would produce is the answer already being fetched,
+    /// and queueing them is how a slow endpoint turns one probe per second into a backlog.
+    /// </summary>
+    private readonly SemaphoreSlim _listenerProbeGate = new(1, 1);
+
+    /// <summary>
+    /// The wake-up for an immediate refresh, replaced once per cycle.
+    ///
+    /// A completion source rather than a semaphore because several events can land together - Apply
+    /// finishes, the service is re-read, the surface changes back - and this coalesces them into the
+    /// single probe they all want, with no waiter left registered for the next one to consume.
+    /// </summary>
+    private TaskCompletionSource _listenerSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Whether the loop is running. False before the window opens and after it closes.</summary>
+    public bool IsListenerMonitorRunning => _listenerMonitor is not null;
+
+    /// <summary>
+    /// Starts the one loop this window gets.
+    ///
+    /// Idempotent on purpose: it is called when the window opens, and calling it again - from a
+    /// second Opened, a navigation, a re-bound data context - must not leave two loops probing the
+    /// same endpoint on interleaved clocks.
+    /// </summary>
+    public void StartListenerMonitor()
+    {
+        if (_listenerMonitor is not null) return;
+
+        var monitor = new CancellationTokenSource();
+        _listenerMonitor = monitor;
+        _ = MonitorListenerAsync(monitor.Token);
+    }
+
+    /// <summary>
+    /// Ends it. Called when the window closes, and safe to call when nothing is running.
+    ///
+    /// The loop is not awaited here because this runs from a Closed handler, which cannot wait. It
+    /// does not need to be: every step past an await re-checks the token before it touches this
+    /// object, so a probe still in flight completes into a loop that publishes nothing.
+    /// </summary>
+    public void StopListenerMonitor()
+    {
+        var monitor = _listenerMonitor;
+        _listenerMonitor = null;
+
+        if (monitor is null) return;
+
+        monitor.Cancel();
+        monitor.Dispose();
+    }
+
+    /// <summary>
+    /// Asks for an observation now instead of at the next tick.
+    ///
+    /// The single entry point every event uses - starting, stopping or restarting the service,
+    /// applying, resetting HTTPS, changing the endpoint, coming back to the configuration surface.
+    /// It never probes on the calling thread and never blocks: it wakes the loop that already owns
+    /// the serialisation, which is what keeps "several things just happened" to one probe.
+    /// </summary>
+    public void RequestListenerRefresh() => _listenerSignal.TrySetResult();
+
+    private async Task MonitorListenerAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var signal = _listenerSignal;
+
+            // Nothing to wait for when a request is already standing - the window has just opened, or
+            // several events landed while the last probe was running. Waiting a full period first
+            // would make the immediate refresh not immediate.
+            if (!signal.Task.IsCompleted)
+            {
+                // Whichever comes first: the period elapsing, or something asking for an answer now.
+                // WhenAny does not throw on a cancelled delay, so the token is checked rather than
+                // caught.
+                using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var period = Task.Delay(ListenerPollingInterval, _time, cycle.Token);
+
+                await Task.WhenAny(period, signal.Task).ConfigureAwait(true);
+
+                // A request that won the race leaves a timer still counting down. Cancelling releases
+                // it rather than letting one accumulate per event for as long as the window is open,
+                // and the delay is then awaited so its cancellation is observed rather than dropped.
+                cycle.Cancel();
+                await ObserveQuietlyAsync(period).ConfigureAwait(true);
+            }
+
+            if (cancellationToken.IsCancellationRequested) return;
+
+            // Arm the next cycle only if this one was woken by a request, and only if no other thread
+            // has already replaced it. Everything that arrived before this point has been served.
+            if (signal.Task.IsCompleted)
+            {
+                Interlocked.CompareExchange(
+                    ref _listenerSignal,
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                    signal);
+            }
+
+            await ObserveListenerAsync(cancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Reads the listener once, and waits for the answer.
+    ///
+    /// Called by the loop, and awaited by <see cref="RefreshAsync"/> so the window opens showing what
+    /// the endpoint actually said rather than opening on a guess and correcting itself.
+    /// </summary>
+    public async Task RefreshListenerAsync(CancellationToken cancellationToken = default) =>
+        await ObserveListenerAsync(cancellationToken).ConfigureAwait(true);
+
+    private async Task ObserveListenerAsync(CancellationToken cancellationToken)
+    {
+        var target = ListenerProbeTarget;
+
+        if (target is null || _listenerProbe is null)
+        {
+            // Nothing to ask: HTTPS is off, the service is not running, or the configuration the
+            // listener would need is not all there. Each of those is already reported by name in the
+            // row itself, and no network call can add to it.
+            PublishListener(AgentListenerObservation.Unknown);
+            return;
+        }
+
+        if (!await _listenerProbeGate.WaitAsync(0, cancellationToken).ConfigureAwait(true)) return;
+
+        try
+        {
+            var observation = await _listenerProbe.ProbeAsync(target, cancellationToken).ConfigureAwait(true);
+
+            // The window may have closed while the endpoint was deciding whether to answer.
+            if (cancellationToken.IsCancellationRequested) return;
+
+            PublishListener(observation);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled, not failed. The row keeps whatever it last knew.
+        }
+        catch (Exception exception)
+        {
+            // One probe throwing is a fact about this attempt, not the end of the loop: the next tick
+            // asks again. An adapter is expected to translate its own failures, so reaching here at
+            // all means something unexpected - which is reported rather than swallowed.
+            PublishListener(AgentListenerObservation.Unreachable(
+                $"{exception.GetType().Name}: {exception.Message}"));
+        }
+        finally
+        {
+            _listenerProbeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The endpoint worth asking about, or null when the row is decided without asking.
+    ///
+    /// The same four conditions the row itself checks before it gets as far as the listener, in the
+    /// same order, so the monitor never probes for a state that is already reported by something
+    /// nearer the cause - and so a stopped service costs no network call at all.
+    ///
+    /// The endpoint is the one the strip already describes: the validated draft while it is valid,
+    /// and the last one described otherwise. Probing anything else would put a second definition of
+    /// "the endpoint" on the same screen.
+    /// </summary>
+    private AgentHttpsBinding? ListenerProbeTarget =>
+        HttpsEnabled
+        && _serviceState.IsInstalled
+        && _serviceState.IsRunning
+        && HttpsIsValid
+        && _resourceState.IsFullyConfigured
+            ? _appliedBinding
+            : null;
+
+    /// <summary>Awaits a task purely so that its cancellation is not left unobserved.</summary>
+    private static async Task ObserveQuietlyAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Records an observation, and redraws only when it actually changed.
+    ///
+    /// A listener that stays up for twenty minutes is twelve hundred identical answers, and rebuilding
+    /// the strip for each of them would repopulate an observable collection once a second under an
+    /// operator's cursor. The record compares by value, so an unchanged answer costs nothing and the
+    /// row does not flicker between identical states.
+    /// </summary>
+    private void PublishListener(AgentListenerObservation observation)
+    {
+        if (_listener == observation) return;
+
+        _listener = observation;
+        RebuildResourceStatus();
+        RebuildDiagnostics();
     }
 
     // ---------------------------------------------------------------- status and diagnostics
@@ -2331,11 +2596,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>
     /// Whether the HTTPS listener is actually up.
     ///
-    /// This is a composed answer, not a probe, and the difference is worth saying out loud: it reports
-    /// that HTTPS is enabled, that its endpoint is valid, that the binding and the reservation are
-    /// ours, and that the service is running — everything the listener needs. It does not open a
-    /// socket, and it is not a claim that any client has ever authenticated over it. Those are separate
-    /// facts, and the diagnostics view keeps them separate.
+    /// The four conditions below are the ones that make the question answerable without asking: HTTPS
+    /// off, service absent, service stopped and configuration incomplete each explain the row by
+    /// themselves, and each sends an administrator somewhere different. Past them, the answer is
+    /// observed rather than composed.
+    ///
+    /// It used to be composed all the way through - enabled, valid, owned and running was reported as
+    /// listening - and that is wrong on the machine that matters most: HTTP.sys can refuse the prefix
+    /// while the service sits in Running, and the row then showed a green light for an endpoint
+    /// nothing could reach. A running service is not a running listener, so the last step asks.
+    ///
+    /// What it does not claim: that the answer came from NutManager rather than from something else
+    /// on the port, and that any client has authenticated. Ownership is the three rows above this one,
+    /// and authentication is not a resource at all.
     /// </summary>
     private AgentStatusItemViewModel DescribeListener()
     {
@@ -2376,10 +2649,31 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 Strings["Resources.Listener.Incomplete"]);
         }
 
-        return AgentStatusItemViewModel.From(
-            Strings, label, AgentDiagnosticState.Ready, Strings["Resources.State.Listener.Active"], icon,
-            Strings.Format("Resources.Listener.Listening", HttpsEndpoint));
+        return _listener.State switch
+        {
+            AgentListenerReachability.Listening => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Ready, Strings["Resources.State.Listener.Active"], icon,
+                Strings.Format("Resources.Listener.Listening", HttpsEndpoint)),
+
+            // Everything configured, the service running, and nothing answering. Reported exactly as
+            // it is: the three rows above stay green because they are still correct, and this one
+            // does not borrow their correctness. The socket error, when there is one, is the tooltip.
+            AgentListenerReachability.Unreachable => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.State.Listener.Unavailable"], icon,
+                Join(Strings.Format("Resources.Listener.NotAnswering", HttpsEndpoint), _listener.Detail)),
+
+            // The first observation has not come back yet. Claiming either answer here would be a
+            // guess, and the one that guesses "listening" is the one that shows a green light for a
+            // dead endpoint.
+            _ => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Resources.State.Listener.Checking"], icon,
+                Strings["Resources.Listener.Checking"]),
+        };
     }
+
+    /// <summary>The localized sentence, followed by the adapter technical note when there is one.</summary>
+    private static string Join(string sentence, string? detail) =>
+        string.IsNullOrWhiteSpace(detail) ? sentence : $"{sentence} {detail}";
 
     /// <summary>
     /// One status column.

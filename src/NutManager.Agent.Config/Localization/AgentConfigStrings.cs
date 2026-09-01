@@ -172,6 +172,8 @@ public sealed class AgentConfigStrings
         ["Resources.Listener.ServiceStopped"] = "Serviço parado; nada está ouvindo.",
         ["Resources.Listener.ServiceMissing"] = "NutManagerAgent não está instalado.",
         ["Resources.Listener.Incomplete"] = "Configuração de HTTPS incompleta.",
+        ["Resources.Listener.NotAnswering"] = "O endpoint não respondeu; o serviço está em execução, mas nada está ouvindo em {0}.",
+        ["Resources.Listener.Checking"] = "Ainda não houve resposta desta janela; a primeira verificação está em andamento.",
         ["Resources.Foreign"] = "Não pertence ao NutManager",
         ["Resources.Absent"] = "Não configurado",
         ["Resources.Unknown"] = "Não foi possível verificar",
@@ -195,6 +197,7 @@ public sealed class AgentConfigStrings
         ["Resources.State.Listener.Active"] = "Ativo",
         ["Resources.State.Listener.Incomplete"] = "Configuração incompleta",
         ["Resources.State.Listener.Unavailable"] = "Listener indisponível",
+        ["Resources.State.Listener.Checking"] = "Verificando",
 
         // The tooltip. Everything the card no longer shows inline, on one hover.
         ["Resources.Tooltip.State"] = "Estado: {0}",
@@ -489,6 +492,8 @@ public sealed class AgentConfigStrings
         ["Resources.Listener.ServiceStopped"] = "Service stopped; nothing is listening.",
         ["Resources.Listener.ServiceMissing"] = "NutManagerAgent is not installed.",
         ["Resources.Listener.Incomplete"] = "HTTPS configuration is incomplete.",
+        ["Resources.Listener.NotAnswering"] = "The endpoint did not answer; the service is running, but nothing is listening on {0}.",
+        ["Resources.Listener.Checking"] = "This window has not had an answer yet; the first check is under way.",
         ["Resources.Foreign"] = "Not owned by NutManager",
         ["Resources.Absent"] = "Not configured",
         ["Resources.Unknown"] = "Could not be verified",
@@ -505,6 +510,7 @@ public sealed class AgentConfigStrings
         ["Resources.State.Listener.Active"] = "Active",
         ["Resources.State.Listener.Incomplete"] = "Incomplete configuration",
         ["Resources.State.Listener.Unavailable"] = "Listener unavailable",
+        ["Resources.State.Listener.Checking"] = "Checking",
 
         ["Resources.Tooltip.State"] = "State: {0}",
         ["Resources.Tooltip.Port"] = "Port: {0}",
