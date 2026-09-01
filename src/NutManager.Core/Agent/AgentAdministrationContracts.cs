@@ -275,6 +275,62 @@ public interface IAgentServiceAdministration
     /// </summary>
     Task<AgentServiceOutcome> SetStartupAsync(
         AgentServiceStartupPreference preference, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Registers NutManagerAgent with the service control manager.
+    ///
+    /// Deliberately takes nothing. Every value a generic service installer would accept - the name,
+    /// the executable, the command line, the account, the start type - is fixed by the implementation,
+    /// so there is no parameter through which this window could be made to register a different
+    /// service or point an existing name at a different binary. A method with those parameters would
+    /// be an arbitrary service installer with a button in front of it.
+    ///
+    /// It registers and stops there. The service is created stopped, and starting it stays the
+    /// operator explicit action through <see cref="StartAsync"/> - the same boundary that keeps the
+    /// product installer from starting what it installs.
+    /// </summary>
+    Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken);
+}
+
+/// <summary>What registering the service did, or why it did not.</summary>
+public enum AgentServiceInstallOutcome
+{
+    /// <summary>The service was created. It is registered and stopped.</summary>
+    Installed,
+
+    /// <summary>
+    /// A service of that name was already registered, so nothing was created.
+    ///
+    /// Never an overwrite. An existing NutManagerAgent belongs to whoever installed it, and silently
+    /// repointing its image path from a button labelled "install" would be a repair nobody asked for
+    /// - on a service this product may not own.
+    /// </summary>
+    AlreadyInstalled,
+
+    Failed,
+}
+
+/// <summary>
+/// The result of a registration attempt, with the Win32 error kept rather than flattened.
+///
+/// The code survives because the failures that matter here are distinguishable only by it: access
+/// denied is a different problem from a service marked for deletion, and both read as "could not
+/// install" without it.
+/// </summary>
+public sealed record AgentServiceInstallation(
+    AgentServiceInstallOutcome Outcome,
+    string? Failure = null,
+    int? ErrorCode = null)
+{
+    public bool Succeeded => Outcome is AgentServiceInstallOutcome.Installed;
+
+    public static AgentServiceInstallation Installed { get; } = new(AgentServiceInstallOutcome.Installed);
+
+    public static AgentServiceInstallation AlreadyInstalled { get; } =
+        new(AgentServiceInstallOutcome.AlreadyInstalled);
+
+    public static AgentServiceInstallation Failed(string failure, int? errorCode = null) =>
+        new(AgentServiceInstallOutcome.Failed, failure, errorCode);
 }
 
 /// <summary>

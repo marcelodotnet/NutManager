@@ -1728,15 +1728,37 @@ HTTPS action off the surfaces where they did not belong.
   `RemoveFile` is introduced, so uninstall still removes only what the installer owns.
 - A gear in the header opens a settings surface with four tabs. The three surfaces are one enum value
   rather than a boolean each, so "both showing" and "none showing" are states the type cannot hold.
-- General holds the startup preference and the HTTPS reset. Appearance holds the theme button and the
-  language selector, both moved out of the header unchanged; the language selector is still a
-  one-way-bound radio flyout and never a ComboBox. Agent reports service state, start type, account,
-  transports and HTTPS port, read-only. About reports version, build, both runtimes, the developer,
-  one fixed project page and the terms.
+- General holds the startup preference and the HTTPS reset. Appearance holds the theme control and
+  the language selector, both moved out of the header; the selector names each language in its own
+  language rather than by culture code. Agent installs the service and reports service state, start
+  type, account, transports and HTTPS port. About reports version, build, both runtimes, the
+  developer, one fixed project page and the terms.
 - The startup preference is the service start type and nothing else. It is Automatic or Manual, never
   Disabled, changed through the SCM with `SERVICE_NO_CHANGE` in every other field, and it neither
   starts nor stops the service. It is not persisted in `agent.json` or in the window preferences: the
-  SCM is the only place it lives, and it is re-read from the machine after every change.
+  SCM is the only place it lives, and it is re-read from the machine after every change. Turning it
+  off is confirmed first, because a machine that reboots then comes back without its agent; turning
+  it on is applied as asked. The result is reported as one line that belongs to the panel and to the
+  visit, and is cleared on leaving either.
+- The Agent tab can register `NutManagerAgent` with the SCM. Every value `CreateService` takes is
+  fixed by the implementation - the name, the display name, the type, `SERVICE_AUTO_START`,
+  `SERVICE_ERROR_NORMAL` and the LocalSystem account expressed as the null service start name - and
+  the image path is the running apphost, validated to be a fully qualified `NutManager.Agent.exe`
+  that exists, and quoted. The contract takes no parameters, so no name, path, command line or
+  account can reach it from the window. It registers and stops: the service is created stopped, and
+  starting it stays the operator's explicit action. It does not create the Event Log source, which
+  the MSI owns as a registry key it may remove and which the agent deliberately refuses to create for
+  itself; it installs no runtime; and it touches no HTTPS resource, `agent.json` or NUT. An existing
+  service is never overwritten or repaired - `ERROR_SERVICE_EXISTS` is reported as already installed.
+- The HTTPS listener row is observed rather than composed. A single cancellable loop, owned by the
+  window, opens a TCP connection to the configured endpoint once a second and only when HTTPS is on,
+  the service is running and the configuration is complete; service actions, Apply, Reset and
+  returning to the configuration surface ask for an answer immediately. One probe runs at a time, an
+  unchanged answer redraws nothing, and the periodic path queries no certificate store, firewall, URL
+  reservation, SSL binding, service configuration or configuration file.
+- Diagnostics reports whether `QueryServiceConfig` answered, keeping three outcomes apart: no service
+  to query, values read, or a query that failed with its Win32 code and message. The Agent tab still
+  says "Unknown" when the configuration cannot be read; the reason for it now has somewhere to live.
 - The project page opens through a contract with no URL parameter and a constant in the
   implementation. No `Run` registry entry, Startup folder item or scheduled task was added, and no
   generic process launcher exists.

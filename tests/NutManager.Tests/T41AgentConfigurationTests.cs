@@ -3950,6 +3950,454 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(@"EXAMPLE\svc_nutmanager", context.ViewModel.ServiceAccountText);
     }
 
+    // ---------------------------------------------------------------- T42: startup and installation
+
+    /// <summary>
+    /// Opening the panel reports nothing, because nothing has happened.
+    ///
+    /// The line under the switch is the result of an action. A panel that greeted every visit with
+    /// "the service will start with Windows" would be repeating, in a full sentence, what the switch
+    /// beside it already says by being on.
+    /// </summary>
+    [Fact]
+    public async Task TheStartupPanelSaysNothingUntilSomethingHappens()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.False(context.ViewModel.HasStartupResult);
+        Assert.Null(context.ViewModel.StartupResultText);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.StartupResultKind);
+    }
+
+    /// <summary>
+    /// Turning automatic start on is applied as asked, and reported as a success.
+    ///
+    /// No confirmation: it adds a behaviour and takes nothing away. A dialog here would be one for
+    /// the sake of symmetry with the other direction, which is not a reason to interrupt somebody.
+    /// </summary>
+    [Fact]
+    public async Task TurningAutomaticStartOnAppliesAtOnceAndSucceeds()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal([AgentServiceStartupPreference.Automatic], context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.StartupResultKind);
+        Assert.True(context.ViewModel.HasStartupResult);
+        Assert.Equal(
+            "The service will now start automatically with Windows.", context.ViewModel.StartupResultText);
+    }
+
+    /// <summary>
+    /// Turning it off asks first, and changes nothing while the question is open.
+    ///
+    /// The switch goes back to where the service control manager still has it, because a control
+    /// sitting in a position the machine has not agreed to is a lie for as long as the dialog is up.
+    /// </summary>
+    [Fact]
+    public async Task TurningAutomaticStartOffAsksBeforeChangingAnything()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        // And it says what it will do, in words that name the consequence and the thing that will not
+        // happen - the running service is not stopped.
+        Assert.Equal("Change how the service starts?", context.ViewModel.ConfirmationTitle);
+        Assert.Contains(
+            "will no longer start automatically", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Contains(
+            "will not be stopped", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Equal("Change to manual", context.ViewModel.ConfirmButtonText);
+    }
+
+    /// <summary>Answering no leaves the machine exactly as it was, and says nothing.</summary>
+    [Fact]
+    public async Task CancellingTheStartTypeQuestionChangesNothing()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentServiceStartType.Automatic, context.Service.StartType);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// Answering yes moves the start type once, and reports the consequence rather than a failure.
+    ///
+    /// Warning, not error: it is what was asked for and it worked. A red line over somebody's own
+    /// successful choice would be telling them they made a mistake.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingTheStartTypeQuestionMovesItOnceAndWarns()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal([AgentServiceStartupPreference.Manual], context.Service.StartupChanges);
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.StartupResultKind);
+        Assert.Equal("The service will now have to be started by hand.", context.ViewModel.StartupResultText);
+
+        // A boot preference is not a running state. Nothing was started, stopped or restarted.
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Equal(0, context.Service.StopCalls);
+        Assert.Equal(0, context.Service.RestartCalls);
+        Assert.Equal(AgentServiceState.Running, context.Service.State);
+    }
+
+    /// <summary>
+    /// A refused change leaves the switch reporting the machine, not the request.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedStartTypeChangeKeepsTheSwitchOnTheMachine()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.StartupFailure = "Win32 error 5: Access is denied.";
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.StartupResultKind);
+        Assert.Contains("Access is denied", context.ViewModel.StartupResultText!, StringComparison.Ordinal);
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentServiceStartType.Manual, context.Service.StartType);
+    }
+
+    /// <summary>
+    /// The result belongs to the panel it happened on, and to the visit it happened during.
+    ///
+    /// It used to survive both, so an operator who changed a start type, went to look at something
+    /// else and came back was told about it again as though it had just happened.
+    /// </summary>
+    [Fact]
+    public async Task AStartTypeResultDoesNotOutliveThePanelOrTheVisit()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        context.ViewModel.StartsWithWindows = true;
+        Assert.True(context.ViewModel.HasStartupResult);
+
+        // Another panel in the same surface.
+        context.ViewModel.SelectAppearanceTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.SelectGeneralTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        // And leaving settings entirely.
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowConfiguration);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowSettings);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// With no service there is no start type, so the switch is unusable - and beside it is the way
+    /// to make it usable.
+    /// </summary>
+    [Fact]
+    public async Task AnAbsentServiceDisablesTheSwitchAndOffersTheWayToInstallIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.CanChangeStartup);
+        Assert.True(context.ViewModel.ShowStartupHelp);
+        Assert.Equal(
+            "The NutManagerAgent service is not installed on this machine.",
+            context.ViewModel.StartupBlockedReason);
+    }
+
+    /// <summary>A service that exists needs no signpost, so there is none.</summary>
+    [Fact]
+    public async Task AnInstalledServiceHidesTheWayToInstallIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.CanChangeStartup);
+        Assert.False(context.ViewModel.ShowStartupHelp);
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.Null(context.ViewModel.StartupBlockedReason);
+    }
+
+    /// <summary>
+    /// The signpost is navigation and nothing else: it opens a panel in this window and leaves the
+    /// machine alone.
+    /// </summary>
+    [Fact]
+    public async Task TheWayToInstallOpensTheAgentPanelAndTouchesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        Assert.True(context.ViewModel.IsGeneralTab);
+
+        context.ViewModel.ShowServiceInstallationCommand.Execute(null);
+
+        Assert.True(context.ViewModel.IsAgentTab);
+        Assert.True(context.ViewModel.ShowSettings);
+
+        // Same window, same surface. Nothing was installed, started or written on the way.
+        Assert.Equal(0, context.Service.InstallCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>
+    /// Registering leaves a service that exists, is configured to start with Windows, and is not
+    /// running.
+    ///
+    /// The last of those is the point. Install and start are two decisions, and a button labelled
+    /// install that also started the service would be making the second one on the operator behalf -
+    /// the same boundary the product installer keeps when it registers the service and stops there.
+    /// </summary>
+    [Fact]
+    public async Task InstallingRegistersTheServiceAndLeavesItStopped()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.CanInstallService);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Equal(0, context.Service.RestartCalls);
+
+        // Read back from the machine rather than assumed.
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.False(context.ViewModel.ServiceIsRunning);
+        Assert.Equal("Stopped", context.ViewModel.ServiceStateText);
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        // The offer is spent, and the switch it was blocking now works.
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.False(context.ViewModel.InstallServiceCommand.CanExecute(null));
+        Assert.True(context.ViewModel.CanChangeStartup);
+        Assert.False(context.ViewModel.ShowStartupHelp);
+
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.InstallResultKind);
+        Assert.Equal("Service installed successfully.", context.ViewModel.InstallResultText);
+    }
+
+    /// <summary>
+    /// A service that is already there is never registered again, and never quietly repaired.
+    ///
+    /// The button is closed before the question arises. The race - somebody registering it between
+    /// the button being enabled and being pressed - is reported as the state it leaves behind rather
+    /// than as a failure, and nothing is done to the service that already exists.
+    /// </summary>
+    [Fact]
+    public async Task AnExistingServiceIsNeverRegisteredAgain()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.False(context.ViewModel.InstallServiceCommand.CanExecute(null));
+
+        context.ViewModel.InstallServiceCommand.Execute(null);
+        Assert.Equal(0, context.Service.InstallCalls);
+
+        // And when the race does happen, it is reported without touching what is there.
+        var raced = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        raced.Service.InstallResult = AgentServiceInstallation.AlreadyInstalled;
+        await raced.ViewModel.RefreshAsync();
+        await raced.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, raced.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.", raced.ViewModel.InstallResultText);
+        Assert.Equal(0, raced.Service.StartCalls);
+    }
+
+    /// <summary>
+    /// A refusal says so plainly, and the Win32 reason goes where technical detail goes.
+    /// </summary>
+    [Fact]
+    public async Task AFailedRegistrationKeepsItsReasonInDiagnostics()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.InstallResult = AgentServiceInstallation.Failed(
+            "The NutManagerAgent service could not be registered (Win32 error 5: Access is denied.).", 5);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal("The service could not be installed.", context.ViewModel.InstallResultText);
+
+        // Nothing technical on the panel; all of it in diagnostics.
+        Assert.DoesNotContain("Win32", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.ServiceInstall"]);
+        Assert.Equal(AgentDiagnosticState.Error, diagnostic.State);
+        Assert.Contains("Win32 error 5", diagnostic.TechnicalDetail, StringComparison.Ordinal);
+
+        // Still nothing registered, so the offer stands.
+        Assert.True(context.ViewModel.CanInstallService);
+    }
+
+    /// <summary>The registration result is as local to its panel as the start type result is.</summary>
+    [Fact]
+    public async Task AnInstallResultDoesNotOutliveTheAgentPanel()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.HasInstallResult);
+
+        context.ViewModel.SelectGeneralTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasInstallResult);
+    }
+
+    /// <summary>
+    /// The sentence above the button reports what the machine has, and changes when that changes.
+    /// </summary>
+    [Fact]
+    public async Task TheInstallSectionSaysWhetherTheServiceIsThere()
+    {
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+        Assert.Equal(
+            "Install NutManager Agent as a Windows service so that it can run in the background.",
+            absent.ViewModel.ServiceInstallDescription);
+
+        await absent.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.",
+            absent.ViewModel.ServiceInstallDescription);
+    }
+
+    /// <summary>
+    /// Diagnostics answers the question the Agent panel cannot: did the configuration query work.
+    ///
+    /// Three outcomes kept apart, because a server showing "Unknown" for the start mode and the
+    /// account needs to know which of them it is in. Not installed is not a failure; a failure has a
+    /// Win32 code; and a success has values.
+    /// </summary>
+    [Fact]
+    public async Task DiagnosticsReportWhetherTheServiceConfigurationCouldBeRead()
+    {
+        var read = CreateContext(serviceState: AgentServiceState.Running);
+        read.Service.StartType = AgentServiceStartType.Automatic;
+        read.Service.Account = "LocalSystem";
+        await read.ViewModel.RefreshAsync();
+
+        var readRow = ServiceConfigurationRow(read.ViewModel);
+        Assert.Equal(AgentDiagnosticState.Ready, readRow.State);
+        Assert.Equal("Automatic \u00b7 LocalSystem", readRow.Detail);
+
+        // Installed, status readable, configuration refused. This is the server case.
+        var refused = CreateContext(serviceState: AgentServiceState.Running);
+        refused.Service.StartType = AgentServiceStartType.Unknown;
+        refused.Service.Account = string.Empty;
+        refused.Service.Failure =
+            "The NutManagerAgent service configuration could not be read (Win32 error 5: Access is denied.).";
+        refused.Service.QueryErrorCode = 5;
+        await refused.ViewModel.RefreshAsync();
+
+        var refusedRow = ServiceConfigurationRow(refused.ViewModel);
+        Assert.Equal(AgentDiagnosticState.Attention, refusedRow.State);
+        Assert.Equal("Could not be queried", refusedRow.Detail);
+        Assert.Contains("Win32 error 5", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+        Assert.Contains("Access is denied", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+
+        // And the service being absent is its own thing, not a query failure.
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        absent.Service.StartType = AgentServiceStartType.Unknown;
+        absent.Service.Account = string.Empty;
+        await absent.ViewModel.RefreshAsync();
+
+        var absentRow = ServiceConfigurationRow(absent.ViewModel);
+        Assert.Equal(AgentDiagnosticState.NotConfigured, absentRow.State);
+        Assert.Equal("Not installed", absentRow.Detail);
+        Assert.NotEqual(refusedRow.State, absentRow.State);
+    }
+
+    /// <summary>Both new panels are written in the window language, in both of them.</summary>
+    [Fact]
+    public async Task TheNewSettingsTextIsLocalized()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.NotInstalled, language: UiLanguagePreference.PtBr);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal(
+            "Instale o NutManager Agent como servi\u00e7o do Windows para permitir sua execu\u00e7\u00e3o em segundo plano.",
+            context.ViewModel.ServiceInstallDescription);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.Equal("Servi\u00e7o instalado com sucesso.", context.ViewModel.InstallResultText);
+
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal("Alterar inicializa\u00e7\u00e3o do servi\u00e7o?", context.ViewModel.ConfirmationTitle);
+        Assert.Equal("Alterar para manual", context.ViewModel.ConfirmButtonText);
+
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.Equal("O servi\u00e7o passar\u00e1 a exigir in\u00edcio manual.", context.ViewModel.StartupResultText);
+    }
+
+    private static AgentStatusItemViewModel ServiceConfigurationRow(AgentConfigViewModel viewModel) =>
+        Assert.Single(
+            viewModel.Diagnostics,
+            item => item.Label == viewModel.Strings["Diagnostics.ServiceConfiguration"]);
+
     // ---------------------------------------------------------------- T42: the listener, watched
 
     /// <summary>
@@ -4775,6 +5223,28 @@ public sealed class T41AgentConfigViewModelTests
             RestartCalls++;
             State = AgentServiceState.Running;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Running, null));
+        }
+
+        public int InstallCalls { get; private set; }
+
+        /// <summary>What registration answers. Settable so a refusal and a race can both be exercised.</summary>
+        public AgentServiceInstallation InstallResult { get; set; } = AgentServiceInstallation.Installed;
+
+        public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken)
+        {
+            InstallCalls++;
+
+            // A real registration leaves the service present and stopped, with automatic start and no
+            // process running. The fake has to do the same or the tests would be asserting against a
+            // machine state Windows never produces.
+            if (InstallResult.Succeeded)
+            {
+                State = AgentServiceState.Stopped;
+                StartType = AgentServiceStartType.Automatic;
+                Account = "LocalSystem";
+            }
+
+            return Task.FromResult(InstallResult);
         }
     }
 

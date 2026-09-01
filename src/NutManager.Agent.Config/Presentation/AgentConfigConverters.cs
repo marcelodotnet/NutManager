@@ -34,6 +34,32 @@ public static class AgentConfigConverters
         }));
 
     /// <summary>
+    /// The glyph beside a settings result.
+    ///
+    /// All three are discs, so the line keeps its shape and only its meaning changes. Warning is the
+    /// exclamation rather than the status strip's triangle: manual start is what the operator asked
+    /// for and it worked, so what the line owes them is the consequence, not a hazard sign.
+    /// </summary>
+    public static readonly IValueConverter SettingsFeedbackIcon =
+        new FuncValueConverter<AgentSettingsFeedback, Geometry?>(kind => Resource<Geometry>(kind switch
+        {
+            AgentSettingsFeedback.Success => "AgentIconStateReady",
+            AgentSettingsFeedback.Warning => "AgentIconFeedbackWarning",
+            AgentSettingsFeedback.Error => "AgentIconStateError",
+            _ => "AgentIconStateNotConfigured",
+        }));
+
+    /// <summary>The same three, in the palette the rest of the product already uses for them.</summary>
+    public static readonly IValueConverter SettingsFeedbackBrush =
+        new FuncValueConverter<AgentSettingsFeedback, IBrush?>(kind => Resource<IBrush>(kind switch
+        {
+            AgentSettingsFeedback.Success => "NutHealthyBrush",
+            AgentSettingsFeedback.Warning => "NutWarningBrush",
+            AgentSettingsFeedback.Error => "NutCriticalBrush",
+            _ => "NutTextSecondaryBrush",
+        }));
+
+    /// <summary>
     /// An apply result to its colour. Failure is critical; anything else is ordinary secondary text —
     /// a successful save should not shout.
     /// </summary>

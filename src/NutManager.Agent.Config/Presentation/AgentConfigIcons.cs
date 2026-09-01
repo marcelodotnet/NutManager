@@ -81,6 +81,14 @@ public static class AgentConfigIcons
         ("AgentIconTabGeneral", MaterialIconKind.TuneVariant),
         ("AgentIconTabAppearance", MaterialIconKind.PaletteOutline),
 
+        // Beside a switch that cannot be used, offering the way to the thing that would make it work.
+        ("AgentIconHelp", MaterialIconKind.HelpCircleOutline),
+
+        // The consequence glyph for a settings result. A disc with an exclamation rather than the
+        // triangle the status strip uses: this reports what an operator just chose, and a hazard sign
+        // over their own successful choice reads as a fault. The colour carries the rest.
+        ("AgentIconFeedbackWarning", MaterialIconKind.AlertCircle),
+
         ("AgentIconImport", MaterialIconKind.FileImportOutline),
         ("AgentIconProhibit", MaterialIconKind.CancelOutline),
     ];

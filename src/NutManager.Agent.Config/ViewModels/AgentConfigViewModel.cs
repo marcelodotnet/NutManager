@@ -529,6 +529,15 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         if (value == AgentConfigSurface.Settings && IsAgentTab) ReloadService();
 
+        // A result belongs to the action that produced it and to the panel it happened on. Leaving
+        // settings ends both, so the message does not greet whoever comes back later as though they
+        // had just done something.
+        if (value != AgentConfigSurface.Settings)
+        {
+            ClearStartupResult();
+            ClearInstallResult();
+        }
+
         // Back on the surface that shows the row. The monitor kept running while the operator was
         // elsewhere, so this is not a catch-up - it is the answer being fresh at the moment it becomes
         // visible again, rather than up to a second old.
@@ -616,6 +625,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     partial void OnSettingsTabChanged(AgentSettingsTab value)
     {
+        // Each result is local to its own panel: the start type line belongs to General and the
+        // registration line to Agent. Switching panels leaves the action behind with them.
+        if (value != AgentSettingsTab.General) ClearStartupResult();
+        if (value != AgentSettingsTab.Agent) ClearInstallResult();
+
         OnPropertyChanged(nameof(IsGeneralTab));
         OnPropertyChanged(nameof(IsAppearanceTab));
         OnPropertyChanged(nameof(IsAgentTab));
@@ -1455,6 +1469,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ServiceIsInstalled));
         OnPropertyChanged(nameof(ShowStartServiceAction));
         OnPropertyChanged(nameof(ShowStopServiceAction));
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(ServiceInstallDescription));
+        InstallServiceCommand.NotifyCanExecuteChanged();
         SyncStartupFromService();
         RefreshCommandStates();
 
@@ -1534,6 +1551,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public string ConfirmButtonText => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Confirm"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryConfirm"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.RemoveAndDisable"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Confirm"],
@@ -1543,6 +1561,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string? ConfirmationTitle => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Title"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryTitle"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Title"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Title"],
@@ -1552,6 +1571,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string? ConfirmationMessage => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Question"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryWarning"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Message"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Message"],
@@ -1715,6 +1735,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         switch (pending)
         {
+            case AgentConfigConfirmation.ManualStartup:
+                // The one place the start type moves to Manual. Reaching it means somebody read what
+                // it does and said yes.
+                await ApplyStartupPreferenceAsync(automatic: false).ConfigureAwait(true);
+                break;
+
             case AgentConfigConfirmation.CreateGroupInDirectory:
                 CreateGroupCore();
                 return;
@@ -2752,16 +2778,49 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>True while the switch is being set from the machine, so echoing a fact back is not a change.</summary>
     private bool _syncingStartup;
 
-    /// <summary>The last thing the startup switch did, or why it could not.</summary>
+    /// <summary>
+    /// The last thing the startup switch did.
+    ///
+    /// Deliberately empty until something happens. It reports an action, and the standing state is
+    /// already shown by the switch itself - a line that said "the service will start with Windows"
+    /// every time the tab opened would be a second, wordier copy of the control above it.
+    /// </summary>
     [ObservableProperty]
     private string? _startupResultText;
 
+    /// <summary>
+    /// Which of the three it was, so the line can carry the right glyph.
+    ///
+    /// Manual is a warning rather than an error: the operator asked for it, and it succeeded. What it
+    /// deserves is the raised eyebrow of a consequence, not the red of a fault.
+    /// </summary>
     [ObservableProperty]
-    private bool _startupFailed;
+    private AgentSettingsFeedback _startupResultKind = AgentSettingsFeedback.None;
 
+    public bool HasStartupResult => StartupResultKind is not AgentSettingsFeedback.None;
+
+    partial void OnStartupResultKindChanged(AgentSettingsFeedback value) =>
+        OnPropertyChanged(nameof(HasStartupResult));
+
+    /// <summary>
+    /// The switch was moved. Off is asked about first; on is applied as asked.
+    ///
+    /// Turning automatic start off means a machine that reboots comes back without its agent, and
+    /// nothing on screen would have said so afterwards. Turning it on takes nothing away, so asking
+    /// would be a dialog for the sake of having one.
+    /// </summary>
     partial void OnStartsWithWindowsChanged(bool value)
     {
         if (_syncingStartup) return;
+
+        if (!value && _serviceState.StartType == AgentServiceStartType.Automatic)
+        {
+            // Put back to what the machine still says while the question is open. The switch must
+            // never sit in a position the service control manager has not agreed to.
+            SyncStartupFromService();
+            PendingConfirmation = AgentConfigConfirmation.ManualStartup;
+            return;
+        }
 
         _ = ApplyStartupPreferenceAsync(value);
     }
@@ -2775,6 +2834,28 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>Why the switch is unavailable, said plainly rather than left to a disabled control.</summary>
     public string? StartupBlockedReason =>
         _serviceState.IsInstalled ? null : Strings["Settings.Startup.NotInstalled"];
+
+    /// <summary>
+    /// Whether to offer the way to the thing that would make the switch usable.
+    ///
+    /// A disabled control with a tooltip explains the problem to whoever hovers it. This offers the
+    /// answer instead, beside the control that cannot be used, and it exists only while that is true.
+    /// </summary>
+    public bool ShowStartupHelp => !_serviceState.IsInstalled;
+
+    /// <summary>
+    /// Goes to the panel that can install the service. Navigation and nothing else - it opens a tab
+    /// in this same window, touches no machine state, and asks nothing of the operator on the way.
+    /// </summary>
+    [RelayCommand]
+    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.Agent;
+
+    /// <summary>Forgets the last action, so a result never outlives the panel it belongs to.</summary>
+    private void ClearStartupResult()
+    {
+        StartupResultText = null;
+        StartupResultKind = AgentSettingsFeedback.None;
+    }
 
     private void SyncStartupFromService()
     {
@@ -2790,6 +2871,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         OnPropertyChanged(nameof(CanChangeStartup));
         OnPropertyChanged(nameof(StartupBlockedReason));
+        OnPropertyChanged(nameof(ShowStartupHelp));
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(ServiceInstallDescription));
+        InstallServiceCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>
@@ -2817,14 +2902,23 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             var outcome = await _service.SetStartupAsync(preference, CancellationToken.None).ConfigureAwait(true);
 
-            StartupFailed = !outcome.Succeeded;
-            StartupResultText = outcome.Succeeded
-                ? Strings[automatic ? "Settings.Startup.Automatic.Done" : "Settings.Startup.Manual.Done"]
-                : outcome.Failure ?? Strings["Settings.Startup.Failed"];
+            if (outcome.Succeeded)
+            {
+                StartupResultKind = automatic
+                    ? AgentSettingsFeedback.Success
+                    : AgentSettingsFeedback.Warning;
+                StartupResultText =
+                    Strings[automatic ? "Settings.Startup.Automatic.Done" : "Settings.Startup.Manual.Done"];
+            }
+            else
+            {
+                StartupResultKind = AgentSettingsFeedback.Error;
+                StartupResultText = outcome.Failure ?? Strings["Settings.Startup.Failed"];
+            }
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            StartupFailed = true;
+            StartupResultKind = AgentSettingsFeedback.Error;
             StartupResultText = Strings["Settings.Startup.Failed"];
         }
         finally
@@ -2836,6 +2930,107 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ReloadService();
         }
     }
+
+    // ---------------------------------------------------------------- service installation
+
+    /// <summary>
+    /// Whether there is a service to register.
+    ///
+    /// Read from the service control manager rather than remembered. A preference recording that this
+    /// window once installed the service would keep claiming so after somebody removed it, and the
+    /// button would then offer an action the machine has already refused.
+    /// </summary>
+    public bool CanInstallService => !_serviceState.IsInstalled && !IsBusy;
+
+    [ObservableProperty]
+    private string? _installResultText;
+
+    [ObservableProperty]
+    private AgentSettingsFeedback _installResultKind = AgentSettingsFeedback.None;
+
+    public bool HasInstallResult => InstallResultKind is not AgentSettingsFeedback.None;
+
+    partial void OnInstallResultKindChanged(AgentSettingsFeedback value) =>
+        OnPropertyChanged(nameof(HasInstallResult));
+
+    private void ClearInstallResult()
+    {
+        InstallResultText = null;
+        InstallResultKind = AgentSettingsFeedback.None;
+    }
+
+    /// <summary>
+    /// The sentence above the button, which changes with what the machine has.
+    ///
+    /// The section stays on screen either way. An install control that disappeared once it had been
+    /// used would leave an operator wondering whether they imagined it, and the answer to "is this
+    /// registered" is worth keeping visible.
+    /// </summary>
+    public string ServiceInstallDescription => _serviceState.IsInstalled
+        ? Strings["Settings.Agent.Install.Already"]
+        : Strings["Settings.Agent.Install.Description"];
+
+    /// <summary>
+    /// Registers the service. It does not start it.
+    ///
+    /// Installing and running are separate decisions, and this makes only the first. The service is
+    /// created stopped, and the Start control on the configuration surface is where somebody says it
+    /// should run - the same separation the product installer keeps.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanInstallService))]
+    private async Task InstallServiceAsync(CancellationToken cancellationToken)
+    {
+        // Defence in depth behind the disabled button. ICommand.Execute does not consult CanExecute,
+        // so a keyboard binding, a test or a later refactor could reach this with a service already
+        // registered - and registering is not something to attempt and then apologise for.
+        if (!CanInstallService) return;
+
+        ClearInstallResult();
+
+        IsBusy = true;
+        RefreshCommandStates();
+
+        try
+        {
+            var result = await _service.InstallAsync(cancellationToken).ConfigureAwait(true);
+
+            (InstallResultKind, InstallResultText) = result.Outcome switch
+            {
+                AgentServiceInstallOutcome.Installed =>
+                    (AgentSettingsFeedback.Success, Strings["Settings.Agent.Install.Done"]),
+
+                // Somebody else got there first. Reported as the state it leaves behind rather than as
+                // a failure, and nothing is done to the service that is already registered.
+                AgentServiceInstallOutcome.AlreadyInstalled =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Install.Already"]),
+
+                _ => (AgentSettingsFeedback.Error, Strings["Settings.Agent.Install.Failed"]),
+            };
+
+            // The Win32 detail belongs in diagnostics, not in a sentence under a button.
+            _installFailure = !result.Succeeded && !string.IsNullOrWhiteSpace(result.Failure)
+                ? result.Failure
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.Failed"];
+            _installFailure = $"{exception.GetType().Name}: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            RefreshCommandStates();
+
+            // Read back from the machine, so the button and the rows below it report what is actually
+            // registered rather than what was asked for.
+            ReloadService();
+        }
+    }
+
+    /// <summary>The last registration failure, kept for the diagnostics list rather than the card.</summary>
+    private string? _installFailure;
 
     // ---------------------------------------------------------------- what the machine reports
 
@@ -2949,6 +3144,53 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ProjectPageFailed = !_projectPage.OpenProjectPage();
     }
 
+    /// <summary>
+    /// Whether the service control manager answered when asked how the service is configured.
+    ///
+    /// Three outcomes, kept apart on purpose. A service that is not installed has no configuration to
+    /// read and is not a failure; a configuration that was read is reported with its values; and a
+    /// read that failed says so and carries the Win32 code, which is the difference between "access
+    /// denied" and "the service is gone" and the only thing that tells an administrator which it was.
+    ///
+    /// This exists because the Agent panel showed "Unknown" for the start mode and the account with
+    /// nothing anywhere to say why. Unknown is the honest answer there - and the reason belongs
+    /// somewhere, which is here.
+    /// </summary>
+    private AgentStatusItemViewModel DescribeServiceConfiguration()
+    {
+        var label = Strings["Diagnostics.ServiceConfiguration"];
+
+        if (!_serviceState.IsInstalled)
+        {
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.NotInstalled"]);
+        }
+
+        if (ServiceConfigurationWasRead)
+        {
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Ready,
+                $"{ServiceStartTypeText} · {ServiceAccountText}",
+                technicalDetail: _serviceState.Failure);
+        }
+
+        return AgentStatusItemViewModel.From(
+            Strings, label, AgentDiagnosticState.Attention,
+            Strings["Diagnostics.ServiceConfiguration.Failed"],
+            technicalDetail: _serviceState.Failure ?? Strings["Diagnostics.ServiceConfiguration.NoDetail"]);
+    }
+
+    /// <summary>
+    /// Whether the configuration query produced values rather than the absence of them.
+    ///
+    /// Both fields, because the query fills both or neither: an unknown start type beside a named
+    /// account would mean something stranger than a failed read, and reporting either half as a
+    /// success would be the guess this window exists to avoid.
+    /// </summary>
+    private bool ServiceConfigurationWasRead =>
+        _serviceState.StartType is not AgentServiceStartType.Unknown
+        && !string.IsNullOrWhiteSpace(_serviceState.Account);
+
     private void RebuildDiagnostics()
     {
         Diagnostics.Clear();
@@ -2972,6 +3214,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                     : AgentDiagnosticState.Attention,
             _serviceState.IsInstalled ? ServiceStateText : Strings["Diagnostics.NotInstalled"],
             technicalDetail: _serviceState.Failure));
+
+        Diagnostics.Add(DescribeServiceConfiguration());
+
+        if (_installFailure is { } installFailure)
+        {
+            // Only after an attempt, and only when it failed. A registration that worked is reported
+            // by the service rows above, which now describe a service that exists.
+            Diagnostics.Add(AgentStatusItemViewModel.From(
+                Strings, Strings["Diagnostics.ServiceInstall"],
+                AgentDiagnosticState.Error,
+                Strings["Diagnostics.ServiceInstall.Failed"],
+                technicalDetail: installFailure));
+        }
 
         Diagnostics.Add(AgentStatusItemViewModel.From(
             Strings, Strings["Diagnostics.Nut"],

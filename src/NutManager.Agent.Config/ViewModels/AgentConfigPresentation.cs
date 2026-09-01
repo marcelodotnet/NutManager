@@ -363,6 +363,30 @@ public enum AgentConfigConfirmation
 
     /// <summary>Configuration was saved while the service was running.</summary>
     RestartService,
+
+    /// <summary>
+    /// The service is being taken off automatic start.
+    ///
+    /// Asked only in this direction. Turning automatic start on adds a behaviour and takes nothing
+    /// away, so it needs no confirmation; turning it off means a machine that reboots comes back
+    /// without its agent, and that is worth one deliberate answer.
+    /// </summary>
+    ManualStartup,
+}
+
+/// <summary>
+/// How a settings action turned out, for the one line that reports it.
+///
+/// Three outcomes rather than a boolean, because "the service will now need starting by hand" is
+/// neither a success to celebrate nor a failure to fix - it is the thing the operator asked for, and
+/// a consequence they should see. A red line there would be wrong and a green tick would be worse.
+/// </summary>
+public enum AgentSettingsFeedback
+{
+    None,
+    Success,
+    Warning,
+    Error,
 }
 
 /// <summary>

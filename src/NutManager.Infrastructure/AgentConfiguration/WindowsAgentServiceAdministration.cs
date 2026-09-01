@@ -26,16 +26,26 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     private static readonly TimeSpan TransitionTimeout = TimeSpan.FromSeconds(30);
 
     private readonly WindowsAgentServiceQuery _query;
+    private readonly WindowsAgentServiceInstallation _installation;
 
     public WindowsAgentServiceAdministration()
-        : this(new WindowsAgentServiceQuery())
+        : this(new WindowsAgentServiceQuery(), new WindowsAgentServiceInstallation())
     {
     }
 
     internal WindowsAgentServiceAdministration(WindowsAgentServiceQuery query)
+        : this(query, new WindowsAgentServiceInstallation())
+    {
+    }
+
+    internal WindowsAgentServiceAdministration(
+        WindowsAgentServiceQuery query, WindowsAgentServiceInstallation installation)
     {
         ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(installation);
+
         _query = query;
+        _installation = installation;
     }
 
     public AgentServiceSnapshot Describe() => _query.Describe(ServiceName);
@@ -184,6 +194,19 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
             if (manager != IntPtr.Zero) CloseServiceHandle(manager);
         }
     }
+
+    /// <summary>
+    /// Registers the service, and does not start it.
+    ///
+    /// Delegated rather than inlined so the whole of the "which binary, under which name, with which
+    /// arguments" question lives in one small file whose every answer is a constant. There is nothing
+    /// to pass in here because there is nothing a caller is allowed to choose.
+    ///
+    /// Run off the UI thread for the same reason start and stop are: the service control manager can
+    /// take a moment, and a window that stops repainting while it does looks like one that has hung.
+    /// </summary>
+    public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken) =>
+        Task.Run(() => _installation.Install(), cancellationToken);
 
     private static AgentServiceOutcome StartupFailure() => new(
         false,

@@ -117,7 +117,7 @@ public sealed class AgentConfigStrings
         ["Https.Import.AccessDenied"] = "Acesso ao repositório LocalMachine\\My negado. Execute como administrador.",
         ["Https.Import.Unavailable"] = "A importação de certificados não está disponível nesta instalação.",
 
-        ["Https.Reset"] = "Resetar",
+        ["Https.Reset"] = "Resetar HTTPS",
         ["Https.Reset.Tooltip"] = "Resetar configuração HTTPS",
         ["Https.Reset.Title"] = "Resetar configuração HTTPS?",
         ["Https.Reset.Message"] =
@@ -248,6 +248,12 @@ public sealed class AgentConfigStrings
         ["Diagnostics.DotNet"] = ".NET Runtime 10 x64",
         ["Diagnostics.AspNetCore"] = "ASP.NET Core Runtime 10 x64",
         ["Diagnostics.AgentRegistered"] = "NutManagerAgent registrado",
+        ["Diagnostics.ServiceConfiguration"] = "Configuração do serviço",
+        ["Diagnostics.ServiceConfiguration.Failed"] = "Falha ao consultar",
+        ["Diagnostics.ServiceConfiguration.NoDetail"] =
+            "O Gerenciador de Controle de Serviços não informou um motivo.",
+        ["Diagnostics.ServiceInstall"] = "Instalação do serviço",
+        ["Diagnostics.ServiceInstall.Failed"] = "Falha ao registrar",
         ["Diagnostics.Nut"] = "NUT detectado",
         ["Diagnostics.Operators"] = "NutManager Operators",
         ["Diagnostics.EventLog"] = "Origem do log de eventos",
@@ -300,6 +306,12 @@ public sealed class AgentConfigStrings
         ["Settings.Startup.Automatic.Done"] = "O serviço passará a iniciar automaticamente com o Windows.",
         ["Settings.Startup.Manual.Done"] = "O serviço passará a exigir início manual.",
         ["Settings.Startup.Failed"] = "Não foi possível alterar o modo de início do serviço.",
+        ["Settings.Startup.Install"] = "Instalar serviço",
+        ["Settings.Startup.Manual.Title"] = "Alterar inicialização do serviço?",
+        ["Settings.Startup.Manual.Question"] =
+            "O NutManager Agent deixará de iniciar automaticamente com o Windows. " +
+            "O serviço em execução não será interrompido.",
+        ["Settings.Startup.Manual.Confirm"] = "Alterar para manual",
 
         ["Settings.Https.Reset.Title"] = "Resetar configuração HTTPS",
         ["Settings.Https.Reset.Description"] =
@@ -313,7 +325,15 @@ public sealed class AgentConfigStrings
         ["Settings.Appearance.Language"] = "Idioma",
         ["Settings.Appearance.Language.Description"] = "Idioma da interface desta janela.",
 
-        ["Settings.Agent.Description"] = "Somente leitura. Nada nesta aba altera a máquina.",
+        ["Settings.Agent.Install.Title"] = "Instalação do serviço",
+        ["Settings.Agent.Install.Description"] =
+            "Instale o NutManager Agent como serviço do Windows para permitir sua execução em segundo plano.",
+        ["Settings.Agent.Install.Already"] =
+            "O NutManager Agent já está instalado como serviço do Windows.",
+        ["Settings.Agent.Install.Action"] = "Instalar serviço",
+        ["Settings.Agent.Install.Done"] = "Serviço instalado com sucesso.",
+        ["Settings.Agent.Install.Failed"] = "Não foi possível instalar o serviço.",
+        ["Settings.Agent.Section"] = "Serviço e comunicação",
         ["Settings.Agent.Service"] = "Serviço",
         ["Settings.Agent.StartMode"] = "Modo de início",
         ["Settings.Agent.Account"] = "Conta",
@@ -437,7 +457,7 @@ public sealed class AgentConfigStrings
         ["Https.Import.AccessDenied"] = "Access to the LocalMachine\\My store was denied. Run as administrator.",
         ["Https.Import.Unavailable"] = "Certificate import is not available in this installation.",
 
-        ["Https.Reset"] = "Reset",
+        ["Https.Reset"] = "Reset HTTPS",
         ["Https.Reset.Tooltip"] = "Reset HTTPS configuration",
         ["Https.Reset.Title"] = "Reset the HTTPS configuration?",
         ["Https.Reset.Message"] =
@@ -560,6 +580,12 @@ public sealed class AgentConfigStrings
         ["Diagnostics.DotNet"] = ".NET Runtime 10 x64",
         ["Diagnostics.AspNetCore"] = "ASP.NET Core Runtime 10 x64",
         ["Diagnostics.AgentRegistered"] = "NutManagerAgent registered",
+        ["Diagnostics.ServiceConfiguration"] = "Service configuration",
+        ["Diagnostics.ServiceConfiguration.Failed"] = "Could not be queried",
+        ["Diagnostics.ServiceConfiguration.NoDetail"] =
+            "The Service Control Manager gave no reason.",
+        ["Diagnostics.ServiceInstall"] = "Service installation",
+        ["Diagnostics.ServiceInstall.Failed"] = "Could not be registered",
         ["Diagnostics.Nut"] = "NUT detected",
         ["Diagnostics.Operators"] = "NutManager Operators",
         ["Diagnostics.EventLog"] = "Event Log source",
@@ -612,6 +638,12 @@ public sealed class AgentConfigStrings
         ["Settings.Startup.Automatic.Done"] = "The service will now start automatically with Windows.",
         ["Settings.Startup.Manual.Done"] = "The service will now have to be started by hand.",
         ["Settings.Startup.Failed"] = "The service start mode could not be changed.",
+        ["Settings.Startup.Install"] = "Install service",
+        ["Settings.Startup.Manual.Title"] = "Change how the service starts?",
+        ["Settings.Startup.Manual.Question"] =
+            "NutManager Agent will no longer start automatically with Windows. " +
+            "The running service will not be stopped.",
+        ["Settings.Startup.Manual.Confirm"] = "Change to manual",
 
         ["Settings.Https.Reset.Title"] = "Reset HTTPS configuration",
         ["Settings.Https.Reset.Description"] =
@@ -625,7 +657,15 @@ public sealed class AgentConfigStrings
         ["Settings.Appearance.Language"] = "Language",
         ["Settings.Appearance.Language.Description"] = "The interface language of this window.",
 
-        ["Settings.Agent.Description"] = "Read-only. Nothing on this tab changes the machine.",
+        ["Settings.Agent.Install.Title"] = "Service installation",
+        ["Settings.Agent.Install.Description"] =
+            "Install NutManager Agent as a Windows service so that it can run in the background.",
+        ["Settings.Agent.Install.Already"] =
+            "NutManager Agent is already installed as a Windows service.",
+        ["Settings.Agent.Install.Action"] = "Install service",
+        ["Settings.Agent.Install.Done"] = "Service installed successfully.",
+        ["Settings.Agent.Install.Failed"] = "The service could not be installed.",
+        ["Settings.Agent.Section"] = "Service and communication",
         ["Settings.Agent.Service"] = "Service",
         ["Settings.Agent.StartMode"] = "Start mode",
         ["Settings.Agent.Account"] = "Account",

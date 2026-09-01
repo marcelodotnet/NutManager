@@ -404,9 +404,18 @@ public sealed class T42SettingsSurfaceTests
             Assert.Contains(reported, tab, StringComparison.Ordinal);
         }
 
-        Assert.DoesNotContain("Command=", tab, StringComparison.Ordinal);
-        Assert.DoesNotContain("<Button", tab, StringComparison.Ordinal);
+        // The reported values stay reported. Nothing on this tab edits a start type, an account or a
+        // port: those belong to the machine and to the configuration surface respectively.
         Assert.DoesNotContain("<TextBox", tab, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ComboBox", tab, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ToggleSwitch", tab, StringComparison.Ordinal);
+        Assert.DoesNotContain("<CheckBox", tab, StringComparison.Ordinal);
+
+        // Exactly one action, and it is the registration. A second button here would mean something
+        // else on this tab had started changing the machine.
+        Assert.Single(Regex.Matches(tab, "<Button"));
+        Assert.Single(Regex.Matches(tab, "Command="));
+        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", tab, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1135,5 +1144,408 @@ public sealed class T42ListenerProbeTests
         public AgentHttpsBinding Binding { get; }
 
         public void Dispose() => _listener.Stop();
+    }
+}
+
+/// <summary>
+/// The settings panels an operator acts on, and the one boundary that registers a service.
+///
+/// Layout is asserted structurally rather than by pixel: what matters is the order things appear in,
+/// which control carries which action, and that the parts that must not exist do not. The native
+/// registration is asserted the same way plus by its own rules, because the one thing that cannot be
+/// exercised on a build machine is CreateService itself.
+/// </summary>
+public sealed class T42ServiceAdministrationSettingsTests
+{
+    /// <summary>
+    /// The switch reads under its heading, not opposite it.
+    ///
+    /// It used to sit in the far column of the heading row, which put the control as far from the
+    /// words explaining it as the card allowed. Asserted by position rather than by margin, so the
+    /// test survives spacing being tuned.
+    /// </summary>
+    [Fact]
+    public void TheStartupSwitchSitsBelowItsHeading()
+    {
+        var panel = GeneralPanel();
+
+        var heading = panel.IndexOf("x:Name=\"StartupHeading\"", StringComparison.Ordinal);
+        var toggle = panel.IndexOf("x:Name=\"StartWithWindowsSwitch\"", StringComparison.Ordinal);
+        var description = panel.IndexOf("Settings.Startup.Description", StringComparison.Ordinal);
+        var result = panel.IndexOf("x:Name=\"StartupResult\"", StringComparison.Ordinal);
+
+        Assert.True(heading >= 0 && toggle > heading, "The switch belongs under the heading.");
+        Assert.True(description > toggle, "The description belongs under the switch.");
+        Assert.True(result > description, "The result of an action belongs last.");
+
+        // The heading no longer shares a row with anything, so there is no far column to sit in.
+        var headingToToggle = panel[heading..toggle];
+        Assert.DoesNotContain("ColumnDefinitions", headingToToggle, StringComparison.Ordinal);
+        Assert.DoesNotContain("Grid.Column=", headingToToggle, StringComparison.Ordinal);
+
+        // Left, with the help button beside it rather than across the card.
+        Assert.Contains("HorizontalAlignment=\"Left\"", headingToToggle, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The way to install is offered only while it is needed, and it navigates rather than acts.
+    /// </summary>
+    [Fact]
+    public void TheHelpButtonIsBesideTheSwitchAndOnlyWhenThereIsNoService()
+    {
+        var panel = GeneralPanel();
+
+        var toggle = panel.IndexOf("x:Name=\"StartWithWindowsSwitch\"", StringComparison.Ordinal);
+        var help = panel.IndexOf("x:Name=\"StartupInstallHelp\"", StringComparison.Ordinal);
+        var description = panel.IndexOf("Settings.Startup.Description", StringComparison.Ordinal);
+
+        Assert.True(help > toggle && help < description, "The help button sits beside the switch.");
+        Assert.Contains("IsVisible=\"{Binding ShowStartupHelp}\"", panel, StringComparison.Ordinal);
+        Assert.Contains(
+            "Command=\"{Binding ShowServiceInstallationCommand}\"", panel, StringComparison.Ordinal);
+
+        // A catalog glyph, not a typed question mark.
+        Assert.Contains("{DynamicResource AgentIconHelp}", panel, StringComparison.Ordinal);
+
+        // It stands beside the switch as an equal: a circle of the same height, with no border of its
+        // own - the glyph already draws a ring, and a second one around it would be two circles.
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var style = window.IndexOf("Selector=\"Button.agent-help-button\"", StringComparison.Ordinal);
+        var end = window.IndexOf("</Style>", style, StringComparison.Ordinal);
+        Assert.True(style > 0 && end > style);
+
+        var rule = window[style..end];
+        var width = Regex.Match(rule, @"Property=""Width"" Value=""(\d+)""").Groups[1].Value;
+        var height = Regex.Match(rule, @"Property=""Height"" Value=""(\d+)""").Groups[1].Value;
+        Assert.False(string.IsNullOrEmpty(width));
+        Assert.Equal(width, height);
+        Assert.Contains("Property=\"BorderThickness\" Value=\"0\"", rule, StringComparison.Ordinal);
+        Assert.Contains("Property=\"CornerRadius\" Value=\"999\"", rule, StringComparison.Ordinal);
+
+        // Named for what it does, in both languages, and reachable by a screen reader.
+        Assert.Contains(
+            "ToolTip.Tip=\"{Binding Strings[Settings.Startup.Install]}\"", panel, StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{Binding Strings[Settings.Startup.Install]}\"",
+            panel,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The result line carries a disc and is emphasised, and the kind decides which disc.
+    ///
+    /// Manual is the exclamation rather than the question mark it used to be: the operator is being
+    /// told a consequence, not asked something.
+    /// </summary>
+    [Fact]
+    public void TheStartupResultIsAnEmphasisedLineWithADisc()
+    {
+        var panel = GeneralPanel();
+        var start = panel.IndexOf("x:Name=\"StartupResult\"", StringComparison.Ordinal);
+        Assert.True(start > 0);
+
+        var result = panel[start..];
+        Assert.Contains("IsVisible=\"{Binding HasStartupResult}\"", result, StringComparison.Ordinal);
+        Assert.Contains("FontWeight=\"SemiBold\"", result, StringComparison.Ordinal);
+        Assert.Contains(
+            "Converter={x:Static converters:AgentConfigConverters.SettingsFeedbackIcon}",
+            result,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Converter={x:Static converters:AgentConfigConverters.SettingsFeedbackBrush}",
+            result,
+            StringComparison.Ordinal);
+
+        // Success is a circled check, the consequence is a circled exclamation, and neither is an
+        // emoji or a literal character.
+        var icons = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
+        Assert.Contains(
+            "(\"AgentIconStateReady\", MaterialIconKind.CheckCircle)", icons, StringComparison.Ordinal);
+        Assert.Contains(
+            "(\"AgentIconFeedbackWarning\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+        Assert.Contains(
+            "(\"AgentIconHelp\", MaterialIconKind.HelpCircleOutline)", icons, StringComparison.Ordinal);
+
+        var converters = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Presentation/AgentConfigConverters.cs");
+        Assert.Contains(
+            "AgentSettingsFeedback.Success => \"AgentIconStateReady\"", converters, StringComparison.Ordinal);
+        Assert.Contains(
+            "AgentSettingsFeedback.Warning => \"AgentIconFeedbackWarning\"", converters, StringComparison.Ordinal);
+        Assert.Contains(
+            "AgentSettingsFeedback.Warning => \"NutWarningBrush\"", converters, StringComparison.Ordinal);
+        Assert.Contains(
+            "AgentSettingsFeedback.Success => \"NutHealthyBrush\"", converters, StringComparison.Ordinal);
+    }
+
+    /// <summary>The reset names the transport it resets, and stands clear of the sentence above it.</summary>
+    [Fact]
+    public void TheResetActionNamesTheTransportAndHasRoomOfItsOwn()
+    {
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+
+        Assert.Contains("[\"Https.Reset\"] = \"Resetar HTTPS\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Https.Reset\"] = \"Reset HTTPS\"", strings, StringComparison.Ordinal);
+
+        // The heading above it is untouched: it is a section, not the question the dialog asks.
+        Assert.Contains(
+            "[\"Settings.Https.Reset.Title\"] = \"Resetar configura\u00e7\u00e3o HTTPS\"",
+            strings,
+            StringComparison.Ordinal);
+
+        var panel = GeneralPanel();
+        var description = panel.IndexOf("Settings.Https.Reset.Description", StringComparison.Ordinal);
+        var button = panel.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
+        Assert.True(description > 0 && button > description);
+
+        // Separated by a margin of its own rather than left at the paragraph spacing.
+        Assert.Contains("Margin=\"0,10,0,0\"", panel[description..button], StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The Agent panel installs first and reports second, on one surface with a rule between.
+    /// </summary>
+    [Fact]
+    public void TheAgentPanelInstallsFirstAndReportsSecond()
+    {
+        var panel = AgentPanel();
+
+        var installHeading = panel.IndexOf("Settings.Agent.Install.Title", StringComparison.Ordinal);
+        var button = panel.IndexOf("x:Name=\"AgentInstallService\"", StringComparison.Ordinal);
+        var divider = panel.IndexOf("Classes=\"nut-divider\"", StringComparison.Ordinal);
+        var section = panel.IndexOf("Settings.Agent.Section", StringComparison.Ordinal);
+        var state = panel.IndexOf("ServiceStateText", StringComparison.Ordinal);
+
+        Assert.True(installHeading >= 0, "The installation section is missing.");
+        Assert.True(button > installHeading, "The button belongs under its own heading.");
+        Assert.True(divider > button, "The rule separates the two sections.");
+        Assert.True(section > divider, "The reported values come after the rule.");
+        Assert.True(state > section, "The values belong under their heading.");
+
+        // Left, driven by the machine, and never hidden once it has been used: the button element
+        // itself carries no visibility binding, only the enabled state its command decides.
+        var element = panel[button..panel.IndexOf("</Button>", button, StringComparison.Ordinal)];
+        Assert.Contains("HorizontalAlignment=\"Left\"", element, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsVisible=", element, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", element, StringComparison.Ordinal);
+
+        // One surface. No card of its own for the new section, and nothing to scroll.
+        Assert.DoesNotContain("agent-shell-card", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("nut-card\"", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("<ScrollViewer", panel, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(panel, "nut-divider"));
+    }
+
+    /// <summary>
+    /// Two headings, both of them named, and the sentence that used to say the tab does nothing is
+    /// gone - because it now does something.
+    /// </summary>
+    [Fact]
+    public void TheAgentPanelHasExactlyTheTwoAgreedHeadings()
+    {
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+
+        foreach (var heading in new[]
+                 {
+                     "[\"Settings.Agent.Install.Title\"] = \"Instala\u00e7\u00e3o do servi\u00e7o\"",
+                     "[\"Settings.Agent.Section\"] = \"Servi\u00e7o e comunica\u00e7\u00e3o\"",
+                     "[\"Settings.Agent.Install.Title\"] = \"Service installation\"",
+                     "[\"Settings.Agent.Section\"] = \"Service and communication\"",
+                 })
+        {
+            Assert.Contains(heading, strings, StringComparison.Ordinal);
+        }
+
+        // Not split into a "Service" heading and a "Communication" heading.
+        Assert.DoesNotContain("[\"Settings.Agent.Communication\"]", strings, StringComparison.Ordinal);
+
+        // The read-only sentence is gone from the strings and from the window, and was not replaced
+        // by another one saying the same thing.
+        Assert.DoesNotContain("Settings.Agent.Description", strings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Somente leitura", strings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Read-only", strings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Settings.Agent.Description", AgentPanel(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The mark in the header is the image, with nothing drawn around it.
+    ///
+    /// The frame was ours: a rounded panel with its own surface and border, wrapped around an image
+    /// that already has edges of its own. The size and the spacing are what they were.
+    /// </summary>
+    [Fact]
+    public void TheHeaderLogoHasNoFrameAroundIt()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+
+        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
+        var title = window.IndexOf("nut-product-title", header, StringComparison.Ordinal);
+        Assert.True(header > 0 && title > header);
+
+        var logo = window[header..title];
+        Assert.Contains("x:Name=\"AgentHeaderLogo\"", logo, StringComparison.Ordinal);
+        Assert.Contains(
+            "avares://NutManager.Agent.Config/Assets/Branding/NutManager.png", logo, StringComparison.Ordinal);
+
+        // Nothing between the header grid and the image draws a container.
+        Assert.DoesNotContain("<Border", logo, StringComparison.Ordinal);
+        Assert.DoesNotContain("CornerRadius", logo, StringComparison.Ordinal);
+        Assert.DoesNotContain("BorderThickness", logo, StringComparison.Ordinal);
+        Assert.DoesNotContain("BorderBrush", logo, StringComparison.Ordinal);
+        Assert.DoesNotContain("Background=", logo, StringComparison.Ordinal);
+
+        // Same size and same gap as before, so the header does not shift.
+        Assert.Contains("Width=\"78\"", logo, StringComparison.Ordinal);
+        Assert.Contains("Height=\"78\"", logo, StringComparison.Ordinal);
+        Assert.Contains("Margin=\"0,0,13,0\"", logo, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Registration is scoped to one service by construction, and cannot be pointed at another.
+    ///
+    /// The contract takes nothing, so there is no parameter through which a name, a path, a command
+    /// line or an account could arrive from the window. Everything CreateService needs is a constant
+    /// in the adapter or comes from the running process.
+    /// </summary>
+    [Fact]
+    public void RegistrationIsScopedToOneServiceAndCannotBeRedirected()
+    {
+        var contract = T42UnifiedHostTests.Read("src/NutManager.Core/Agent/AgentAdministrationContracts.cs");
+        Assert.Contains(
+            "Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken);",
+            contract,
+            StringComparison.Ordinal);
+
+        var installer = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceInstallation.cs");
+
+        // Fixed by the implementation, every one of them.
+        Assert.Contains(
+            "ServiceName = WindowsAgentServiceAdministration.ServiceName", installer, StringComparison.Ordinal);
+        Assert.Contains("DisplayName = \"NutManager Agent\"", installer, StringComparison.Ordinal);
+        Assert.Contains("ServiceArgument = \"--service\"", installer, StringComparison.Ordinal);
+        Assert.Contains("HostFileName = \"NutManager.Agent.exe\"", installer, StringComparison.Ordinal);
+        Assert.Contains("ServiceAutoStart = 0x00000002", installer, StringComparison.Ordinal);
+        Assert.Contains("ServiceWin32OwnProcess = 0x00000010", installer, StringComparison.Ordinal);
+
+        // LocalSystem, expressed as the null account CreateService documents - so no password exists
+        // to pass, store or leak.
+        Assert.Contains("lpServiceStartName: null", installer, StringComparison.Ordinal);
+        Assert.Contains("lpPassword: null", installer, StringComparison.Ordinal);
+
+        // No public way in, and no shell.
+        Assert.Contains("internal sealed class WindowsAgentServiceInstallation", installer, StringComparison.Ordinal);
+        foreach (var forbidden in new[]
+                 {
+                     "Process.Start", "ProcessStartInfo", "ShellExecute", "powershell", "pwsh",
+                     "cmd.exe", "netsh", "sc.exe", "wmic", "ManagementObjectSearcher", "schtasks",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, installer, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Registering never starts what it registered.
+    ///
+    /// The installer calls CreateService and stops. StartService appears nowhere in it, and the view
+    /// model's registration path does not reach for the start command either.
+    /// </summary>
+    [Fact]
+    public void RegistrationNeverStartsTheService()
+    {
+        var installer = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceInstallation.cs");
+        Assert.DoesNotContain("StartService", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("ServiceController", installer, StringComparison.Ordinal);
+
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        var start = viewModel.IndexOf("private async Task InstallServiceAsync", StringComparison.Ordinal);
+        var end = viewModel.IndexOf("private string? _installFailure", start, StringComparison.Ordinal);
+        Assert.True(start > 0 && end > start);
+
+        var command = viewModel[start..end];
+        Assert.Contains("_service.InstallAsync", command, StringComparison.Ordinal);
+        foreach (var forbidden in new[]
+                 {
+                     "_service.StartAsync", "_service.RestartAsync", "_service.StopAsync",
+                     "_store.Write", "_resources.",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, command, StringComparison.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// It registers the process that is running, quoted, with the service switch - and refuses
+    /// anything else.
+    ///
+    /// The quoting is the part that matters most: an unquoted image path under Program Files lets
+    /// Windows try the wrong executable first, which is a well-known way to hijack a service and not
+    /// one this product is going to introduce from a button.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void TheRegisteredImagePathIsTheRunningHostQuotedWithTheServiceSwitch()
+    {
+        const string host = @"C:\Program Files\NutManager Agent\NutManager.Agent.exe";
+
+        var installation = new WindowsAgentServiceInstallation(() => host, path => path == host);
+
+        Assert.Equal($"\"{host}\" --service", installation.ResolveImagePath());
+    }
+
+    /// <summary>A host that is not the agent, or is not there, registers nothing at all.</summary>
+    [Theory]
+    [SupportedOSPlatform("windows")]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("NutManager.Agent.exe", true)]
+    [InlineData(@"C:\Tools\evil.exe", true)]
+    [InlineData(@"C:\Tools\NutManager.App.exe", true)]
+    [InlineData(@"C:\Tools\NutManager.Agent.exe", false)]
+    public void RegistrationRefusesAnyHostThatIsNotTheAgentApphost(string? host, bool exists)
+    {
+        var installation = new WindowsAgentServiceInstallation(() => host, _ => exists);
+
+        Assert.Null(installation.ResolveImagePath());
+    }
+
+    /// <summary>
+    /// The Event Log source stays the installer's.
+    ///
+    /// The agent refuses to run without its audit trail rather than creating one, which is what makes
+    /// the trail trustworthy - so a button that quietly created the source would remove the very
+    /// property that boundary exists for. Registering the service is what an application may own.
+    /// </summary>
+    [Fact]
+    public void RegistrationDoesNotCreateTheEventLogSource()
+    {
+        var installer = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceInstallation.cs");
+
+        Assert.DoesNotContain("EventLog", installer, StringComparison.Ordinal);
+        Assert.DoesNotContain("Registry", installer, StringComparison.Ordinal);
+
+        // And the installer package still owns it.
+        var package = T42UnifiedHostTests.Read("installer/Agent/Package.wxs");
+        Assert.Contains("AgentEventLogSource", package, StringComparison.Ordinal);
+    }
+
+    private static string GeneralPanel() => Panel("IsGeneralTab", "IsAppearanceTab");
+
+    private static string AgentPanel() => Panel("IsAgentTab", "IsAboutTab");
+
+    private static string Panel(string from, string to)
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var start = window.IndexOf($"IsVisible=\"{{Binding {from}}}\"", StringComparison.Ordinal);
+        var end = window.IndexOf($"IsVisible=\"{{Binding {to}}}\"", start, StringComparison.Ordinal);
+
+        Assert.True(start > 0 && end > start, $"The {from} panel was not found.");
+        return window[start..end];
     }
 }
