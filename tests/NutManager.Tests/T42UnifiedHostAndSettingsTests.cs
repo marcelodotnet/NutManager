@@ -1863,6 +1863,34 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains("Margin=\"0,10,0,0\"", element, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Every exclamation in this window is a disc, never a hazard triangle.
+    ///
+    /// The triangle is the road-sign shape for danger, and most of what these keys mark is a
+    /// condition to read rather than a hazard to back away from - a certificate without its private
+    /// key, a resource not verified yet, a start type an operator deliberately chose. Mixing the two
+    /// shapes also made the same severity look like two different ones depending on which panel it
+    /// appeared in.
+    /// </summary>
+    [Fact]
+    public void EveryWarningGlyphIsADiscRatherThanATriangle()
+    {
+        var icons = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
+
+        // The two triangular kinds, gone.
+        Assert.DoesNotContain("MaterialIconKind.AlertOutline", icons, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.Alert)", icons, StringComparison.Ordinal);
+
+        // Replaced by their round counterparts, keeping the filled and outlined distinction: the
+        // status strip reads better solid, inline prose reads better outlined.
+        Assert.Contains(
+            "(\"NutIconWarning\", MaterialIconKind.AlertCircleOutline)", icons, StringComparison.Ordinal);
+        Assert.Contains(
+            "(\"AgentIconStateAttention\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+        Assert.Contains(
+            "(\"AgentIconFeedbackWarning\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+    }
+
     /// <summary>The users tab is marked with people rather than with a machine.</summary>
     [Fact]
     public void TheUsersTabCarriesAnAccountGlyph()
@@ -1889,9 +1917,11 @@ public sealed class T42ServiceAdministrationSettingsTests
 
         var row = panel[panel.IndexOf("x:Name=\"AppearanceAndLanguage\"", StringComparison.Ordinal)..];
 
-        // Two halves rather than a control-sized column and everything else: the language must not be
-        // pushed up against the theme as though they were two small fields in a sequence.
-        Assert.Contains("ColumnDefinitions=\"*,*\"", row, StringComparison.Ordinal);
+        // The theme takes the room it needs and the language sits at the far side, sized to its own
+        // control. Two equal halves put the ComboBox on the centre line, which reads as a second
+        // field in a sequence rather than as the other side of a row.
+        Assert.Contains("ColumnDefinitions=\"*,Auto\"", row, StringComparison.Ordinal);
+        Assert.DoesNotContain("ColumnDefinitions=\"*,*\"", row, StringComparison.Ordinal);
 
         var theme = row.IndexOf("Grid.Column=\"0\"", StringComparison.Ordinal);
         var language = row.IndexOf("Grid.Column=\"1\"", StringComparison.Ordinal);

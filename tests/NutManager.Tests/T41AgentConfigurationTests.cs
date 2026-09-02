@@ -5147,6 +5147,99 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal("Install service", context.ViewModel.ServiceActionText);
     }
 
+    /// <summary>
+    /// Cancelling the manual-startup question puts the switch back, and changes nothing.
+    ///
+    /// The switch moves itself when clicked, which opens the question - and the handler immediately
+    /// puts the property back to what the SCM says. So by the time Cancel is pressed the view model
+    /// already holds the old value, and a property assigned the value it already has notifies nobody.
+    /// The control was never told to go back, and sat there showing Manual over a service Windows
+    /// still starts automatically.
+    ///
+    /// The notification is therefore what this asserts, not the value.
+    /// </summary>
+    [Fact]
+    public async Task CancellingTheStartupQuestionPutsTheSwitchBack()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        var announced = 0;
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AgentConfigViewModel.StartsWithWindows)) announced++;
+        };
+
+        // The switch moves, so the question opens.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+
+        // Everything the move itself announced is water under the bridge. What matters is whether
+        // anything is said from here on, because from here on the value never changes again.
+        announced = 0;
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        // Back on, and said out loud, so the control that moved on its own hears about it.
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.True(announced > 0, "The switch must be told to go back, not merely left correct.");
+
+        // Nothing reached the service control manager, and nothing claims anything happened.
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.Equal(AgentServiceStartType.Automatic, context.Service.StartType);
+        Assert.False(context.ViewModel.HasStartupResult);
+        Assert.Null(context.ViewModel.StartupResultText);
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+    }
+
+    /// <summary>
+    /// The switch follows the machine rather than the last click, even after a cancelled question.
+    ///
+    /// If somebody else sets the service to Manual while the question is open, cancelling must leave
+    /// the switch off - because that is what the service control manager now says, and the snapshot
+    /// is the source of truth here as everywhere else on this panel.
+    /// </summary>
+    [Fact]
+    public async Task ACancelledQuestionRestoresWhatTheMachineSaysRatherThanWhatWasClicked()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+
+        // Somebody changed it from services.msc while the question sat open.
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+    }
+
+    /// <summary>Cancelling any other question leaves the startup switch alone entirely.</summary>
+    [Fact]
+    public async Task CancellingAnotherQuestionDoesNotTouchTheStartupSwitch()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.Equal(0, context.Service.RemoveCalls);
+    }
+
     // ---------------------------------------------------------------- T42: the listener, watched
 
     /// <summary>

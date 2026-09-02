@@ -1594,11 +1594,15 @@
                           carry the whole meaning, with no way to tell "you are here" from "go here"
                           without pressing one and watching.
 
-                          The pill sits left inside its half rather than filling it: the column is
-                          half the card, the control is the size it always was.
+                          The language column is sized to its own control and pushed to the right
+                          edge rather than given half the card. Two equal halves put the ComboBox on
+                          the centre line, which reads as a second field in a sequence rather than as
+                          the other side of a row - and left the theme description wrapping early with
+                          empty space beside it. The theme takes the room it needs; the language keeps
+                          the width it has, at the far side.
                         -->
                         <Grid x:Name="AppearanceAndLanguage"
-                              ColumnDefinitions="*,*"
+                              ColumnDefinitions="*,Auto"
                               ColumnSpacing="28">
                           <StackPanel Grid.Column="0" Spacing="7" VerticalAlignment="Top">
                             <TextBlock Classes="nut-label"

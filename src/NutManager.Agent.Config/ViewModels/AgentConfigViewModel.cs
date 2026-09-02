@@ -1727,16 +1727,52 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     ///
     /// The captured account is dropped here as well as on confirm, so a cancelled removal cannot be
     /// completed later by a different question being answered yes.
+    ///
+    /// The startup switch needs one thing more than forgetting. Moving it opens the question, and the
+    /// handler immediately puts the property back to what the SCM says - so by the time anybody
+    /// answers, the view model already holds the old value, and a property set to the value it
+    /// already has raises nothing. The control, which moved on its own and was never told otherwise,
+    /// then sits in a position the machine never agreed to. Re-announcing the unchanged value is what
+    /// puts it back.
     /// </summary>
     [RelayCommand]
     private void CancelConfirmation()
     {
+        var pending = PendingConfirmation;
         PendingConfirmation = AgentConfigConfirmation.None;
+
+        if (pending is AgentConfigConfirmation.ManualStartup) RestoreStartupSwitch();
 
         if (_pendingOperator is null) return;
 
         _pendingOperator = null;
         OnPropertyChanged(nameof(PendingOperatorAccount));
+    }
+
+    /// <summary>
+    /// Puts the switch back where the service control manager says it belongs, and says so out loud.
+    ///
+    /// The value is re-read from the snapshot rather than assumed to be the opposite of what was
+    /// clicked: the machine is the source of truth here as everywhere else on this panel. The
+    /// notification is raised unconditionally because the interesting case is precisely the one where
+    /// the value did not change.
+    ///
+    /// Nothing is applied and nothing is reported. A cancelled change is not an action, and a line
+    /// saying what did not happen would be one more thing to read and then dismiss.
+    /// </summary>
+    private void RestoreStartupSwitch()
+    {
+        _syncingStartup = true;
+        try
+        {
+            StartsWithWindows = _serviceState.StartType == AgentServiceStartType.Automatic;
+        }
+        finally
+        {
+            _syncingStartup = false;
+        }
+
+        OnPropertyChanged(nameof(StartsWithWindows));
     }
 
     // ---------------------------------------------------------------- reset HTTPS
