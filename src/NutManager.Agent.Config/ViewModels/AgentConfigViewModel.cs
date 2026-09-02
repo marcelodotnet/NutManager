@@ -3580,8 +3580,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         if (ServiceConfigurationWasRead)
         {
+            // Read, and correct - but not necessarily what an operator wants. A service set to
+            // Manual or Disabled is configured perfectly well and will simply not be there after a
+            // reboot, which is worth a raised eyebrow on a panel whose job is to say whether this
+            // machine is ready. It is not an error: nothing failed, and somebody chose it.
             return AgentStatusItemViewModel.From(
-                Strings, label, AgentDiagnosticState.Ready,
+                Strings,
+                label,
+                StartsWithoutAsking ? AgentDiagnosticState.Ready : AgentDiagnosticState.Attention,
                 $"{ServiceStartTypeText} · {ServiceAccountText}",
                 technicalDetail: _serviceState.Failure);
         }
@@ -3602,6 +3608,20 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private bool ServiceConfigurationWasRead =>
         _serviceState.StartType is not AgentServiceStartType.Unknown
         && !string.IsNullOrWhiteSpace(_serviceState.Account);
+
+    /// <summary>
+    /// Whether Windows brings the service up on its own.
+    ///
+    /// Boot and System are earlier than Automatic rather than different from it - all three mean the
+    /// agent is there after a restart without anybody logging in, which is the question this answers.
+    /// Manual and Disabled mean it is not. Unknown never reaches here: an unread configuration is a
+    /// failed query, and that has an answer of its own rather than being folded in as "not
+    /// automatic".
+    /// </summary>
+    private bool StartsWithoutAsking => _serviceState.StartType
+        is AgentServiceStartType.Boot
+        or AgentServiceStartType.System
+        or AgentServiceStartType.Automatic;
 
     private void RebuildDiagnostics()
     {

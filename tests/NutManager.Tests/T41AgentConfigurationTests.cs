@@ -4381,6 +4381,122 @@ public sealed class T41AgentConfigViewModelTests
         Assert.NotEqual(refusedRow.State, absentRow.State);
     }
 
+    /// <summary>
+    /// A service that will not start with Windows is reported as attention, not as ready.
+    ///
+    /// Manual is configured perfectly well and nothing failed to read it - it simply means the agent
+    /// is not there after a reboot until somebody starts it, which is exactly the kind of thing a
+    /// panel answering "is this machine ready" should raise an eyebrow at. It is not an error and it
+    /// is emphatically not a failed query: those have their own states and their own sentences.
+    /// </summary>
+    [Theory]
+    [InlineData(AgentServiceStartType.Automatic, AgentDiagnosticState.Ready, "Automatic")]
+    [InlineData(AgentServiceStartType.Manual, AgentDiagnosticState.Attention, "Manual")]
+    [InlineData(AgentServiceStartType.Disabled, AgentDiagnosticState.Attention, "Disabled")]
+    // Boot and System are earlier than Automatic rather than different from it: the agent is there
+    // after a restart without anybody logging in, which is the question being asked.
+    [InlineData(AgentServiceStartType.Boot, AgentDiagnosticState.Ready, "Boot")]
+    [InlineData(AgentServiceStartType.System, AgentDiagnosticState.Ready, "System")]
+    public async Task TheServiceConfigurationRowRaisesAnEyebrowAtAStartTypeThatWaitsForSomebody(
+        AgentServiceStartType startType,
+        AgentDiagnosticState expected,
+        string expectedWord)
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = startType;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        var row = ServiceConfigurationRow(context.ViewModel);
+
+        Assert.Equal(expected, row.State);
+        Assert.Equal($"{expectedWord} \u00b7 LocalSystem", row.Detail);
+
+        // The values are still reported either way. Attention is a judgement about the start type,
+        // never a refusal to say what it is.
+        Assert.Null(row.TechnicalDetail);
+    }
+
+    /// <summary>
+    /// Attention over Manual is not the same attention as a query that failed.
+    ///
+    /// Both raise an eyebrow, and an operator has to be able to tell which: one says what the start
+    /// type is, the other says it could not find out and carries the Win32 code that explains why.
+    /// </summary>
+    [Fact]
+    public async Task ManualAttentionIsNotConfusedWithAFailedQuery()
+    {
+        var manual = CreateContext(serviceState: AgentServiceState.Running);
+        manual.Service.StartType = AgentServiceStartType.Manual;
+        manual.Service.Account = "LocalSystem";
+        await manual.ViewModel.RefreshAsync();
+
+        var refused = CreateContext(serviceState: AgentServiceState.Running);
+        refused.Service.StartType = AgentServiceStartType.Unknown;
+        refused.Service.Account = string.Empty;
+        refused.Service.Failure =
+            "The NutManagerAgent service configuration could not be read (Win32 error 5: Access is denied.).";
+        refused.Service.QueryErrorCode = 5;
+        await refused.ViewModel.RefreshAsync();
+
+        var manualRow = ServiceConfigurationRow(manual.ViewModel);
+        var refusedRow = ServiceConfigurationRow(refused.ViewModel);
+
+        // The same state, deliberately - and never the same words.
+        Assert.Equal(AgentDiagnosticState.Attention, manualRow.State);
+        Assert.Equal(AgentDiagnosticState.Attention, refusedRow.State);
+        Assert.NotEqual(manualRow.Detail, refusedRow.Detail);
+
+        Assert.Equal("Manual \u00b7 LocalSystem", manualRow.Detail);
+        Assert.Equal("Could not be queried", refusedRow.Detail);
+        Assert.Null(manualRow.TechnicalDetail);
+        Assert.Contains("Win32 error 5", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+
+        // And an absent service is neither of them.
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.NotConfigured, ServiceConfigurationRow(absent.ViewModel).State);
+    }
+
+    /// <summary>
+    /// The row says "Aviso" in Portuguese, and wears the round outlined exclamation.
+    ///
+    /// The glyph is not chosen here: attention resolves to it everywhere, which is the point of
+    /// having moved every warning onto one resource.
+    /// </summary>
+    [Fact]
+    public async Task ManualReadsAsAWarningInBothLanguages()
+    {
+        var portuguese = CreateContext(
+            serviceState: AgentServiceState.Running, language: UiLanguagePreference.PtBr);
+        portuguese.Service.StartType = AgentServiceStartType.Manual;
+        portuguese.Service.Account = "LocalSystem";
+        await portuguese.ViewModel.RefreshAsync();
+
+        var row = ServiceConfigurationRow(portuguese.ViewModel);
+        Assert.Equal("Aten\u00e7\u00e3o", row.StatusText);
+        Assert.Equal("Manual \u00b7 LocalSystem", row.Detail);
+
+        // StateIconKey rather than IconKey: one names the subject of the row, the other judges it.
+        Assert.Equal("NutIconWarning", row.StateIconKey);
+
+        // Automatic keeps the tick and the word that goes with it.
+        portuguese.Service.StartType = AgentServiceStartType.Automatic;
+        await portuguese.ViewModel.RefreshAsync();
+
+        var ready = ServiceConfigurationRow(portuguese.ViewModel);
+        Assert.Equal("Pronto", ready.StatusText);
+        Assert.Equal("Autom\u00e1tico \u00b7 LocalSystem", ready.Detail);
+        Assert.Equal("AgentIconStateReady", ready.StateIconKey);
+
+        // And in English the same row says Attention.
+        var english = CreateContext(serviceState: AgentServiceState.Running);
+        english.Service.StartType = AgentServiceStartType.Manual;
+        english.Service.Account = "LocalSystem";
+        await english.ViewModel.RefreshAsync();
+        Assert.Equal("Attention", ServiceConfigurationRow(english.ViewModel).StatusText);
+    }
+
     /// <summary>Both new panels are written in the window language, in both of them.</summary>
     [Fact]
     public async Task TheNewSettingsTextIsLocalized()
