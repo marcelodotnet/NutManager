@@ -59,6 +59,7 @@ internal sealed class WindowsAgentServiceInstallation
     private const int ScStatusProcessInfo = 0;
     private const uint ServiceStateStopped = 1;
     private const uint ServiceWin32OwnProcess = 0x00000010;
+    private const uint ServiceInteractiveProcess = 0x00000100;
     private const uint ServiceAutoStart = 0x00000002;
     private const uint ServiceErrorNormal = 0x00000001;
 
@@ -67,6 +68,7 @@ internal sealed class WindowsAgentServiceInstallation
     internal const int ErrorServiceDoesNotExist = 1060;
     internal const int ErrorServiceNotActive = 1062;
     internal const int ErrorInsufficientBuffer = 122;
+    internal const int ErrorInvalidData = 13;
 
     /// <summary>
     /// How long a stop, and then the disappearance of the service, are waited for.
@@ -223,20 +225,30 @@ internal sealed class WindowsAgentServiceInstallation
                     : RemovalFailure("the service could not be opened for removal", openError);
             }
 
-            // Ownership before anything destructive. The registered image path has to be the
-            // executable this class is allowed to register; a service that merely borrowed the name
-            // belongs to somebody else and is left exactly where it is.
-            if (ReadImagePath(service) is not { } registered)
+            // Ownership before anything destructive. The registered configuration has to describe
+            // the executable this class is allowed to register; a service that merely borrowed the
+            // name belongs to somebody else and is left exactly where it is.
+            //
+            // Reading the configuration and matching it are two separate questions, and they get two
+            // separate answers. A read that failed says so and carries its Win32 code; only a read
+            // that succeeded may report that the service belongs to somebody else. Collapsing those
+            // told operators that a service this product had registered, and was correctly showing
+            // as installed, was not theirs.
+            var configuration = ReadConfiguration(service);
+
+            if (!configuration.Read)
             {
-                return AgentServiceRemoval.NotOwned(
-                    $"The {ServiceName} service was not removed because its configuration could not be read.");
+                return AgentServiceRemoval.QueryFailed(
+                    $"The {ServiceName} service was not removed because its configuration could not be read " +
+                    $"(Win32 error {configuration.ErrorCode}: {new Win32Exception(configuration.ErrorCode).Message}).",
+                    configuration.ErrorCode);
             }
 
-            if (!IsOwnedImagePath(registered))
+            if (!IsOwnedService(configuration.ServiceType, configuration.ImagePath!))
             {
                 return AgentServiceRemoval.NotOwned(
-                    $"A service named {ServiceName} exists but does not run {HostFileName}, so it was left " +
-                    "untouched.");
+                    $"A service named {ServiceName} is registered as '{configuration.ImagePath}', which is not " +
+                    $"{HostFileName} running as this product's service, so it was left untouched.");
             }
 
             if (!StopIfRunning(service, time, cancellationToken, out var stopFailure)) return stopFailure!;
@@ -278,48 +290,140 @@ internal sealed class WindowsAgentServiceInstallation
     }
 
     /// <summary>
-    /// Whether a registered image path is one this class could have written.
+    /// Whether a registered service is one this class could have created.
     ///
-    /// Compared on the executable rather than on the whole string, because the installed product and
-    /// this running copy are the same file in the same place, and quoting or an extra switch should
-    /// not be the thing that decides whether a service can be removed.
+    /// Four narrow questions, all of which have to answer yes: the service is an own-process Win32
+    /// service, its image path parses, the executable it names is <see cref="HostFileName"/>, and the
+    /// command line is one this product actually registers.
+    ///
+    /// What it deliberately does not ask is where that executable lives. The registered service and
+    /// the copy running this window are routinely different files - after an upgrade, or when a build
+    /// removes the registration another one left, or when the folder it was installed from has since
+    /// moved - and requiring the two paths to match would refuse to remove this product's own service
+    /// in exactly the situations somebody most needs to. Ownership is about the service being this
+    /// product's, not about it being this process.
+    ///
+    /// Start type and account are not consulted either. An administrator may set the service to
+    /// Manual, and that answers nothing about whose service it is.
     /// </summary>
-    internal static bool IsOwnedImagePath(string imagePath)
+    internal static bool IsOwnedService(uint serviceType, string imagePath)
     {
-        var executable = imagePath.Trim();
+        // Interactive is a flag on top of the type rather than a type of its own, so it is masked off
+        // before comparing. Anything sharing a process is not something this class ever registered.
+        if ((serviceType & ~ServiceInteractiveProcess) != ServiceWin32OwnProcess) return false;
 
-        if (executable.StartsWith('"'))
+        if (!TrySplitCommandLine(imagePath, out var executable, out var arguments)) return false;
+
+        if (!string.Equals(Path.GetFileName(executable), HostFileName, StringComparison.OrdinalIgnoreCase))
         {
-            var closing = executable.IndexOf('"', 1);
-            if (closing < 0) return false;
-            executable = executable[1..closing];
-        }
-        else
-        {
-            var space = executable.IndexOf(' ', StringComparison.Ordinal);
-            if (space > 0) executable = executable[..space];
+            return false;
         }
 
-        return string.Equals(Path.GetFileName(executable), HostFileName, StringComparison.OrdinalIgnoreCase);
+        // The current registration passes --service. Releases from before the host was unified
+        // registered the same executable with no arguments at all, and those are this product's
+        // service too, so removing them has to keep working. Nothing else is accepted: an extra
+        // switch, a different switch, or a second path means a command line this class never wrote.
+        return arguments.Length == 0
+            || string.Equals(arguments, ServiceArgument, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? ReadImagePath(IntPtr service)
+    /// <summary>
+    /// Splits a registered image path into the executable and the rest of the command line.
+    ///
+    /// Windows stores this field as it was written, so both forms turn up: quoted, which this class
+    /// always writes, and unquoted, which is the more common shape across Windows generally. The
+    /// unquoted form is the one that matters here, because the previous parser cut it at the first
+    /// space - so an ordinary
+    /// <c>C:\Program Files\NutManager Agent\NutManager.Agent.exe --service</c> was read as an
+    /// executable named <c>C:\Program</c>, and the product refused to remove its own service.
+    ///
+    /// Unquoted paths are genuinely ambiguous, and this resolves them the one way that cannot invent
+    /// ownership: the executable ends at the first ".exe" followed by a space or by the end of the
+    /// string. A path whose real executable hides behind an earlier ".exe " therefore reads as the
+    /// earlier one and fails the name check, which is a refusal rather than a guess.
+    /// </summary>
+    internal static bool TrySplitCommandLine(string imagePath, out string executable, out string arguments)
     {
-        QueryServiceConfigW(service, IntPtr.Zero, 0, out var required);
-        if (Marshal.GetLastWin32Error() != ErrorInsufficientBuffer || required == 0) return null;
+        executable = string.Empty;
+        arguments = string.Empty;
+
+        var value = imagePath?.Trim() ?? string.Empty;
+        if (value.Length == 0) return false;
+
+        if (value.StartsWith('"'))
+        {
+            var closing = value.IndexOf('"', 1);
+            if (closing < 1) return false;
+
+            executable = value[1..closing];
+            arguments = value[(closing + 1)..].Trim();
+            return executable.Length > 0;
+        }
+
+        const string extension = ".exe";
+
+        for (var index = value.IndexOf(extension, StringComparison.OrdinalIgnoreCase);
+             index >= 0;
+             index = value.IndexOf(extension, index + 1, StringComparison.OrdinalIgnoreCase))
+        {
+            var end = index + extension.Length;
+
+            if (end != value.Length && value[end] != ' ') continue;
+
+            executable = value[..end];
+            arguments = value[end..].Trim();
+            return true;
+        }
+
+        // No ".exe" boundary at all. Not something this class registered, and not something to
+        // salvage by splitting on whitespace and hoping.
+        return false;
+    }
+
+    /// <summary>
+    /// The registered service type and image path, or the reason Windows would not say.
+    ///
+    /// The sizing call is Microsoft's documented failure: it returns FALSE, sets
+    /// ERROR_INSUFFICIENT_BUFFER, and the byte count it writes is the answer. Any other outcome is a
+    /// failure to read rather than a usable size - the same rule the read-only query adapter already
+    /// applies, so that both paths agree on what "could not be read" means.
+    /// </summary>
+    private static ServiceConfigurationRead ReadConfiguration(IntPtr service)
+    {
+        var sizingSucceeded = QueryServiceConfigW(service, IntPtr.Zero, 0, out var required);
+        var sizingError = Marshal.GetLastWin32Error();
+
+        if (sizingSucceeded || sizingError != ErrorInsufficientBuffer || required == 0)
+        {
+            return ServiceConfigurationRead.Failed(sizingError == 0 ? ErrorInsufficientBuffer : sizingError);
+        }
 
         var buffer = Marshal.AllocHGlobal(checked((int)required));
         try
         {
-            if (!QueryServiceConfigW(service, buffer, required, out _)) return null;
+            if (!QueryServiceConfigW(service, buffer, required, out _))
+            {
+                return ServiceConfigurationRead.Failed(Marshal.GetLastWin32Error());
+            }
 
             var configuration = Marshal.PtrToStructure<QueryServiceConfigNative>(buffer);
-            return Marshal.PtrToStringUni(configuration.BinaryPathName);
+            var imagePath = Marshal.PtrToStringUni(configuration.BinaryPathName);
+
+            return imagePath is null
+                ? ServiceConfigurationRead.Failed(ErrorInvalidData)
+                : new ServiceConfigurationRead(true, configuration.ServiceType, imagePath, 0);
         }
         finally
         {
             Marshal.FreeHGlobal(buffer);
         }
+    }
+
+    /// <summary>What the SCM said about the registration, or why it said nothing.</summary>
+    private readonly record struct ServiceConfigurationRead(
+        bool Read, uint ServiceType, string? ImagePath, int ErrorCode)
+    {
+        internal static ServiceConfigurationRead Failed(int errorCode) => new(false, 0, null, errorCode);
     }
 
     /// <summary>

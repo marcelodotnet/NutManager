@@ -381,15 +381,16 @@ public sealed class T41InstallerAndPackagingTests
 
         var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
         var firstScrollViewer = window.IndexOf("<ScrollViewer", StringComparison.Ordinal);
-        var permissions = window.IndexOf(
-            "<!-- ================================================ access permissions -->", StringComparison.Ordinal);
+        var users = window.IndexOf(
+            "<!-- ================================================================ users -->", StringComparison.Ordinal);
         Assert.True(firstScrollViewer > diagnostics,
             "The fixed 800x600 configuration surface must not depend on a page-level ScrollViewer.");
 
-        // Operators administration moved off diagnostics and onto a page of its own, reached from the
-        // Agent panel. It is still one page in this window and still after the reference surface.
-        Assert.True(diagnostics >= 0 && permissions > diagnostics,
-            "Access permissions must remain available without changing the reference configuration surface.");
+        // Operators administration moved off diagnostics, then off the page it briefly had, and is
+        // now the Users panel of the settings surface. It is still in this window and still after the
+        // reference surface, which is what this assertion protects.
+        Assert.True(diagnostics >= 0 && users > diagnostics,
+            "The authorized users must remain available without changing the reference configuration surface.");
         Assert.DoesNotContain("Group administration remains available", window, StringComparison.Ordinal);
 
         Assert.Contains("DataTransferItem", codeBehind, StringComparison.Ordinal);
@@ -533,7 +534,7 @@ public sealed class T41AgentConfigSurfaceTests
     /// checkbox that merely turns the transport off. In Settings it is reached deliberately.
     /// </summary>
     [Fact]
-    public void ResetHttpsLivesInSettingsAndNotOnTheHttpsCard()
+    public void ResetHttpsHasNoButtonAnywhereInTheWindow()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
@@ -542,27 +543,14 @@ public sealed class T41AgentConfigSurfaceTests
         var header = window[card..fields];
 
         Assert.DoesNotContain("ResetHttpsCommand", header, StringComparison.Ordinal);
-        Assert.DoesNotContain("agent-reset-https", header, StringComparison.Ordinal);
 
-        // Exactly one reset control in the whole window, and it is the one in Settings.
-        Assert.Single(Regex.Matches(window, "Command=\"{Binding ResetHttpsCommand}\""));
-
-        var settings = window.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
-        Assert.True(settings > fields, "Reset belongs in the settings surface, after the configuration surface.");
-
-        var reset = window[settings..];
-        Assert.Contains("Command=\"{Binding ResetHttpsCommand}\"", reset, StringComparison.Ordinal);
-        Assert.Contains("IsEnabled=\"{Binding CanResetHttps}\"", reset, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"agent-reset-https\"", reset, StringComparison.Ordinal);
-
-        // The reason it is unavailable still has to be readable, and a disabled control takes no
-        // pointer input, so the tooltip stays on an enabled wrapper - which is why it is looked for
-        // across the settings surface rather than inside the button element itself.
-        Assert.Contains("ToolTip.Tip=\"{Binding HttpsResetToolTip}\"", window[fields..], StringComparison.Ordinal);
-
-        // Not the filled danger treatment: that belongs to the affirmative button inside the
-        // confirmation, where the operator has already been told what will happen.
-        Assert.DoesNotContain("nut-danger", window[settings..(settings + 900)], StringComparison.Ordinal);
+        // It left the HTTPS card first, and now the settings surface. Disabling the transport already
+        // offers to remove the same resources under the same ownership rules and the same
+        // confirmation, so a standalone reset was a second way to do one thing rather than a second
+        // thing to do.
+        Assert.Empty(Regex.Matches(window, "Command=\"{Binding ResetHttpsCommand}\""));
+        Assert.DoesNotContain("x:Name=\"SettingsResetHttps\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpsResetToolTip", window, StringComparison.Ordinal);
 
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("HttpsStatusText", header, StringComparison.Ordinal);
@@ -3841,7 +3829,7 @@ public sealed class T41AgentConfigViewModelTests
         foreach (var select in new Action[]
                  {
                      () => viewModel.SelectGeneralTabCommand.Execute(null),
-                     () => viewModel.SelectSystemTabCommand.Execute(null),
+                     () => viewModel.SelectUsersTabCommand.Execute(null),
                      () => viewModel.SelectAgentTabCommand.Execute(null),
                      () => viewModel.SelectAboutTabCommand.Execute(null),
                  })
@@ -3851,7 +3839,7 @@ public sealed class T41AgentConfigViewModelTests
             var shown = new[]
             {
                 viewModel.IsGeneralTab,
-                viewModel.IsSystemTab,
+                viewModel.IsUsersTab,
                 viewModel.IsAgentTab,
                 viewModel.IsAboutTab,
             };
@@ -4119,7 +4107,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.HasStartupResult);
 
         // Another panel in the same surface.
-        context.ViewModel.SelectSystemTabCommand.Execute(null);
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
         Assert.False(context.ViewModel.HasStartupResult);
 
         context.ViewModel.SelectGeneralTabCommand.Execute(null);
@@ -4184,9 +4172,10 @@ public sealed class T41AgentConfigViewModelTests
 
         context.ViewModel.ShowServiceInstallationCommand.Execute(null);
 
-        // System, not Agent: installing is something done to the machine, and that is where it lives.
-        Assert.True(context.ViewModel.IsSystemTab);
-        Assert.False(context.ViewModel.IsAgentTab);
+        // Agent, because that is where the installation section now is. A help button opening a
+        // panel that does not contain the remedy would be a signpost pointing at the wrong room.
+        Assert.True(context.ViewModel.IsAgentTab);
+        Assert.False(context.ViewModel.IsUsersTab);
         Assert.True(context.ViewModel.ShowSettings);
 
         // Same window, same surface. Nothing was installed, started or written on the way.
@@ -4232,8 +4221,17 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.CanChangeStartup);
         Assert.False(context.ViewModel.ShowStartupHelp);
 
-        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.InstallResultKind);
-        Assert.Equal("Service installed successfully.", context.ViewModel.InstallResultText);
+        // And it says so once. The line above the button already reads "already installed" beside a
+        // green tick because the SCM was asked again; a second green line under it would be the same
+        // fact twice, the second copy coming from a variable rather than from the machine.
+        Assert.False(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.InstallResultKind);
+        Assert.Null(context.ViewModel.InstallResultText);
+
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.",
+            context.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.ServiceInstallState);
     }
 
     /// <summary>
@@ -4305,8 +4303,13 @@ public sealed class T41AgentConfigViewModelTests
         context.ViewModel.Surface = AgentConfigSurface.Settings;
         context.ViewModel.SelectAgentTabCommand.Execute(null);
 
+        // A registration that worked leaves no line to outlive anything, so the one that has to be
+        // cleared is a failure - which is also the one an operator would be most confused to meet
+        // again on a later visit.
+        context.Service.InstallResult = AgentServiceInstallation.Failed("Win32 error 5.");
         await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
         Assert.True(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
 
         context.ViewModel.SelectGeneralTabCommand.Execute(null);
         Assert.False(context.ViewModel.HasInstallResult);
@@ -4392,7 +4395,9 @@ public sealed class T41AgentConfigViewModelTests
             context.ViewModel.ServiceInstallDescription);
 
         await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
-        Assert.Equal("Servi\u00e7o instalado com sucesso.", context.ViewModel.InstallResultText);
+        Assert.Equal(
+            "O NutManager Agent j\u00e1 est\u00e1 instalado como servi\u00e7o do Windows.",
+            context.ViewModel.ServiceInstallDescription);
 
         context.ViewModel.StartsWithWindows = false;
         Assert.Equal("Alterar inicializa\u00e7\u00e3o do servi\u00e7o?", context.ViewModel.ConfirmationTitle);
@@ -4638,8 +4643,18 @@ public sealed class T41AgentConfigViewModelTests
         Assert.False(context.ViewModel.ServiceIsInstalled);
         Assert.False(context.ViewModel.ServiceActionIsRemoval);
         Assert.Equal("Install service", context.ViewModel.ServiceActionText);
-        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.InstallResultKind);
-        Assert.Equal("Service removed successfully.", context.ViewModel.InstallResultText);
+
+        // Silent, for the same reason the registration is: the sentence above the button has already
+        // gone back to "not installed yet", and it did so because the SCM stopped reporting the
+        // service rather than because this code decided it had.
+        Assert.False(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.InstallResultKind);
+        Assert.Null(context.ViewModel.InstallResultText);
+
+        Assert.Equal(
+            "NutManager Agent is not installed as a Windows service yet.",
+            context.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.ServiceInstallState);
 
         // The group and its members are untouched.
         Assert.True(context.ViewModel.OperatorsGroupExists);
@@ -4713,7 +4728,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
         Assert.True(context.ViewModel.ServiceIsInstalled);
 
-        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
         context.ViewModel.BeginAddOperatorCommand.Execute(null);
         context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_nutmanager";
         context.ViewModel.AddMemberCommand.Execute(null);
@@ -4730,37 +4745,34 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(1, context.Groups.CreateCalls);
         Assert.Equal(2, context.Service.InstallCalls);
 
-        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
         Assert.Equal([@"EXAMPLE\svc_nutmanager"], context.ViewModel.Members);
     }
 
     /// <summary>
-    /// Permissions is a page of this window, reached from Agent and returning to it.
+    /// The users list is a settings panel, not a page behind one.
+    ///
+    /// Selecting the tab is the whole navigation: there is no second click, nothing to come back
+    /// from, and the settings surface never gives way to an inner page for it.
     /// </summary>
     [Fact]
-    public async Task PermissionsIsAPageOfThisWindowThatReturnsToAgent()
+    public async Task TheUsersTabIsThePanelRatherThanAWayToOne()
     {
         var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.Surface = AgentConfigSurface.Settings;
-        context.ViewModel.SelectAgentTabCommand.Execute(null);
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
 
-        context.ViewModel.OpenPermissionsCommand.Execute(null);
-
-        Assert.True(context.ViewModel.ShowPermissions);
-        Assert.False(context.ViewModel.ShowSettings);
+        Assert.True(context.ViewModel.IsUsersTab);
+        Assert.True(context.ViewModel.ShowSettings);
         Assert.True(context.ViewModel.ShowHomeAction);
         Assert.False(context.ViewModel.ShowActionBar);
 
-        // Opening it reads the group rather than creating one.
+        // Arriving reads the group rather than creating one.
         Assert.Equal(0, context.Groups.CreateCalls);
         Assert.False(context.ViewModel.IsAddingOperator);
-
-        context.ViewModel.ClosePermissionsCommand.Execute(null);
-
-        Assert.True(context.ViewModel.ShowSettings);
-        Assert.True(context.ViewModel.IsAgentTab);
+        Assert.NotEmpty(context.ViewModel.Members);
     }
 
     /// <summary>
@@ -4771,7 +4783,7 @@ public sealed class T41AgentConfigViewModelTests
     {
         var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
         await context.ViewModel.RefreshAsync();
-        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
 
         Assert.False(context.ViewModel.IsAddingOperator);
         var before = context.ViewModel.Members.Count;
@@ -4794,16 +4806,17 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(before + 1, context.ViewModel.Members.Count);
     }
 
-    /// <summary>Opening Permissions never creates a Windows group as a side effect of looking.</summary>
+    /// <summary>Opening the users panel never creates a Windows group as a side effect of looking.</summary>
     [Fact]
     public async Task OpeningPermissionsWithNoGroupCreatesNothing()
     {
         var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
         await context.ViewModel.RefreshAsync();
 
-        context.ViewModel.OpenPermissionsCommand.Execute(null);
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
 
-        Assert.True(context.ViewModel.ShowPermissions);
+        Assert.True(context.ViewModel.IsUsersTab);
         Assert.False(context.ViewModel.OperatorsGroupExists);
         Assert.Equal(0, context.Groups.CreateCalls);
         Assert.Empty(context.ViewModel.Members);
@@ -4816,13 +4829,322 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext(groupExists: true);
         await context.ViewModel.RefreshAsync();
 
-        Assert.Equal("Access permissions", context.ViewModel.Strings["Settings.Permissions.Title"]);
+        // The tab is named for the people; the group is a technical detail underneath it.
+        Assert.Equal("Users", context.ViewModel.Strings["Settings.Tab.Users"]);
         Assert.Equal("Windows group: NutManager Operators", context.ViewModel.OperatorsGroupCaption);
 
         var portuguese = CreateContext(groupExists: true, language: UiLanguagePreference.PtBr);
         await portuguese.ViewModel.RefreshAsync();
         Assert.Equal(
             "Grupo do Windows: NutManager Operators", portuguese.ViewModel.OperatorsGroupCaption);
+    }
+
+    /// <summary>
+    /// Removing a user asks first, and the question names who it is about.
+    ///
+    /// Revoking administrative rights is one small click with a real consequence, so nothing reaches
+    /// Windows until somebody has read whose rights are going and said yes.
+    /// </summary>
+    [Fact]
+    public async Task RemovingAUserAsksBeforeItRevokesAnything()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        var account = context.ViewModel.Members.Single();
+
+        context.ViewModel.RemoveOperatorCommand.Execute(account);
+
+        // Asked, and nothing done.
+        Assert.Equal(AgentConfigConfirmation.RemoveOperator, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Groups.RemoveCalls);
+        Assert.Equal(account, context.ViewModel.PendingOperatorAccount);
+
+        // The question names the account and says what is not happening to it.
+        var message = context.ViewModel.ConfirmationMessage;
+        Assert.NotNull(message);
+        Assert.Contains(account, message, StringComparison.Ordinal);
+        Assert.Contains("Windows account will not be removed", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Cancelling changes nothing, and leaves no message behind claiming otherwise.</summary>
+    [Fact]
+    public async Task CancellingAUserRemovalLeavesTheGroupAlone()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        var before = context.ViewModel.Members.ToArray();
+        context.ViewModel.RemoveOperatorCommand.Execute(before[0]);
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Groups.RemoveCalls);
+        Assert.Equal(before, context.ViewModel.Members);
+        Assert.Null(context.ViewModel.OperatorsMessage);
+
+        // And the cancelled account is forgotten, so a later question cannot complete it.
+        Assert.Null(context.ViewModel.PendingOperatorAccount);
+    }
+
+    /// <summary>
+    /// Confirming revokes exactly one membership, and the list is read back from Windows.
+    ///
+    /// The row disappears because the machine says it is gone, not because a button was pressed.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingAUserRemovalRevokesOneMembershipAndRereadsTheList()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_backup";
+        context.ViewModel.AddMemberCommand.Execute(null);
+        Assert.Equal(2, context.ViewModel.Members.Count);
+
+        context.ViewModel.RemoveOperatorCommand.Execute(@"EXAMPLE\svc_backup");
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.RemoveCalls);
+        Assert.Equal([@"EXAMPLE\svc_backup"], context.Groups.Removed);
+        Assert.Equal([@"EXAMPLE\operator"], context.ViewModel.Members);
+        Assert.Equal(
+            @"EXAMPLE\svc_backup was removed from the group.", context.ViewModel.OperatorsMessage);
+
+        // The group itself, and everybody else in it, are untouched.
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.CreateCalls);
+    }
+
+    /// <summary>
+    /// The last member can be removed, and the panel then says the group is empty.
+    ///
+    /// Nobody is added back automatically to keep the list populated: an agent with a group and no
+    /// authorized operators is a state an administrator is allowed to be in, and inventing a member
+    /// would be granting rights nobody asked for.
+    /// </summary>
+    [Fact]
+    public async Task TheLastAuthorizedUserCanBeRemoved()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.ViewModel.RemoveOperatorCommand.Execute(context.ViewModel.Members.Single());
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Empty(context.ViewModel.Members);
+        Assert.False(context.ViewModel.HasMembers);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.AddCalls);
+    }
+
+    /// <summary>A removal Windows refused is reported as a failure rather than as a removal.</summary>
+    [Fact]
+    public async Task AFailedUserRemovalKeepsTheMemberAndSaysSo()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.Groups.RemoveResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Failed, @"EXAMPLE\operator", "Windows status 5.");
+
+        context.ViewModel.RemoveOperatorCommand.Execute(@"EXAMPLE\operator");
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.RemoveCalls);
+        Assert.Equal([@"EXAMPLE\operator"], context.ViewModel.Members);
+        Assert.Equal("The user could not be removed.", context.ViewModel.OperatorsMessage);
+    }
+
+    /// <summary>
+    /// An account Windows cannot find is refused in the reader's language.
+    ///
+    /// Infrastructure explains itself in its own vocabulary - "the name could not be translated to a
+    /// SID" - and that sentence appeared verbatim in a Portuguese interface. The panel says what
+    /// happened; the Windows text stays out of it.
+    /// </summary>
+    [Fact]
+    public async Task AnUnresolvableAccountIsRefusedInTheReadersLanguage()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.Running,
+            groupExists: true,
+            language: UiLanguagePreference.PtBr);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.Groups.AddResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Rejected,
+            "edw",
+            "The name 'edw' could not be translated to a SID.");
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = "edw";
+        context.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal(
+            "O usu\u00e1rio informado n\u00e3o foi encontrado.", context.ViewModel.OperatorsMessage);
+        Assert.DoesNotContain("SID", context.ViewModel.OperatorsMessage!, StringComparison.Ordinal);
+
+        var english = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await english.ViewModel.RefreshAsync();
+        english.Groups.AddResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Rejected, "edw", "The name could not be translated to a SID.");
+        english.ViewModel.Surface = AgentConfigSurface.Settings;
+        english.ViewModel.SelectUsersTabCommand.Execute(null);
+        english.ViewModel.BeginAddOperatorCommand.Execute(null);
+        english.ViewModel.NewMemberAccount = "edw";
+        english.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal("The Windows account could not be found.", english.ViewModel.OperatorsMessage);
+    }
+
+    /// <summary>
+    /// A removal the SCM could not verify is not reported as somebody else's service.
+    ///
+    /// This is the sentence the operator actually saw: an agent this product had installed, showing
+    /// correctly as installed, refusing to be removed because it supposedly belonged to someone else.
+    /// The two outcomes now say different things.
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableServiceConfigurationIsNotReportedAsForeign()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        context.Service.RemoveResult = AgentServiceRemoval.QueryFailed(
+            "The NutManagerAgent service configuration could not be read (Win32 error 5).", 5);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "The service configuration could not be verified, so nothing was removed.",
+            context.ViewModel.InstallResultText);
+
+        // Emphatically not the mismatch sentence.
+        Assert.DoesNotContain(
+            "does not belong to NutManager",
+            context.ViewModel.InstallResultText!,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An operation that worked reports itself once, through the state it produced.
+    ///
+    /// The panel used to say it twice: the sentence above the button changed, because the service
+    /// control manager was asked again, and then a second green line appeared underneath repeating
+    /// it. The second copy came from a variable rather than from the machine, so it was both
+    /// redundant and the less trustworthy of the two. Only the first is kept.
+    ///
+    /// The rule is narrow. Success is quiet; anything that failed or needs attention still says so,
+    /// and the tests either side of this one hold that end of it.
+    /// </summary>
+    [Fact]
+    public async Task AnOperationThatWorkedIsReportedOnlyByTheStateItProduced()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        // Installed: the state says so, and nothing else does.
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.ServiceInstallState);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.HasInstallResult);
+
+        // Removed: likewise.
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.ServiceInstallState);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.HasInstallResult);
+
+        // Not moved to a popup either: nothing is left open waiting to be dismissed.
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+    }
+
+    /// <summary>
+    /// The two sentences are gone from both cultures, rather than merely unused in one.
+    /// </summary>
+    [Fact]
+    public void TheServiceSuccessSentencesAreGoneFromBothCultures()
+    {
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            var strings = new AgentConfigStrings(language);
+
+            Assert.Equal("Settings.Agent.Install.Done", strings["Settings.Agent.Install.Done"]);
+            Assert.Equal("Settings.Agent.Remove.Done", strings["Settings.Agent.Remove.Done"]);
+
+            // The states that replaced them are still there, in that language.
+            Assert.NotEqual("Settings.Agent.Install.Already", strings["Settings.Agent.Install.Already"]);
+            Assert.NotEqual("Settings.Agent.Install.Missing", strings["Settings.Agent.Install.Missing"]);
+        }
+    }
+
+    /// <summary>
+    /// A removal in flight reports itself on the button that started it.
+    ///
+    /// Observed from inside the operation, which is where the in-progress state actually exists.
+    /// </summary>
+    [Fact]
+    public async Task ARemovalInProgressIsReportedOnTheButtonThatStartedIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+
+        AgentServiceLifecycle lifecycle = default;
+        string? label = null;
+        var enabled = true;
+        var installable = true;
+
+        context.Service.WhileRemoving = () =>
+        {
+            lifecycle = context.ViewModel.ServiceLifecycle;
+            label = context.ViewModel.ServiceActionText;
+
+            enabled = context.ViewModel.CanRemoveService
+                      || context.ViewModel.RemoveServiceCommand.CanExecute(null);
+
+            installable = context.ViewModel.CanInstallService
+                          || context.ViewModel.InstallServiceCommand.CanExecute(null);
+        };
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentServiceLifecycle.Removing, lifecycle);
+        Assert.Equal("Removing...", label);
+        Assert.False(enabled);
+        Assert.False(installable);
+
+        // And it hands back to the state the machine reports.
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
     }
 
     // ---------------------------------------------------------------- T42: the listener, watched
@@ -5582,6 +5904,15 @@ public sealed class T41AgentConfigViewModelTests
         public AgentMembershipResult AddResult { get; set; } =
             new(AgentMembershipOutcome.Added, @"EXAMPLE\operator");
 
+        /// <summary>How many memberships this fake was asked to revoke.</summary>
+        public int RemoveCalls { get; private set; }
+
+        /// <summary>The accounts it was asked to revoke, in order.</summary>
+        public List<string> Removed { get; } = [];
+
+        /// <summary>Set to make a removal fail, so the panel has to report it rather than assume.</summary>
+        public AgentMembershipResult? RemoveResult { get; set; }
+
         public int DescribeCalls { get; private set; }
 
         public AgentOperatorsGroupState Describe()
@@ -5619,6 +5950,27 @@ public sealed class T41AgentConfigViewModelTests
             if (AddResult.Succeeded && !MemberList.Contains(accountName)) MemberList.Add(accountName);
 
             return AddResult with { AccountName = accountName };
+        }
+
+        /// <summary>
+        /// Takes one account out of the list, and touches nothing else.
+        ///
+        /// There is deliberately no way to delete an account here, because the interface it
+        /// implements has none - which is the property the tests are asserting.
+        /// </summary>
+        public AgentMembershipResult RemoveMember(string accountName)
+        {
+            RemoveCalls++;
+            Removed.Add(accountName);
+
+            if (RemoveResult is { } failure) return failure with { AccountName = accountName };
+
+            if (!MemberList.Remove(accountName))
+            {
+                return new AgentMembershipResult(AgentMembershipOutcome.NotMember, accountName);
+            }
+
+            return new AgentMembershipResult(AgentMembershipOutcome.Removed, accountName);
         }
 
         public IReadOnlyList<string> ListMembers() => _exists ? [.. MemberList] : [];
@@ -5744,9 +6096,13 @@ public sealed class T41AgentConfigViewModelTests
         /// <summary>What removal answers. Settable so a refusal and a pending deletion are reachable.</summary>
         public AgentServiceRemoval RemoveResult { get; set; } = AgentServiceRemoval.Removed;
 
+        /// <summary>Runs on the removal, which is the only place its in-progress state exists.</summary>
+        public Action? WhileRemoving { get; set; }
+
         public Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken)
         {
             RemoveCalls++;
+            WhileRemoving?.Invoke();
 
             // A real removal leaves nothing registered, so the fake has to stop reporting a service.
             // Anything else and the tests would be asserting against a machine state Windows never

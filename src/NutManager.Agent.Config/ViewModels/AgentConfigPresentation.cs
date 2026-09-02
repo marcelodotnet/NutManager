@@ -374,6 +374,15 @@ public enum AgentConfigConfirmation
     RemoveService,
 
     /// <summary>
+    /// A user is being taken out of the operators group.
+    ///
+    /// Asked because revoking administrative rights is not something to do on one stray click, and
+    /// because the question is the place to say what is not happening: the Windows account itself
+    /// survives, and only the membership is removed.
+    /// </summary>
+    RemoveOperator,
+
+    /// <summary>
     /// The service is being taken off automatic start.
     ///
     /// Asked only in this direction. Turning automatic start on adds a behaviour and takes nothing
@@ -426,17 +435,8 @@ public enum AgentConfigSurface
     /// <summary>The read-only report of the same machine.</summary>
     Diagnostics,
 
-    /// <summary>Preferences, the startup choice, and the one destructive action.</summary>
+    /// <summary>Preferences, the authorized users, and the agent's own installation.</summary>
     Settings,
-
-    /// <summary>
-    /// Who may administer the agent, reached from the Agent panel and returning to it.
-    ///
-    /// A surface rather than a section, because choosing accounts is a task with its own list, its own
-    /// empty state and its own way in - and folding it into a settings panel would either crowd that
-    /// panel or truncate the list. It is still this window: no second window, no external console.
-    /// </summary>
-    Permissions,
 
     /// <summary>
     /// The full terms of use, reached from About and returning to it.
@@ -461,15 +461,15 @@ public enum AgentSettingsTab
     General,
 
     /// <summary>
-    /// What this product has done to the machine, and what it can undo.
+    /// Who may administer the agent.
     ///
-    /// Named for the machine rather than for the product: registering a service and tearing down
-    /// HTTPS resources are both changes to Windows, and grouping them says so. It replaces the
-    /// Appearance tab, whose contents were preferences and belong beside the other preferences.
+    /// The list itself rather than a way to reach it. Choosing who holds administrative rights over
+    /// the service is a task in its own right and earns a destination, not a summary with a button
+    /// under it - so this panel is the management surface, and there is no page behind it.
     /// </summary>
-    System,
+    Users,
 
-    /// <summary>What the agent reports, and who may administer it.</summary>
+    /// <summary>What the agent reports, and whether it is installed at all.</summary>
     Agent,
 
     About,

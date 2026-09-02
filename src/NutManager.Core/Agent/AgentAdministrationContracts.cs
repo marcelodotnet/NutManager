@@ -136,6 +136,17 @@ public enum AgentMembershipOutcome
     /// <summary>Already in the group: the desired state, reached earlier. Not a failure.</summary>
     AlreadyMember,
 
+    /// <summary>
+    /// Taken out of the group.
+    ///
+    /// The membership, and only the membership. The Windows account itself is untouched — it keeps
+    /// existing, keeps its password and keeps every other group it belongs to.
+    /// </summary>
+    Removed,
+
+    /// <summary>Not in the group to begin with: the desired state, reached earlier. Not a failure.</summary>
+    NotMember,
+
     /// <summary>The name did not resolve, or resolved to something that may not be a member.</summary>
     Rejected,
 
@@ -144,7 +155,11 @@ public enum AgentMembershipOutcome
 
 public sealed record AgentMembershipResult(AgentMembershipOutcome Outcome, string AccountName, string? Detail = null)
 {
-    public bool Succeeded => Outcome is AgentMembershipOutcome.Added or AgentMembershipOutcome.AlreadyMember;
+    public bool Succeeded => Outcome
+        is AgentMembershipOutcome.Added
+        or AgentMembershipOutcome.AlreadyMember
+        or AgentMembershipOutcome.Removed
+        or AgentMembershipOutcome.NotMember;
 }
 
 public sealed record AgentGroupCreationResult(bool Created, string GroupName, string? Sid, string? Failure);
@@ -172,6 +187,17 @@ public interface IAgentOperatorsGroupAdministration
 
     /// <summary>Adds a resolved principal to the group.</summary>
     AgentMembershipResult AddMember(string accountName);
+
+    /// <summary>
+    /// Takes a principal out of the group, and does nothing else.
+    ///
+    /// The narrowest operation that revokes authorization: it removes one membership from the one
+    /// group this interface administers. There is deliberately no way to reach account deletion from
+    /// here — no NetUserDel, no directory object removal — because losing the right to administer the
+    /// agent and losing your Windows account are not the same act, and only one of them belongs
+    /// behind a button in this window.
+    /// </summary>
+    AgentMembershipResult RemoveMember(string accountName);
 
     /// <summary>The members, so the screen can show back what it just changed.</summary>
     IReadOnlyList<string> ListMembers();
@@ -330,8 +356,22 @@ public enum AgentServiceRemovalOutcome
     ///
     /// Fails closed. The name is not proof of ownership, and deleting somebody else's service
     /// because it borrowed the name is the one mistake this operation must never make.
+    ///
+    /// Only ever returned when the registered configuration was actually read and did not match. A
+    /// configuration that could not be read is <see cref="QueryFailed"/>, because "this belongs to
+    /// somebody else" is a claim about what Windows said, and it must not be made about a question
+    /// Windows never answered.
     /// </summary>
     NotOwned,
+
+    /// <summary>
+    /// The registered configuration could not be read, so ownership could not be decided.
+    ///
+    /// Still fails closed — nothing is stopped and nothing is deleted — but it is a different fact
+    /// from a mismatch and says so. Collapsing the two told operators that a service this product
+    /// had registered, and was correctly showing as installed, belonged to somebody else.
+    /// </summary>
+    QueryFailed,
 
     Failed,
 }
@@ -352,6 +392,10 @@ public sealed record AgentServiceRemoval(
 
     public static AgentServiceRemoval NotOwned(string failure) =>
         new(AgentServiceRemovalOutcome.NotOwned, failure);
+
+    /// <summary>Ownership could not be decided, so nothing was touched. The Win32 code survives.</summary>
+    public static AgentServiceRemoval QueryFailed(string failure, int? errorCode = null) =>
+        new(AgentServiceRemovalOutcome.QueryFailed, failure, errorCode);
 
     public static AgentServiceRemoval Failed(string failure, int? errorCode = null) =>
         new(AgentServiceRemovalOutcome.Failed, failure, errorCode);

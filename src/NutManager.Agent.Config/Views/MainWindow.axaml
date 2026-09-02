@@ -1349,164 +1349,6 @@
           </ScrollViewer>
 
           <!-- ================================================ terms -->
-          <!-- ================================================ access permissions -->
-
-          <!--
-            Who may administer the agent, on a page of its own.
-
-            An inner page rather than a section, and the same shape the terms use: the control that
-            leaves is first in the reading order, the title says where you are, and the window itself
-            never scrolls - only the list does, and only when there is more of it than fits.
-
-            Every rule behind this page already existed and is reused rather than restated: the group
-            is located, listed and added to by the same administration boundary the diagnostics view
-            has always used, with its domain-controller confirmation intact. What changed is where an
-            operator finds it.
-          -->
-          <Grid IsVisible="{Binding ShowPermissions}" RowDefinitions="Auto,*" RowSpacing="10">
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
-              <Button x:Name="PermissionsBack"
-                      Classes="agent-settings-button"
-                      Command="{Binding ClosePermissionsCommand}"
-                      ToolTip.Tip="{Binding Strings[Settings.Permissions.Back]}"
-                      AutomationProperties.Name="{Binding Strings[Settings.Permissions.Back]}">
-                <PathIcon Data="{DynamicResource NutIconChevronLeft}" Width="17" Height="17" />
-              </Button>
-              <TextBlock Classes="nut-card-title"
-                         FontSize="17"
-                         VerticalAlignment="Center"
-                         Text="{Binding Strings[Settings.Permissions.Title]}" />
-            </StackPanel>
-
-            <Border Grid.Row="1" Classes="agent-shell-card" Padding="16" VerticalAlignment="Top">
-              <StackPanel Spacing="10">
-                <TextBlock Classes="hint"
-                           TextWrapping="Wrap"
-                           Text="{Binding Strings[Settings.Permissions.Intro]}" />
-                <TextBlock Classes="nut-metadata"
-                           TextWrapping="Wrap"
-                           Text="{Binding OperatorsGroupCaption}" />
-
-                <Border Classes="nut-divider" Height="1" />
-
-                <!--
-                  The group has to exist before anyone can be added to it, and it is created by
-                  installing the agent rather than by opening this page. Saying where it comes from
-                  beats a button here that would create a Windows group as a side effect of looking.
-                -->
-                <StackPanel x:Name="PermissionsGroupMissing"
-                            Orientation="Horizontal"
-                            Spacing="7"
-                            IsVisible="{Binding !OperatorsGroupExists}">
-                  <PathIcon Width="15"
-                            Height="15"
-                            VerticalAlignment="Center"
-                            Data="{DynamicResource AgentIconFeedbackWarning}"
-                            Foreground="{DynamicResource NutWarningBrush}" />
-                  <TextBlock Classes="nut-metadata"
-                             FontWeight="SemiBold"
-                             VerticalAlignment="Center"
-                             TextWrapping="Wrap"
-                             Text="{Binding Strings[Settings.Permissions.GroupMissing]}" />
-                </StackPanel>
-
-                <StackPanel Spacing="8" IsVisible="{Binding OperatorsGroupExists}">
-                  <TextBlock Classes="nut-card-title"
-                             FontSize="14"
-                             Text="{Binding Strings[Settings.Permissions.Members]}" />
-
-                  <TextBlock x:Name="PermissionsEmpty"
-                             Classes="hint"
-                             IsVisible="{Binding !HasMembers}"
-                             Text="{Binding Strings[Settings.Permissions.Empty]}" />
-
-                  <!--
-                    The list scrolls, the page does not. A machine with thirty authorized accounts
-                    must not be able to push the button that adds the thirty-first off the window.
-                  -->
-                  <ScrollViewer x:Name="PermissionsMemberList"
-                                MaxHeight="180"
-                                IsVisible="{Binding HasMembers}"
-                                HorizontalScrollBarVisibility="Disabled"
-                                VerticalScrollBarVisibility="Auto">
-                    <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,8,0">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <Grid ColumnDefinitions="Auto,*" ColumnSpacing="9" Margin="0,3">
-                            <PathIcon Grid.Column="0"
-                                      Data="{DynamicResource NutIconUsers}"
-                                      Width="15"
-                                      Height="15"
-                                      VerticalAlignment="Center"
-                                      Foreground="{DynamicResource NutTextSecondaryBrush}" />
-                            <TextBlock Grid.Column="1"
-                                       Classes="nut-metadata"
-                                       VerticalAlignment="Center"
-                                       TextTrimming="CharacterEllipsis"
-                                       Text="{Binding}" />
-                          </Grid>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </ScrollViewer>
-
-                  <!--
-                    Choosing an account, then adding it. Two steps rather than one, because a box that
-                    grants administrative rights the moment it is filled in is one keystroke away from
-                    granting them to the wrong account.
-
-                    The field is the existing one and resolves the account through the same identity
-                    boundary as before, so a name Windows cannot resolve is refused rather than stored.
-                    What this does not yet do is open the Windows account picker: that needs interop
-                    this round did not take on, and it is recorded as a limitation rather than replaced
-                    with something improvised.
-                  -->
-                  <Button x:Name="PermissionsSelectUser"
-                          Classes="agent-install-service"
-                          Padding="10,5"
-                          Margin="0,2,0,0"
-                          HorizontalAlignment="Left"
-                          IsVisible="{Binding !IsAddingOperator}"
-                          Command="{Binding BeginAddOperatorCommand}"
-                          AutomationProperties.Name="{Binding Strings[Settings.Permissions.Select]}">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <PathIcon Data="{DynamicResource NutIconUsers}" Width="14" Height="14" />
-                      <TextBlock VerticalAlignment="Center"
-                                 Text="{Binding Strings[Settings.Permissions.Select]}" />
-                    </StackPanel>
-                  </Button>
-
-                  <StackPanel x:Name="PermissionsAddPanel"
-                              Spacing="7"
-                              IsVisible="{Binding IsAddingOperator}">
-                    <TextBlock Classes="nut-label" Text="{Binding Strings[Operators.AddUser]}" />
-                    <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                      <TextBox Grid.Column="0"
-                               x:Name="PermissionsAccount"
-                               Text="{Binding NewMemberAccount}"
-                               PlaceholderText="{Binding Strings[Operators.Placeholder]}"
-                               AutomationProperties.Name="{Binding Strings[Operators.AddUser]}" />
-                      <Button Grid.Column="1"
-                              Classes="agent-install-service"
-                              Padding="10,5"
-                              Command="{Binding AddMemberCommand}"
-                              Content="{Binding Strings[Operators.Add]}" />
-                      <Button Grid.Column="2"
-                              Padding="10,5"
-                              Command="{Binding CancelAddOperatorCommand}"
-                              Content="{Binding Strings[Action.Cancel]}" />
-                    </Grid>
-                  </StackPanel>
-                </StackPanel>
-
-                <TextBlock Classes="nut-metadata"
-                           TextWrapping="Wrap"
-                           Text="{Binding OperatorsMessage}"
-                           IsVisible="{Binding OperatorsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-              </StackPanel>
-            </Border>
-          </Grid>
-
           <Grid IsVisible="{Binding ShowTerms}" RowDefinitions="Auto,*" RowSpacing="10">
             <!--
               Back and title, the way an inner page carries them: the control that leaves is the
@@ -1625,11 +1467,11 @@
                   </Button>
                   <Border Classes="agent-section-divider" />
                   <Button Classes="agent-section-tab"
-                          Classes.selected="{Binding IsSystemTab}"
-                          Command="{Binding SelectSystemTabCommand}">
+                          Classes.selected="{Binding IsUsersTab}"
+                          Command="{Binding SelectUsersTabCommand}">
                     <StackPanel Orientation="Horizontal" Spacing="9">
-                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabSystem}" />
-                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.System]}" />
+                      <PathIcon Classes="agent-tab-icon" Data="{DynamicResource AgentIconTabUsers}" />
+                      <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Settings.Tab.Users]}" />
                     </StackPanel>
                   </Button>
                   <Border Classes="agent-section-divider" />
@@ -1805,62 +1647,208 @@
                       </StackPanel>
                     </StackPanel>
 
-                  <!-- ================================================================ system -->
+                  <!-- ================================================================ users -->
 
                     <!--
-                      What this product has done to the machine, and what it can undo.
+                      Who may administer the agent, as the panel itself.
 
-                      Reset first, because it is the one an operator arrives looking for; installation
-                      second, because it is the one they are sent to. One surface, one rule between.
+                      It used to be a page behind a button on the Agent panel, which put a summary and
+                      a way in where the list could simply have been. Choosing who holds administrative
+                      rights over the service is what this destination is for, so it is what the
+                      destination shows.
+
+                      Every rule behind it already existed and is reused rather than restated: the
+                      group is located, listed, added to and removed from by the same administration
+                      boundary the diagnostics view has always used, with its domain-controller
+                      confirmation intact. What changed is where an operator finds it.
                     -->
-                    <StackPanel Spacing="16" Margin="2,14,2,2"
-                                IsVisible="{Binding IsSystemTab}">
+                    <StackPanel x:Name="UsersPanel" Spacing="10" Margin="2,14,2,2"
+                                IsVisible="{Binding IsUsersTab}">
+                      <TextBlock Classes="hint"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding Strings[Settings.Permissions.Intro]}" />
+                      <TextBlock Classes="nut-metadata"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding OperatorsGroupCaption}" />
+
+                      <Border Classes="nut-divider" Height="1" />
+
                       <!--
-                        Reset, moved off the HTTPS card.
-
-                        It removes the SSL binding, the URL reservation and the firewall rule this
-                        product created, and forgets the endpoint it saved. That is why it is here and
-                        not next to the fields it clears: it should be found by somebody who came
-                        looking for it. It still only opens a confirmation and changes nothing itself.
+                        The group has to exist before anyone can be added to it, and it is created by
+                        installing the agent rather than by opening this panel. Saying where it comes
+                        from beats a button here that would create a Windows group as a side effect of
+                        looking at one.
                       -->
-                      <StackPanel Spacing="6">
-                        <!--
-                          A heading, not the question.
+                      <StackPanel x:Name="PermissionsGroupMissing"
+                                  Orientation="Horizontal"
+                                  Spacing="7"
+                                  IsVisible="{Binding !OperatorsGroupExists}">
+                        <PathIcon Width="15"
+                                  Height="15"
+                                  VerticalAlignment="Center"
+                                  Data="{DynamicResource AgentIconFeedbackWarning}"
+                                  Foreground="{DynamicResource NutWarningBrush}" />
+                        <TextBlock Classes="nut-metadata"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding Strings[Settings.Permissions.GroupMissing]}" />
+                      </StackPanel>
 
-                          Https.Reset.Title still ends in a question mark and still belongs to the
-                          confirmation dialog, which is the place that actually asks. A settings
-                          section that asks the reader a question it will not act on is a heading
-                          pretending to be a prompt, so this section has its own.
-                        -->
+                      <StackPanel Spacing="8" IsVisible="{Binding OperatorsGroupExists}">
                         <TextBlock Classes="nut-card-title"
                                    FontSize="14"
-                                   Text="{Binding Strings[Settings.Https.Reset.Title]}" />
-                        <TextBlock Classes="hint"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding Strings[Settings.Https.Reset.Description]}" />
+                                   Text="{Binding Strings[Settings.Permissions.Members]}" />
+
+                        <TextBlock x:Name="PermissionsEmpty"
+                                   Classes="hint"
+                                   IsVisible="{Binding !HasMembers}"
+                                   Text="{Binding Strings[Settings.Permissions.Empty]}" />
+
                         <!--
-                          A destructive action gets its own room. At the section spacing it sat against
-                          the last line of the sentence describing it, which reads as part of the
-                          paragraph rather than as the thing that acts on the machine.
+                          The list scrolls, the window does not. A machine with thirty authorized
+                          accounts must not be able to push the button that adds the thirty-first off
+                          the bottom of a window that cannot be resized.
                         -->
-                        <Border Background="Transparent"
-                                Margin="0,10,0,0"
+                        <ScrollViewer x:Name="PermissionsMemberList"
+                                      MaxHeight="150"
+                                      IsVisible="{Binding HasMembers}"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                          <ItemsControl ItemsSource="{Binding Members}" Margin="0,0,8,0">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <!--
+                                  The account, and the one thing that may be done to it. The button
+                                  carries the account as its parameter rather than relying on a
+                                  selection, so the row that was clicked is the row that is acted on.
+                                -->
+                                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9" Margin="0,3">
+                                  <PathIcon Grid.Column="0"
+                                            Data="{DynamicResource NutIconUsers}"
+                                            Width="15"
+                                            Height="15"
+                                            VerticalAlignment="Center"
+                                            Foreground="{DynamicResource NutTextSecondaryBrush}" />
+                                  <TextBlock Grid.Column="1"
+                                             Classes="nut-metadata"
+                                             VerticalAlignment="Center"
+                                             TextTrimming="CharacterEllipsis"
+                                             Text="{Binding}" />
+                                  <Button Grid.Column="2"
+                                          x:Name="PermissionsRemoveMember"
+                                          Classes="agent-reset-https"
+                                          Padding="9,3"
+                                          VerticalAlignment="Center"
+                                          Command="{Binding $parent[ItemsControl].DataContext.RemoveOperatorCommand}"
+                                          CommandParameter="{Binding}"
+                                          Content="{Binding $parent[ItemsControl].DataContext.RemoveMemberText}" />
+                                </Grid>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                        </ScrollViewer>
+
+                        <!--
+                          Choosing an account, then adding it. Two steps rather than one, because a
+                          box that grants administrative rights the moment it is filled in is one
+                          keystroke away from granting them to the wrong account.
+
+                          The field is the existing one and resolves the account through the same
+                          identity boundary as before, so a name Windows cannot resolve is refused
+                          rather than stored. What this does not yet do is open the Windows account
+                          picker: that needs interop this round did not take on, and it is recorded as
+                          a limitation rather than replaced with something improvised.
+                        -->
+                        <Button x:Name="PermissionsSelectUser"
+                                Classes="agent-install-service"
+                                Padding="10,5"
+                                Margin="0,2,0,0"
                                 HorizontalAlignment="Left"
-                                ToolTip.Tip="{Binding HttpsResetToolTip}"
-                                AutomationProperties.HelpText="{Binding HttpsResetToolTip}">
-                          <Button x:Name="SettingsResetHttps"
-                                  Classes="agent-reset-https"
-                                  Padding="10,5"
-                                  Command="{Binding ResetHttpsCommand}"
-                                  IsEnabled="{Binding CanResetHttps}"
-                                  AutomationProperties.Name="{Binding Strings[Https.Reset.Tooltip]}">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                              <PathIcon Data="{DynamicResource NutIconRestart}" Width="14" Height="14" />
-                              <TextBlock VerticalAlignment="Center" Text="{Binding Strings[Https.Reset]}" />
-                            </StackPanel>
-                          </Button>
-                        </Border>
+                                IsVisible="{Binding !IsAddingOperator}"
+                                Command="{Binding BeginAddOperatorCommand}"
+                                AutomationProperties.Name="{Binding Strings[Settings.Permissions.Select]}">
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <PathIcon Data="{DynamicResource NutIconUsers}" Width="14" Height="14" />
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{Binding Strings[Settings.Permissions.Select]}" />
+                          </StackPanel>
+                        </Button>
+
+                        <StackPanel x:Name="PermissionsAddPanel"
+                                    Spacing="7"
+                                    IsVisible="{Binding IsAddingOperator}">
+                          <TextBlock Classes="nut-label" Text="{Binding Strings[Operators.AddUser]}" />
+                          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                            <TextBox Grid.Column="0"
+                                     x:Name="PermissionsAccount"
+                                     Text="{Binding NewMemberAccount}"
+                                     PlaceholderText="{Binding Strings[Operators.Placeholder]}"
+                                     AutomationProperties.Name="{Binding Strings[Operators.AddUser]}" />
+                            <Button Grid.Column="1"
+                                    Classes="agent-install-service"
+                                    Padding="10,5"
+                                    Command="{Binding AddMemberCommand}"
+                                    Content="{Binding Strings[Operators.Add]}" />
+                            <Button Grid.Column="2"
+                                    Padding="10,5"
+                                    Command="{Binding CancelAddOperatorCommand}"
+                                    Content="{Binding Strings[Action.Cancel]}" />
+                          </Grid>
+                        </StackPanel>
                       </StackPanel>
+
+                      <TextBlock Classes="nut-metadata"
+                                 TextWrapping="Wrap"
+                                 Text="{Binding OperatorsMessage}"
+                                 IsVisible="{Binding OperatorsMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+
+                  <!-- ================================================================ agent -->
+
+                    <!--
+                      What the machine reports, then what can be done about it.
+
+                      One surface, two sections, a rule between them - the same shape General has. The
+                      state comes first because it is what somebody arriving here is checking, and the
+                      installation follows because it is the answer when that state says the service
+                      is not there at all. It is also where the help button beside a disabled startup
+                      switch sends them, so the remedy has to be on the panel it points at.
+                    -->
+                    <StackPanel Spacing="10" Margin="2,14,2,2"
+                                IsVisible="{Binding IsAgentTab}">
+                      <TextBlock Classes="nut-card-title"
+                                 FontSize="14"
+                                 Text="{Binding Strings[Settings.Agent.Section]}" />
+                      <Grid ColumnDefinitions="Auto,*"
+                            RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                            RowSpacing="7"
+                            ColumnSpacing="16">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Service]}" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceStateText}" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.StartMode]}" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceStartTypeText}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Account]}" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ServiceAccountText}" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.Transports]}" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding ActiveTransportsText}" />
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="nut-metadata"
+                                   Text="{Binding Strings[Settings.Agent.HttpsPort]}" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-metadata"
+                                   TextWrapping="Wrap" Text="{Binding HttpsPortText}" />
+                      </Grid>
 
                       <Border Classes="nut-divider" Height="1" />
 
@@ -1898,7 +1886,7 @@
                           one Panel rather than one button that changes colour, because installing and
                           removing are not the same kind of act and should not look like it.
                         -->
-                        <Panel HorizontalAlignment="Left" Margin="0,4,0,0">
+                        <Panel HorizontalAlignment="Left" Margin="0,10,0,0">
                           <Button x:Name="AgentInstallService"
                                   Classes="agent-install-service"
                                   Padding="10,5"
@@ -1938,88 +1926,6 @@
                                      TextWrapping="Wrap"
                                      Text="{Binding InstallResultText}" />
                         </StackPanel>
-                      </StackPanel>
-                    </StackPanel>
-
-                  <!-- ================================================================ agent -->
-
-                    <!--
-                      Installation first, then what the machine reports.
-
-                      One surface, two sections, a rule between them - the same shape General has. The
-                      order is the order somebody needs it in: a machine with no service has one thing
-                      to do here, and it is at the top rather than under five rows of values that are
-                      all empty because the service does not exist.
-                    -->
-                    <StackPanel Spacing="10" Margin="2,14,2,2"
-                                IsVisible="{Binding IsAgentTab}">
-                      <TextBlock Classes="nut-card-title"
-                                 FontSize="14"
-                                 Text="{Binding Strings[Settings.Agent.Section]}" />
-                      <Grid ColumnDefinitions="Auto,*"
-                            RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                            RowSpacing="7"
-                            ColumnSpacing="16">
-                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="nut-metadata"
-                                   Text="{Binding Strings[Settings.Agent.Service]}" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Classes="nut-metadata"
-                                   TextWrapping="Wrap" Text="{Binding ServiceStateText}" />
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="nut-metadata"
-                                   Text="{Binding Strings[Settings.Agent.StartMode]}" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Classes="nut-metadata"
-                                   TextWrapping="Wrap" Text="{Binding ServiceStartTypeText}" />
-
-                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="nut-metadata"
-                                   Text="{Binding Strings[Settings.Agent.Account]}" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Classes="nut-metadata"
-                                   TextWrapping="Wrap" Text="{Binding ServiceAccountText}" />
-
-                        <TextBlock Grid.Row="3" Grid.Column="0" Classes="nut-metadata"
-                                   Text="{Binding Strings[Settings.Agent.Transports]}" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" Classes="nut-metadata"
-                                   TextWrapping="Wrap" Text="{Binding ActiveTransportsText}" />
-
-                        <TextBlock Grid.Row="4" Grid.Column="0" Classes="nut-metadata"
-                                   Text="{Binding Strings[Settings.Agent.HttpsPort]}" />
-                        <TextBlock Grid.Row="4" Grid.Column="1" Classes="nut-metadata"
-                                   TextWrapping="Wrap" Text="{Binding HttpsPortText}" />
-                      </Grid>
-
-                      <Border Classes="nut-divider" Height="1" />
-
-                      <!--
-                        Who may administer the agent, summarised here and managed on its own page.
-
-                        A summary rather than the list: choosing accounts has an empty state, a list
-                        that can grow, and a way in of its own, and folding all of that into a settings
-                        panel would either crowd this one or truncate the list. The group name is here
-                        because an administrator looking at Windows needs to know which group to look
-                        for - as a technical detail under the heading, not as the heading.
-                      -->
-                      <StackPanel x:Name="AgentPermissions" Spacing="6">
-                        <TextBlock Classes="nut-card-title"
-                                   FontSize="14"
-                                   Text="{Binding Strings[Settings.Permissions.Title]}" />
-                        <TextBlock Classes="hint"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding Strings[Settings.Permissions.Summary]}" />
-                        <TextBlock Classes="nut-metadata"
-                                   TextWrapping="Wrap"
-                                   Text="{Binding OperatorsGroupCaption}" />
-                        <Button x:Name="AgentManagePermissions"
-                                Classes="agent-install-service"
-                                Padding="10,5"
-                                Margin="0,4,0,0"
-                                HorizontalAlignment="Left"
-                                Command="{Binding OpenPermissionsCommand}"
-                                AutomationProperties.Name="{Binding Strings[Settings.Permissions.Manage]}">
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <PathIcon Data="{DynamicResource NutIconUsers}" Width="14" Height="14" />
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{Binding Strings[Settings.Permissions.Manage]}" />
-                          </StackPanel>
-                        </Button>
                       </StackPanel>
                     </StackPanel>
 

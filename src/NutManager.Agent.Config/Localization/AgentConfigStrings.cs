@@ -221,6 +221,11 @@ public sealed class AgentConfigStrings
         ["Operators.NoMembers"] = "Nenhum membro.",
         ["Operators.Added"] = "{0} foi adicionado ao grupo.",
         ["Operators.AlreadyMember"] = "{0} já é membro do grupo.",
+        ["Operators.Removed"] = "{0} foi removido do grupo.",
+        ["Operators.NotMember"] = "{0} não era membro do grupo.",
+        ["Operators.RemoveFailed"] = "Não foi possível remover o usuário.",
+        ["Operators.NotFound"] = "O usuário informado não foi encontrado.",
+        ["Operators.Failed"] = "Não foi possível adicionar o usuário.",
         ["Operators.Created"] = "Grupo criado.",
         ["Operators.DirectoryTitle"] = "Criar grupo no domínio",
         ["Operators.DirectoryWarning"] = "Este servidor é um controlador de domínio e não possui uma base local independente. O grupo será criado no diretório do domínio e ficará visível em todos os servidores. Deseja continuar?",
@@ -288,7 +293,7 @@ public sealed class AgentConfigStrings
 
         ["Settings.Title"] = "Configurações",
         ["Settings.Tab.General"] = "Geral",
-        ["Settings.Tab.System"] = "Sistema",
+        ["Settings.Tab.Users"] = "Usuários",
         ["Settings.Tab.Agent"] = "Agent",
         ["Settings.Tab.About"] = "Sobre",
 
@@ -313,11 +318,6 @@ public sealed class AgentConfigStrings
             "O serviço em execução não será interrompido.",
         ["Settings.Startup.Manual.Confirm"] = "Alterar para manual",
 
-        ["Settings.Https.Reset.Title"] = "Resetar configuração HTTPS",
-        ["Settings.Https.Reset.Description"] =
-            "Remove o binding SSL, a reserva de URL e a regra de firewall criados por este produto " +
-            "e esquece o endpoint salvo. O certificado nunca é removido.",
-
         ["Settings.Appearance.Section"] = "Aparência e idioma",
         ["Settings.Appearance.Theme"] = "Tema",
         ["Settings.Appearance.Theme.Description"] = "Alterna entre o tema claro e o escuro desta janela.",
@@ -341,26 +341,21 @@ public sealed class AgentConfigStrings
             "O serviço NutManager Agent será removido deste computador. " +
             "Se estiver em execução, ele será interrompido para concluir a remoção. " +
             "O grupo NutManager Operators e seus usuários não serão removidos.",
-        ["Settings.Agent.Remove.Done"] = "Serviço removido com sucesso.",
         ["Settings.Agent.Remove.Absent"] = "O serviço já não estava instalado.",
         ["Settings.Agent.Remove.Pending"] =
             "O serviço foi marcado para remoção e ainda está registrado. " +
             "Feche o console de Serviços do Windows e verifique novamente.",
         ["Settings.Agent.Remove.NotOwned"] =
             "Existe um serviço com esse nome que não pertence ao NutManager, então nada foi removido.",
+        ["Settings.Agent.Remove.QueryFailed"] =
+            "Não foi possível verificar a configuração do serviço, então nada foi removido.",
         ["Settings.Agent.Remove.Failed"] = "Não foi possível remover o serviço.",
         ["Settings.Agent.Install.Already"] =
             "O NutManager Agent já está instalado como serviço do Windows.",
         ["Settings.Agent.Install.Action"] = "Instalar serviço",
-        ["Settings.Agent.Install.Done"] = "Serviço instalado com sucesso.",
         ["Settings.Agent.Install.Failed"] = "Não foi possível instalar o serviço.",
         ["Settings.Agent.Section"] = "Serviço e comunicação",
-        ["Settings.System.Title"] = "Sistema",
-        ["Settings.Permissions.Title"] = "Permissões de acesso",
-        ["Settings.Permissions.Summary"] =
-            "Gerencie quais usuários podem administrar o NutManager Agent.",
         ["Settings.Permissions.Group"] = "Grupo do Windows: {0}",
-        ["Settings.Permissions.Manage"] = "Gerenciar permissões",
         ["Settings.Permissions.Intro"] =
             "Usuários autorizados a administrar o NutManager Agent.",
         ["Settings.Permissions.Members"] = "Usuários autorizados",
@@ -368,7 +363,11 @@ public sealed class AgentConfigStrings
         ["Settings.Permissions.Select"] = "Selecionar usuário...",
         ["Settings.Permissions.GroupMissing"] =
             "O grupo NutManager Operators ainda não existe. Ele é criado ao instalar o Agent.",
-        ["Settings.Permissions.Back"] = "Agent",
+        ["Settings.Permissions.Remove"] = "Remover",
+        ["Settings.Permissions.Remove.Title"] = "Remover usuário?",
+        ["Settings.Permissions.Remove.Question"] =
+            "{0} deixará de ter permissão para administrar o NutManager Agent. " +
+            "A conta do Windows não será removida.",
         ["Settings.Agent.Service"] = "Serviço",
         ["Settings.Agent.StartMode"] = "Modo de início",
         ["Settings.Agent.Account"] = "Conta",
@@ -588,6 +587,11 @@ public sealed class AgentConfigStrings
         ["Operators.NoMembers"] = "No members.",
         ["Operators.Added"] = "{0} was added to the group.",
         ["Operators.AlreadyMember"] = "{0} is already a member of the group.",
+        ["Operators.Removed"] = "{0} was removed from the group.",
+        ["Operators.NotMember"] = "{0} was not a member of the group.",
+        ["Operators.RemoveFailed"] = "The user could not be removed.",
+        ["Operators.NotFound"] = "The Windows account could not be found.",
+        ["Operators.Failed"] = "The user could not be added.",
         ["Operators.Created"] = "Group created.",
         ["Operators.DirectoryTitle"] = "Create the group in the domain",
         ["Operators.DirectoryWarning"] = "This server is a domain controller and has no independent local database. The group will be created in the domain directory and will be visible on every server. Continue?",
@@ -655,7 +659,7 @@ public sealed class AgentConfigStrings
 
         ["Settings.Title"] = "Settings",
         ["Settings.Tab.General"] = "General",
-        ["Settings.Tab.System"] = "System",
+        ["Settings.Tab.Users"] = "Users",
         ["Settings.Tab.Agent"] = "Agent",
         ["Settings.Tab.About"] = "About",
 
@@ -679,11 +683,6 @@ public sealed class AgentConfigStrings
             "NutManager Agent will no longer start automatically with Windows. " +
             "The running service will not be stopped.",
         ["Settings.Startup.Manual.Confirm"] = "Change to manual",
-
-        ["Settings.Https.Reset.Title"] = "Reset HTTPS configuration",
-        ["Settings.Https.Reset.Description"] =
-            "Removes the SSL binding, the URL reservation and the firewall rule this product created, " +
-            "and forgets the saved endpoint. The certificate is never removed.",
 
         ["Settings.Appearance.Section"] = "Appearance and language",
         ["Settings.Appearance.Theme"] = "Theme",
@@ -709,26 +708,21 @@ public sealed class AgentConfigStrings
             "The NutManager Agent service will be removed from this computer. " +
             "If it is running, it will be stopped to complete the removal. " +
             "The NutManager Operators group and its users will not be removed.",
-        ["Settings.Agent.Remove.Done"] = "Service removed successfully.",
         ["Settings.Agent.Remove.Absent"] = "The service was already not installed.",
         ["Settings.Agent.Remove.Pending"] =
             "The service is marked for removal and is still registered. " +
             "Close the Windows Services console and check again.",
         ["Settings.Agent.Remove.NotOwned"] =
             "A service with that name exists but does not belong to NutManager, so nothing was removed.",
+        ["Settings.Agent.Remove.QueryFailed"] =
+            "The service configuration could not be verified, so nothing was removed.",
         ["Settings.Agent.Remove.Failed"] = "The service could not be removed.",
         ["Settings.Agent.Install.Already"] =
             "NutManager Agent is already installed as a Windows service.",
         ["Settings.Agent.Install.Action"] = "Install service",
-        ["Settings.Agent.Install.Done"] = "Service installed successfully.",
         ["Settings.Agent.Install.Failed"] = "The service could not be installed.",
         ["Settings.Agent.Section"] = "Service and communication",
-        ["Settings.System.Title"] = "System",
-        ["Settings.Permissions.Title"] = "Access permissions",
-        ["Settings.Permissions.Summary"] =
-            "Manage which users can administer NutManager Agent.",
         ["Settings.Permissions.Group"] = "Windows group: {0}",
-        ["Settings.Permissions.Manage"] = "Manage permissions",
         ["Settings.Permissions.Intro"] =
             "Users authorized to administer NutManager Agent.",
         ["Settings.Permissions.Members"] = "Authorized users",
@@ -736,7 +730,11 @@ public sealed class AgentConfigStrings
         ["Settings.Permissions.Select"] = "Select user...",
         ["Settings.Permissions.GroupMissing"] =
             "The NutManager Operators group does not exist yet. It is created when the Agent is installed.",
-        ["Settings.Permissions.Back"] = "Agent",
+        ["Settings.Permissions.Remove"] = "Remove",
+        ["Settings.Permissions.Remove.Title"] = "Remove user?",
+        ["Settings.Permissions.Remove.Question"] =
+            "{0} will no longer be allowed to administer NutManager Agent. " +
+            "The Windows account will not be removed.",
         ["Settings.Agent.Service"] = "Service",
         ["Settings.Agent.StartMode"] = "Start mode",
         ["Settings.Agent.Account"] = "Account",

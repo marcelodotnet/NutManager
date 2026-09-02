@@ -32,6 +32,7 @@ public sealed class WindowsAgentOperatorsGroupAdministration : IAgentOperatorsGr
     private const int NerrGroupExists = 2223;
     private const int ErrorAliasExists = 1379;
     private const int ErrorMemberInAlias = 1378;
+    private const int ErrorMemberNotInAlias = 1377;
     private const int ErrorAccessDenied = 5;
     private const int LocalGroupInfoLevelComment = 1;
     private const int LocalGroupMembersInfoLevelSid = 0;
@@ -204,6 +205,63 @@ public sealed class WindowsAgentOperatorsGroupAdministration : IAgentOperatorsGr
     }
 
     /// <summary>
+    /// Takes a principal out of the group, by SID.
+    ///
+    /// The mirror of <see cref="AddMember"/>, and deliberately built from the same parts: the name is
+    /// resolved first, the SID is what Windows is given, and the call is
+    /// <c>NetLocalGroupDelMembers</c> — the one API that removes a membership. It is not
+    /// <c>NetUserDel</c> and it is not a directory deletion; the account survives this call intact,
+    /// and there is no path in this class that could delete one.
+    ///
+    /// Not being a member is reported as the success it is, for the same reason already being one is:
+    /// the administrator wanted the account out of the group, and it is.
+    /// </summary>
+    public AgentMembershipResult RemoveMember(string accountName)
+    {
+        var resolution = ResolveIdentity(accountName);
+
+        if (!resolution.Resolved)
+        {
+            return new AgentMembershipResult(AgentMembershipOutcome.Rejected, resolution.AccountName, resolution.Failure);
+        }
+
+        var identifier = new SecurityIdentifier(resolution.Sid!);
+        var binary = new byte[identifier.BinaryLength];
+        identifier.GetBinaryForm(binary, 0);
+
+        var sidBuffer = Marshal.AllocHGlobal(binary.Length);
+        try
+        {
+            Marshal.Copy(binary, 0, sidBuffer, binary.Length);
+            var member = new LocalGroupMembersInfo0 { Sid = sidBuffer };
+
+            var status = NetLocalGroupDelMembers(null, _groupName, LocalGroupMembersInfoLevelSid, ref member, 1);
+
+            return status switch
+            {
+                NerrSuccess => new AgentMembershipResult(AgentMembershipOutcome.Removed, resolution.AccountName),
+                ErrorMemberNotInAlias =>
+                    new AgentMembershipResult(AgentMembershipOutcome.NotMember, resolution.AccountName),
+                _ => new AgentMembershipResult(
+                    AgentMembershipOutcome.Failed,
+                    resolution.AccountName,
+                    DescribeStatus(status, $"'{resolution.AccountName}' could not be removed from '{_groupName}'")),
+            };
+        }
+        catch (Exception exception)
+        {
+            return new AgentMembershipResult(
+                AgentMembershipOutcome.Failed,
+                resolution.AccountName,
+                $"'{resolution.AccountName}' could not be removed from '{_groupName}' ({exception.GetType().Name}).");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(sidBuffer);
+        }
+    }
+
+    /// <summary>
     /// The group's direct members, resolved back to names for display.
     ///
     /// Direct only. The agent authorizes on indirect membership as well, but a list that silently
@@ -317,6 +375,14 @@ public sealed class WindowsAgentOperatorsGroupAdministration : IAgentOperatorsGr
 
     [DllImport("Netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int NetLocalGroupAddMembers(
+        [MarshalAs(UnmanagedType.LPWStr)] string? serverName,
+        [MarshalAs(UnmanagedType.LPWStr)] string groupName,
+        int level,
+        ref LocalGroupMembersInfo0 buffer,
+        int totalEntries);
+
+    [DllImport("Netapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int NetLocalGroupDelMembers(
         [MarshalAs(UnmanagedType.LPWStr)] string? serverName,
         [MarshalAs(UnmanagedType.LPWStr)] string groupName,
         int level,

@@ -521,7 +521,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowDiagnostics));
         OnPropertyChanged(nameof(ShowSettings));
         OnPropertyChanged(nameof(ShowTerms));
-        OnPropertyChanged(nameof(ShowPermissions));
         OnPropertyChanged(nameof(ShowActionBar));
         OnPropertyChanged(nameof(ShowHomeAction));
         OnPropertyChanged(nameof(ShowSettingsAction));
@@ -530,10 +529,14 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         if (value == AgentConfigSurface.Settings && IsAgentTab) ReloadService();
 
+        // The group and its members can change from Windows while this window is open, so the list
+        // is read when the panel becomes visible rather than kept from whenever it was last built.
+        if (value == AgentConfigSurface.Settings && IsUsersTab) ReloadGroup();
+
         // A result belongs to the action that produced it and to the panel it happened on. Leaving
         // settings ends both, so the message does not greet whoever comes back later as though they
         // had just done something.
-        if (value is not (AgentConfigSurface.Settings or AgentConfigSurface.Permissions))
+        if (value is not AgentConfigSurface.Settings)
         {
             ClearStartupResult();
             ClearInstallResult();
@@ -553,34 +556,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public bool ShowTerms => Surface == AgentConfigSurface.Terms;
 
-    public bool ShowPermissions => Surface == AgentConfigSurface.Permissions;
-
-    /// <summary>
-    /// Opens the list of who may administer the agent, reading the group as it goes.
-    ///
-    /// The read is deliberate: the group and its members can change from services.msc or from another
-    /// administrator while this window is open, and a list built when the window opened would be a
-    /// snapshot of a different moment. It reads and never creates - a group appears because somebody
-    /// installed the service or asked for it, not because a panel was opened.
-    /// </summary>
-    [RelayCommand]
-    private void OpenPermissions()
-    {
-        ReloadGroup();
-        OperatorsMessage = null;
-        NewMemberAccount = string.Empty;
-        IsAddingOperator = false;
-        Surface = AgentConfigSurface.Permissions;
-    }
-
-    /// <summary>Back to the panel it was opened from, with that panel still selected.</summary>
-    [RelayCommand]
-    private void ClosePermissions()
-    {
-        SettingsTab = AgentSettingsTab.Agent;
-        Surface = AgentConfigSurface.Settings;
-    }
-
     /// <summary>
     /// Whether Apply and Cancel belong on screen.
     ///
@@ -592,7 +567,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// Diagnostics keeps them, because it is a read-only view of the same configuration the draft
     /// belongs to and losing the buttons on the way there was never part of this.
     /// </summary>
-    public bool ShowActionBar => !ShowSettings && !ShowTerms && !ShowPermissions;
+    public bool ShowActionBar => !ShowSettings && !ShowTerms;
 
     /// <summary>
     /// The toggle's label names where it goes, not where you are. Localized text belongs on the view
@@ -613,7 +588,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// surface, so it is a house. A gear that did not open settings would be a lie about what
     /// pressing it does.
     /// </summary>
-    public bool ShowHomeAction => ShowSettings || ShowTerms || ShowPermissions;
+    public bool ShowHomeAction => ShowSettings || ShowTerms;
 
     public bool ShowSettingsAction => !ShowHomeAction;
 
@@ -657,19 +632,32 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // Each result is local to its own panel: the start type line belongs to General and the
         // registration line to Agent. Switching panels leaves the action behind with them.
         if (value != AgentSettingsTab.General) ClearStartupResult();
-        if (value != AgentSettingsTab.System) ClearInstallResult();
+        if (value != AgentSettingsTab.Agent) ClearInstallResult();
 
         OnPropertyChanged(nameof(IsGeneralTab));
-        OnPropertyChanged(nameof(IsSystemTab));
+        OnPropertyChanged(nameof(IsUsersTab));
         OnPropertyChanged(nameof(IsAgentTab));
         OnPropertyChanged(nameof(IsAboutTab));
 
         if (value == AgentSettingsTab.Agent) ReloadService();
+
+        // Arriving at the list reads it. Leaving closes the account field and drops the message, so
+        // coming back does not greet somebody with the result of an action they have forgotten.
+        if (value == AgentSettingsTab.Users)
+        {
+            ReloadGroup();
+            OperatorsMessage = null;
+        }
+        else
+        {
+            NewMemberAccount = string.Empty;
+            IsAddingOperator = false;
+        }
     }
 
     public bool IsGeneralTab => SettingsTab == AgentSettingsTab.General;
 
-    public bool IsSystemTab => SettingsTab == AgentSettingsTab.System;
+    public bool IsUsersTab => SettingsTab == AgentSettingsTab.Users;
 
     public bool IsAgentTab => SettingsTab == AgentSettingsTab.Agent;
 
@@ -679,7 +667,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private void SelectGeneralTab() => SettingsTab = AgentSettingsTab.General;
 
     [RelayCommand]
-    private void SelectSystemTab() => SettingsTab = AgentSettingsTab.System;
+    private void SelectUsersTab() => SettingsTab = AgentSettingsTab.Users;
 
     [RelayCommand]
     private void SelectAgentTab() => SettingsTab = AgentSettingsTab.Agent;
@@ -1311,6 +1299,15 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public string OperatorsGroupCaption => Strings.Format("Settings.Permissions.Group", OperatorsGroupName);
 
+    /// <summary>
+    /// The label on every row's remove button.
+    ///
+    /// A property rather than a lookup inside the row template: each row's data context is the
+    /// account name, so the template has to reach back out to the view model for anything else, and
+    /// a plain property is a far steadier thing to reach for than an indexer.
+    /// </summary>
+    public string RemoveMemberText => Strings["Settings.Permissions.Remove"];
+
     [ObservableProperty]
     private bool _operatorsGroupExists;
 
@@ -1391,14 +1388,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         var result = _groups.AddMember(account);
 
-        OperatorsMessage = result.Outcome switch
-        {
-            AgentMembershipOutcome.Added => Strings.Format("Operators.Added", result.AccountName),
-            // Wanting an account in a group it is already in is the desired state, reached earlier.
-            // Reporting that as a failure would be technically defensible and practically useless.
-            AgentMembershipOutcome.AlreadyMember => Strings.Format("Operators.AlreadyMember", result.AccountName),
-            _ => result.Detail,
-        };
+        OperatorsMessage = Describe(result, Strings.Format("Operators.Added", result.AccountName));
 
         if (result.Succeeded)
         {
@@ -1407,6 +1397,82 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ReloadMembers();
         }
     }
+
+    /// <summary>
+    /// The account a confirmed removal will act on.
+    ///
+    /// Captured when the button is pressed and read when the question is answered, so the operation
+    /// can only ever apply to the row that was actually clicked - not to whatever the list happens to
+    /// hold by the time somebody says yes.
+    /// </summary>
+    private string? _pendingOperator;
+
+    /// <summary>The account named in the removal question, for the sentence that asks.</summary>
+    public string? PendingOperatorAccount => _pendingOperator;
+
+    /// <summary>
+    /// Asks before taking a user out of the group, and does nothing else yet.
+    ///
+    /// Revoking administrative rights is a small click with a real consequence, so the click opens
+    /// the question and the question does the work. Nothing reaches Windows from here.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveOperator(string? account)
+    {
+        if (string.IsNullOrWhiteSpace(account)) return;
+
+        _pendingOperator = account;
+        OperatorsMessage = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+        PendingConfirmation = AgentConfigConfirmation.RemoveOperator;
+    }
+
+    /// <summary>
+    /// Takes the confirmed account out of the group, and only out of the group.
+    ///
+    /// One call to the same administration boundary the rest of this screen uses. The list is read
+    /// back from Windows afterwards rather than edited here, so a row disappears because the machine
+    /// says it is gone - not because a button was pressed.
+    /// </summary>
+    private void RemoveOperatorCore()
+    {
+        if (_pendingOperator is not { } account) return;
+
+        _pendingOperator = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+
+        var result = _groups.RemoveMember(account);
+
+        OperatorsMessage = result.Outcome switch
+        {
+            AgentMembershipOutcome.Removed => Strings.Format("Operators.Removed", result.AccountName),
+            // Not being in the group is what was asked for, reached earlier.
+            AgentMembershipOutcome.NotMember => Strings.Format("Operators.NotMember", result.AccountName),
+            AgentMembershipOutcome.Rejected => Strings["Operators.NotFound"],
+            _ => Strings["Operators.RemoveFailed"],
+        };
+
+        if (result.Succeeded) ReloadMembers();
+    }
+
+    /// <summary>
+    /// The outcome in the reader's language, with the Windows text kept out of the way.
+    ///
+    /// Infrastructure explains itself in English and in its own vocabulary - "the name could not be
+    /// translated to a SID" is accurate, and is not a sentence to put in front of somebody running a
+    /// Portuguese interface. The localized line is what the panel says; the technical detail stays
+    /// available to diagnostics, which is where that vocabulary belongs.
+    /// </summary>
+    private string Describe(AgentMembershipResult result, string success) => result.Outcome switch
+    {
+        AgentMembershipOutcome.Added or AgentMembershipOutcome.Removed => success,
+        // Wanting an account in a group it is already in is the desired state, reached earlier.
+        // Reporting that as a failure would be technically defensible and practically useless.
+        AgentMembershipOutcome.AlreadyMember => Strings.Format("Operators.AlreadyMember", result.AccountName),
+        AgentMembershipOutcome.NotMember => Strings.Format("Operators.NotMember", result.AccountName),
+        AgentMembershipOutcome.Rejected => Strings["Operators.NotFound"],
+        _ => Strings["Operators.Failed"],
+    };
 
     private void ReloadGroup()
     {
@@ -1623,6 +1689,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Confirm"],
         AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Action"],
+        AgentConfigConfirmation.RemoveOperator => Strings["Settings.Permissions.Remove"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryConfirm"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.RemoveAndDisable"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Confirm"],
@@ -1634,6 +1701,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Title"],
         AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Title"],
+        AgentConfigConfirmation.RemoveOperator => Strings["Settings.Permissions.Remove.Title"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryTitle"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Title"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Title"],
@@ -1645,6 +1713,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Question"],
         AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Question"],
+        AgentConfigConfirmation.RemoveOperator =>
+            Strings.Format("Settings.Permissions.Remove.Question", _pendingOperator ?? string.Empty),
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryWarning"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Message"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Message"],
@@ -1652,8 +1722,22 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _ => null,
     };
 
+    /// <summary>
+    /// Closes the question, and forgets what it was about.
+    ///
+    /// The captured account is dropped here as well as on confirm, so a cancelled removal cannot be
+    /// completed later by a different question being answered yes.
+    /// </summary>
     [RelayCommand]
-    private void CancelConfirmation() => PendingConfirmation = AgentConfigConfirmation.None;
+    private void CancelConfirmation()
+    {
+        PendingConfirmation = AgentConfigConfirmation.None;
+
+        if (_pendingOperator is null) return;
+
+        _pendingOperator = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+    }
 
     // ---------------------------------------------------------------- reset HTTPS
 
@@ -1811,6 +1895,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             case AgentConfigConfirmation.RemoveService:
                 await RemoveServiceCoreAsync(CancellationToken.None).ConfigureAwait(true);
                 break;
+
+            case AgentConfigConfirmation.RemoveOperator:
+                // The one place a membership is revoked. Reaching it means somebody read whose
+                // rights were about to go and said yes.
+                RemoveOperatorCore();
+                return;
 
             case AgentConfigConfirmation.ManualStartup:
                 // The one place the start type moves to Manual. Reaching it means somebody read what
@@ -2926,7 +3016,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// window, touches no machine state, and asks nothing of the operator on the way.
     /// </summary>
     [RelayCommand]
-    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.System;
+    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.Agent;
 
     /// <summary>Forgets the last action, so a result never outlives the panel it belongs to.</summary>
     private void ClearStartupResult()
@@ -3146,8 +3236,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
             (InstallResultKind, InstallResultText) = result.Outcome switch
             {
+                // Nothing. The line above the button already reads "already installed" beside a
+                // green tick, because the service control manager was asked again and said so - and
+                // a second green line under it saying the same thing is the same fact twice, one of
+                // them from a variable rather than from the machine.
                 AgentServiceInstallOutcome.Installed =>
-                    (AgentSettingsFeedback.Success, Strings["Settings.Agent.Install.Done"]),
+                    (AgentSettingsFeedback.None, (string?)null),
 
                 // Somebody else got there first. Reported as the state it leaves behind rather than as
                 // a failure, and nothing is done to the service that is already registered.
@@ -3250,8 +3344,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
             (InstallResultKind, InstallResultText) = result.Outcome switch
             {
+                // Nothing, for the reason the registration says nothing: the sentence above the
+                // button has already changed back to "not installed yet", and it changed because the
+                // SCM stopped reporting the service rather than because this code decided it had.
                 AgentServiceRemovalOutcome.Removed =>
-                    (AgentSettingsFeedback.Success, Strings["Settings.Agent.Remove.Done"]),
+                    (AgentSettingsFeedback.None, (string?)null),
 
                 // Nothing was there. Reported rather than treated as a failure: the machine is in the
                 // state the operator asked for.
@@ -3263,9 +3360,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 AgentServiceRemovalOutcome.PendingDeletion =>
                     (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Remove.Pending"]),
 
-                // A service wearing the name that is not ours. Left exactly where it is.
+                // A service wearing the name that is not ours. Left exactly where it is, and this
+                // is only ever said about a configuration that was actually read.
                 AgentServiceRemovalOutcome.NotOwned =>
                     (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.NotOwned"]),
+
+                // Windows would not say what the service is, so nothing was touched. A different
+                // fact from a mismatch, and it must not be reported as one: telling an operator that
+                // their own agent belongs to somebody else sends them looking for an intruder.
+                AgentServiceRemovalOutcome.QueryFailed =>
+                    (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.QueryFailed"]),
 
                 _ => (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.Failed"]),
             };

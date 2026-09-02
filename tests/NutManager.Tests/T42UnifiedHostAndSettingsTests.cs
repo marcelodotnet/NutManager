@@ -252,7 +252,7 @@ public sealed class T42SettingsSurfaceTests
 
         // Home goes to the configuration surface; the gear opens settings. One command, two answers.
         Assert.Contains(
-            "public bool ShowHomeAction => ShowSettings || ShowTerms || ShowPermissions;",
+            "public bool ShowHomeAction => ShowSettings || ShowTerms;",
             viewModel,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -281,7 +281,7 @@ public sealed class T42SettingsSurfaceTests
 
         Assert.Contains("IsVisible=\"{Binding ShowSettings}\"", window, StringComparison.Ordinal);
 
-        foreach (var tab in new[] { "General", "System", "Agent", "About" })
+        foreach (var tab in new[] { "General", "Users", "Agent", "About" })
         {
             Assert.Contains($"Text=\"{{Binding Strings[Settings.Tab.{tab}]}}\"", window, StringComparison.Ordinal);
         }
@@ -414,12 +414,15 @@ public sealed class T42SettingsSurfaceTests
         Assert.DoesNotContain("<ToggleSwitch", tab, StringComparison.Ordinal);
         Assert.DoesNotContain("<CheckBox", tab, StringComparison.Ordinal);
 
-        // Exactly one action, and it is the way to the permissions page. A second button here would
-        // mean something else on this tab had started changing the machine - installation moved to
-        // System precisely so that this panel reports and delegates rather than acting.
-        Assert.Single(Regex.Matches(tab, "<Button"));
-        Assert.Single(Regex.Matches(tab, "Command="));
-        Assert.Contains("Command=\"{Binding OpenPermissionsCommand}\"", tab, StringComparison.Ordinal);
+        // The reported block stays read-only. The two buttons on this panel are the installation
+        // action below the rule - one to register, one to remove, never both at once - and neither
+        // edits any of the values above them.
+        Assert.Equal(2, Regex.Matches(tab, "<Button").Count);
+        Assert.Contains("Command=\"{Binding InstallServiceCommand}\"", tab, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding RemoveServiceCommand}\"", tab, StringComparison.Ordinal);
+
+        // Nothing here reaches the users list any more: that is a destination of its own.
+        Assert.DoesNotContain("OpenPermissionsCommand", tab, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -778,7 +781,7 @@ public sealed class T42RefinementTests
         // Diagnostics is absent from the condition on purpose: it is a read-only view of the very
         // configuration the draft belongs to, and it keeps the buttons.
         Assert.Contains(
-            "public bool ShowActionBar => !ShowSettings && !ShowTerms && !ShowPermissions;",
+            "public bool ShowActionBar => !ShowSettings && !ShowTerms;",
             viewModel,
             StringComparison.Ordinal);
 
@@ -859,29 +862,25 @@ public sealed class T42RefinementTests
     }
 
     /// <summary>
-    /// The reset section heading states what it is; the question mark belongs to the confirmation,
-    /// which is the thing that actually asks.
+    /// The confirmation is the thing that asks, and it is what survived the section being removed.
     /// </summary>
     [Fact]
-    public void TheResetSectionHeadingIsNotAQuestion()
+    public void TheResetConfirmationStillAsksItsQuestion()
     {
         var strings = T42UnifiedHostTests.Read(
             "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
 
         Assert.Contains(
-            "[\"Settings.Https.Reset.Title\"] = \"Resetar configuração HTTPS\"",
-            strings,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "[\"Settings.Https.Reset.Title\"] = \"Reset HTTPS configuration\"",
-            strings,
-            StringComparison.Ordinal);
-
-        // The confirmation still asks, and still ends in a question mark.
-        Assert.Contains(
             "[\"Https.Reset.Title\"] = \"Resetar configuração HTTPS?\"",
             strings,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "[\"Https.Reset.Title\"] = \"Reset the HTTPS configuration?\"",
+            strings,
+            StringComparison.Ordinal);
+
+        // The settings section that repeated it as a statement is gone.
+        Assert.DoesNotContain("Settings.Https.Reset.Title", strings, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1282,58 +1281,88 @@ public sealed class T42ServiceAdministrationSettingsTests
             "AgentSettingsFeedback.Success => \"NutHealthyBrush\"", converters, StringComparison.Ordinal);
     }
 
-    /// <summary>The reset names the transport it resets, and stands clear of the sentence above it.</summary>
+    /// <summary>
+    /// The HTTPS reset is gone from Settings, and the cleanup it drove is not.
+    ///
+    /// Turning the transport off already offers to remove the SSL binding, the URL reservation and
+    /// the firewall rule, under the same ownership rules and the same confirmation - so a second
+    /// button doing that from a different room was a duplicate rather than a feature. What was
+    /// removed is that button. The machinery underneath is untouched: the confirmation, its strings,
+    /// the ownership check and the resource administration all remain, and the disable flow still
+    /// reaches them.
+    /// </summary>
     [Fact]
-    public void TheResetActionNamesTheTransportAndHasRoomOfItsOwn()
+    public void TheHttpsResetLeavesSettingsAndTheCleanupStays()
     {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
         var strings = T42UnifiedHostTests.Read(
             "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
 
+        // No section and no button, anywhere in the window.
+        Assert.DoesNotContain("x:Name=\"SettingsResetHttps\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Settings.Https.Reset", window, StringComparison.Ordinal);
+        Assert.Empty(Regex.Matches(window, "Command=\"{Binding ResetHttpsCommand}\""));
+
+        // And the two strings written for that section went with it.
+        Assert.DoesNotContain("Settings.Https.Reset.Title", strings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Settings.Https.Reset.Description", strings, StringComparison.Ordinal);
+
+        // The reset flow itself is preserved: the confirmation still asks, in both languages.
         Assert.Contains("[\"Https.Reset\"] = \"Resetar HTTPS\"", strings, StringComparison.Ordinal);
         Assert.Contains("[\"Https.Reset\"] = \"Reset HTTPS\"", strings, StringComparison.Ordinal);
+        Assert.Contains("[\"Https.Reset.Message\"]", strings, StringComparison.Ordinal);
 
-        // The heading above it is untouched: it is a section, not the question the dialog asks.
-        Assert.Contains(
-            "[\"Settings.Https.Reset.Title\"] = \"Resetar configura\u00e7\u00e3o HTTPS\"",
-            strings,
-            StringComparison.Ordinal);
-
-        var panel = SystemPanel();
-        var description = panel.IndexOf("Settings.Https.Reset.Description", StringComparison.Ordinal);
-        var button = panel.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
-        Assert.True(description > 0 && button > description);
-
-        // Separated by a margin of its own rather than left at the paragraph spacing.
-        Assert.Contains("Margin=\"0,10,0,0\"", panel[description..button], StringComparison.Ordinal);
+        // The disable-HTTPS cleanup, which is the flow that keeps doing this work, is untouched.
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        Assert.Contains("AgentConfigConfirmation.DisableHttps", viewModel, StringComparison.Ordinal);
+        Assert.Contains("AgentHttpsCleanupRequest", viewModel, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// System resets first and installs second, on one surface with a rule between.
+    /// Users is the list itself: who may administer the agent, on the panel the tab selects.
     ///
-    /// Reset comes first because it is the one an operator arrives looking for; installation second
-    /// because it is the one they are sent to by the question mark in General.
+    /// The description and the group name come first, then a rule, then the members with one action
+    /// each and the way to add another. There is no page behind it and nothing to come back from -
+    /// selecting the tab is the whole navigation.
     /// </summary>
     [Fact]
-    public void TheSystemPanelResetsFirstAndInstallsSecond()
+    public void TheUsersPanelIsTheListRatherThanAWayToIt()
     {
-        var panel = SystemPanel();
+        var panel = UsersPanel();
 
-        var reset = panel.IndexOf("Settings.Https.Reset.Title", StringComparison.Ordinal);
-        var resetButton = panel.IndexOf("x:Name=\"SettingsResetHttps\"", StringComparison.Ordinal);
+        var intro = panel.IndexOf("Settings.Permissions.Intro", StringComparison.Ordinal);
+        var group = panel.IndexOf("OperatorsGroupCaption", StringComparison.Ordinal);
         var divider = panel.IndexOf("Classes=\"nut-divider\"", StringComparison.Ordinal);
-        var install = panel.IndexOf("Settings.Agent.Install.Title", StringComparison.Ordinal);
-        var button = panel.IndexOf("x:Name=\"AgentInstallService\"", StringComparison.Ordinal);
+        var members = panel.IndexOf("Settings.Permissions.Members", StringComparison.Ordinal);
+        var list = panel.IndexOf("x:Name=\"PermissionsMemberList\"", StringComparison.Ordinal);
+        var select = panel.IndexOf("x:Name=\"PermissionsSelectUser\"", StringComparison.Ordinal);
 
-        Assert.True(reset >= 0, "The HTTPS reset belongs on the System panel.");
-        Assert.True(resetButton > reset, "The reset button belongs under its own heading.");
-        Assert.True(divider > resetButton, "One rule separates the two sections.");
-        Assert.True(install > divider, "Installation comes after the rule.");
-        Assert.True(button > install, "The action belongs under its own heading.");
+        Assert.True(intro >= 0, "The panel says what it is for.");
+        Assert.True(group > intro, "The Windows group is a detail under it, not the heading.");
+        Assert.True(divider > group, "One rule separates the description from the list.");
+        Assert.True(members > divider, "The list heading comes after the rule.");
+        Assert.True(list > members, "The members follow their heading.");
+        Assert.True(select > list, "The way to add one comes last.");
 
-        // One surface, one rule, nothing to scroll.
+        // The empty state, and the state where the group does not exist yet, are both said.
+        Assert.Contains("x:Name=\"PermissionsEmpty\"", panel, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PermissionsGroupMissing\"", panel, StringComparison.Ordinal);
+
+        // Each row carries its own removal, aimed at that row rather than at a selection.
+        Assert.Contains("RemoveOperatorCommand", panel, StringComparison.Ordinal);
+        Assert.Contains("CommandParameter=\"{Binding}\"", panel, StringComparison.Ordinal);
+
+        // The list scrolls; the panel does not become a scrolling card.
+        Assert.Contains("<ScrollViewer x:Name=\"PermissionsMemberList\"", panel, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(panel, "<ScrollViewer"));
         Assert.DoesNotContain("agent-shell-card", panel, StringComparison.Ordinal);
-        Assert.DoesNotContain("<ScrollViewer", panel, StringComparison.Ordinal);
         Assert.Single(Regex.Matches(panel, "nut-divider"));
+
+        // And there is no inner page left anywhere in the window.
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        Assert.DoesNotContain("ShowPermissions", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"PermissionsBack\"", window, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -1342,7 +1371,7 @@ public sealed class T42ServiceAdministrationSettingsTests
     [Fact]
     public void TheInstallActionReportsWhatTheMachineHas()
     {
-        var panel = SystemPanel();
+        var panel = AgentPanel();
 
         // The state of the machine, said with a disc and in emphasis.
         Assert.Contains("x:Name=\"AgentInstallState\"", panel, StringComparison.Ordinal);
@@ -1370,13 +1399,14 @@ public sealed class T42ServiceAdministrationSettingsTests
     }
 
     /// <summary>
-    /// Agent reports and delegates: what the service is doing, and who may administer it.
+    /// Agent reports, then offers the one thing that can be done about it.
     ///
-    /// Installation left this panel entirely - it is a change to the machine and belongs with the
-    /// others under System.
+    /// The state first, because it is what somebody arriving here is checking; the installation
+    /// after the rule, because it is the answer when that state says there is no service. The users
+    /// list left this panel entirely - it is a destination of its own now.
     /// </summary>
     [Fact]
-    public void TheAgentPanelReportsAndThenDelegatesPermissions()
+    public void TheAgentPanelReportsAndThenOffersInstallation()
     {
         var panel = AgentPanel();
 
@@ -1384,23 +1414,18 @@ public sealed class T42ServiceAdministrationSettingsTests
         var state = panel.IndexOf("ServiceStateText", StringComparison.Ordinal);
         var port = panel.IndexOf("HttpsPortText", StringComparison.Ordinal);
         var divider = panel.IndexOf("Classes=\"nut-divider\"", StringComparison.Ordinal);
-        var permissions = panel.IndexOf("Settings.Permissions.Title", StringComparison.Ordinal);
-        var manage = panel.IndexOf("x:Name=\"AgentManagePermissions\"", StringComparison.Ordinal);
+        var install = panel.IndexOf("Settings.Agent.Install.Title", StringComparison.Ordinal);
+        var button = panel.IndexOf("x:Name=\"AgentInstallService\"", StringComparison.Ordinal);
 
         Assert.True(section >= 0 && state > section, "The reported values belong under their heading.");
-        Assert.True(divider > port, "One rule separates the report from the permissions summary.");
-        Assert.True(permissions > divider, "Permissions comes after the rule.");
-        Assert.True(manage > permissions, "The way in belongs under its own heading.");
+        Assert.True(divider > port, "One rule separates the report from the installation.");
+        Assert.True(install > divider, "Installation comes after the rule.");
+        Assert.True(button > install, "The action belongs under its own heading.");
 
-        // Neither installation nor the HTTPS reset lives here any more.
-        Assert.DoesNotContain("Settings.Agent.Install.Title", panel, StringComparison.Ordinal);
-        Assert.DoesNotContain("InstallServiceCommand", panel, StringComparison.Ordinal);
+        // The users list and the HTTPS reset are both gone from here.
+        Assert.DoesNotContain("Settings.Permissions", panel, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"AgentManagePermissions\"", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("Settings.Https.Reset", panel, StringComparison.Ordinal);
-
-        // The group is a technical detail under the heading, never the heading itself.
-        Assert.Contains("{Binding OperatorsGroupCaption}", panel, StringComparison.Ordinal);
-        var caption = panel.IndexOf("OperatorsGroupCaption", StringComparison.Ordinal);
-        Assert.True(caption > permissions, "The group name follows the heading rather than being it.");
 
         // One surface, one rule, nothing to scroll.
         Assert.DoesNotContain("agent-shell-card", panel, StringComparison.Ordinal);
@@ -1420,23 +1445,24 @@ public sealed class T42ServiceAdministrationSettingsTests
 
         foreach (var heading in new[]
                  {
-                     "[\"Settings.Tab.System\"] = \"Sistema\"",
-                     "[\"Settings.Tab.System\"] = \"System\"",
+                     "[\"Settings.Tab.Users\"] = \"Usu\u00e1rios\"",
+                     "[\"Settings.Tab.Users\"] = \"Users\"",
                      "[\"Settings.Appearance.Section\"] = \"Apar\u00eancia e idioma\"",
                      "[\"Settings.Appearance.Section\"] = \"Appearance and language\"",
                      "[\"Settings.Agent.Install.Title\"] = \"Instala\u00e7\u00e3o do Agent\"",
                      "[\"Settings.Agent.Install.Title\"] = \"Agent installation\"",
                      "[\"Settings.Agent.Section\"] = \"Servi\u00e7o e comunica\u00e7\u00e3o\"",
                      "[\"Settings.Agent.Section\"] = \"Service and communication\"",
-                     "[\"Settings.Permissions.Title\"] = \"Permiss\u00f5es de acesso\"",
-                     "[\"Settings.Permissions.Title\"] = \"Access permissions\"",
+                     "[\"Settings.Permissions.Members\"] = \"Usu\u00e1rios autorizados\"",
+                     "[\"Settings.Permissions.Members\"] = \"Authorized users\"",
                  })
         {
             Assert.Contains(heading, strings, StringComparison.Ordinal);
         }
 
-        // Appearance is no longer a destination of its own.
+        // Neither Appearance nor System is a destination any more.
         Assert.DoesNotContain("Settings.Tab.Appearance", strings, StringComparison.Ordinal);
+        Assert.DoesNotContain("Settings.Tab.System", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Settings.Agent.Description", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Somente leitura", strings, StringComparison.Ordinal);
         Assert.DoesNotContain("Read-only", strings, StringComparison.Ordinal);
@@ -1617,9 +1643,239 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains("AgentEventLogSource", package, StringComparison.Ordinal);
     }
 
-    private static string GeneralPanel() => Panel("IsGeneralTab", "IsSystemTab");
+    /// <summary>
+    /// The bug: a legitimately installed agent reported as somebody else's service.
+    ///
+    /// Windows stores the image path as it was written, and unquoted paths with spaces are ordinary.
+    /// The previous parser cut at the first space, so
+    /// C:\Program Files\NutManager Agent\NutManager.Agent.exe --service read as an executable called
+    /// "C:\Program", failed the name check, and the window told the operator that the service it had
+    /// been showing as installed did not belong to NutManager.
+    /// </summary>
+    [Theory]
+    [SupportedOSPlatform("windows")]
+    // The shape this class writes, and the shape an unquoted registration produces.
+    [InlineData("\"C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe\" --service", true)]
+    [InlineData("C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe --service", true)]
+    // A registration made from another deployment. Ownership is about the service being this
+    // product's, not about the path matching the copy that happens to be running now.
+    [InlineData("\"E:\\builds\\NutManager-Agent-1.0.0\\NutManager.Agent.exe\" --service", true)]
+    [InlineData("C:\\NutAgent\\NutManager.Agent.exe --service", true)]
+    // Releases from before the host was unified registered the agent with no arguments at all.
+    [InlineData("\"C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe\"", true)]
+    [InlineData("C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe", true)]
+    // Casing is Windows casing.
+    [InlineData("\"C:\\Tools\\nutmanager.agent.EXE\" --SERVICE", true)]
+    // Somebody else's executable wearing the name.
+    [InlineData("\"C:\\Program Files\\Other\\Foreign.exe\" --service", false)]
+    [InlineData("C:\\Program Files\\Other\\Foreign.exe --service", false)]
+    // The right executable told to do something else, or handed a second path.
+    [InlineData("\"C:\\Tools\\NutManager.Agent.exe\" --other", false)]
+    [InlineData("\"C:\\Tools\\NutManager.Agent.exe\" --service --extra", false)]
+    [InlineData("\"C:\\Tools\\NutManager.Agent.exe\" evil.exe", false)]
+    // A name that only looks like the agent.
+    [InlineData("\"C:\\Tools\\NutManager.Agent.exe.evil.exe\" --service", false)]
+    // Nothing to parse.
+    [InlineData("", false)]
+    [InlineData("   ", false)]
+    [InlineData("\"C:\\Tools\\NutManager.Agent.exe --service", false)]
+    [InlineData("C:\\Tools\\NutManagerAgent --service", false)]
+    public void OwnershipReadsTheRegisteredCommandLineRatherThanGuessingAtIt(string imagePath, bool owned)
+    {
+        // SERVICE_WIN32_OWN_PROCESS, which is what this class registers and what the installer writes.
+        Assert.Equal(owned, WindowsAgentServiceInstallation.IsOwnedService(0x10, imagePath));
+    }
 
-    private static string SystemPanel() => Panel("IsSystemTab", "IsAgentTab");
+    /// <summary>
+    /// A service sharing a process is not one this class ever created, whatever it is called.
+    ///
+    /// The interactive flag rides on top of the type rather than replacing it, so it is masked off
+    /// before comparing - an own-process service marked interactive is still an own-process service.
+    /// </summary>
+    [Theory]
+    [SupportedOSPlatform("windows")]
+    [InlineData(0x10u, true)]
+    [InlineData(0x110u, true)]
+    [InlineData(0x20u, false)]
+    [InlineData(0x01u, false)]
+    [InlineData(0x02u, false)]
+    public void OwnershipRequiresAnOwnProcessService(uint serviceType, bool owned)
+    {
+        const string path = "\"C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe\" --service";
+
+        Assert.Equal(owned, WindowsAgentServiceInstallation.IsOwnedService(serviceType, path));
+    }
+
+    /// <summary>
+    /// Start type and account do not decide ownership.
+    ///
+    /// An administrator may set the service to Manual from services.msc, and that says nothing about
+    /// whose service it is. Refusing to remove the product's own service because somebody changed a
+    /// start type would be a fail-closed rule protecting the wrong thing.
+    /// </summary>
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void OwnershipDoesNotDependOnStartTypeOrAccount()
+    {
+        var installer = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceInstallation.cs");
+
+        var rule = installer[installer.IndexOf("internal static bool IsOwnedService", StringComparison.Ordinal)..];
+        rule = rule[..rule.IndexOf("internal static bool TrySplitCommandLine", StringComparison.Ordinal)];
+
+        foreach (var forbidden in new[] { "StartType", "ServiceAutoStart", "LocalSystem", "ServiceStartName" })
+        {
+            Assert.DoesNotContain(forbidden, rule, StringComparison.Ordinal);
+        }
+
+        // Nor on the path of the process doing the removing.
+        Assert.DoesNotContain("ProcessPath", rule, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResolveImagePath", rule, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The command line splits into the executable and the rest, and both halves are readable.
+    /// </summary>
+    [Theory]
+    [SupportedOSPlatform("windows")]
+    [InlineData(
+        "\"C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe\" --service",
+        "C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe",
+        "--service")]
+    [InlineData(
+        "C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe --service",
+        "C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe",
+        "--service")]
+    [InlineData(
+        "C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe",
+        "C:\\Program Files\\NutManager Agent\\NutManager.Agent.exe",
+        "")]
+    public void TheImagePathSplitsIntoAnExecutableAndItsArguments(
+        string imagePath, string expectedExecutable, string expectedArguments)
+    {
+        Assert.True(WindowsAgentServiceInstallation.TrySplitCommandLine(
+            imagePath, out var executable, out var arguments));
+
+        Assert.Equal(expectedExecutable, executable);
+        Assert.Equal(expectedArguments, arguments);
+    }
+
+    /// <summary>
+    /// A configuration that could not be read is not a configuration that did not match.
+    ///
+    /// Two facts, two outcomes, two sentences. The failure carries its Win32 code so that whatever is
+    /// actually wrong on the machine can be found, and the mismatch message is reserved for a
+    /// registration that was genuinely read and genuinely belongs to somebody else.
+    /// </summary>
+    [Fact]
+    public void AFailedQueryIsReportedSeparatelyFromAMismatch()
+    {
+        var installer = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceInstallation.cs");
+
+        var remove = installer[installer.IndexOf("internal AgentServiceRemoval Remove(", StringComparison.Ordinal)..];
+        remove = remove[..remove.IndexOf("internal static bool IsOwnedService", StringComparison.Ordinal)];
+
+        // The read is a separate step from the match, and the read failing has its own outcome.
+        var read = remove.IndexOf("if (!configuration.Read)", StringComparison.Ordinal);
+        var owned = remove.IndexOf("if (!IsOwnedService(", StringComparison.Ordinal);
+        Assert.True(read > 0 && owned > read, "Ownership is decided only after the configuration is read.");
+
+        Assert.Contains("AgentServiceRemoval.QueryFailed(", remove[read..owned], StringComparison.Ordinal);
+        Assert.Contains("configuration.ErrorCode", remove[read..owned], StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentServiceRemoval.NotOwned", remove[read..owned], StringComparison.Ordinal);
+
+        // Neither branch stops or deletes anything: both return before the destructive part.
+        var destructive = remove.IndexOf("StopIfRunning", StringComparison.Ordinal);
+        Assert.True(destructive > owned, "Nothing is stopped or deleted before ownership is settled.");
+
+        // And the two say different things to the operator, in both languages.
+        var strings = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+        Assert.Contains("[\"Settings.Agent.Remove.QueryFailed\"]", strings, StringComparison.Ordinal);
+        Assert.Contains(
+            "N\u00e3o foi poss\u00edvel verificar a configura\u00e7\u00e3o do servi\u00e7o",
+            strings,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The service configuration could not be verified", strings, StringComparison.Ordinal);
+
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        Assert.Contains("AgentServiceRemovalOutcome.QueryFailed =>", viewModel, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Removing a user removes a membership, and there is no way from here to remove an account.
+    ///
+    /// The interface the window holds has one removal on it and it names a group. Account deletion is
+    /// not refused by a check that could be edited away - it is absent from the boundary entirely.
+    /// </summary>
+    [Fact]
+    public void RemovingAUserCannotReachAccountDeletion()
+    {
+        var contracts = T42UnifiedHostTests.Read("src/NutManager.Core/Agent/AgentAdministrationContracts.cs");
+        var groups = T42UnifiedHostTests.Read(
+            "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentOperatorsGroupAdministration.cs");
+
+        Assert.Contains("AgentMembershipResult RemoveMember(string accountName);", contracts, StringComparison.Ordinal);
+
+        // The one call that revokes membership, and nothing that deletes a principal. The prose is
+        // stripped first: this file explains in its own comments which API it is deliberately not
+        // calling, and a search that read those would find the very names it is checking are absent.
+        var code = string.Join(
+            Environment.NewLine,
+            groups.Split('\n').Where(line => !line.TrimStart().StartsWith("///", StringComparison.Ordinal)));
+
+        Assert.Contains("NetLocalGroupDelMembers", code, StringComparison.Ordinal);
+        foreach (var forbidden in new[]
+                 {
+                     "NetUserDel", "NetGroupDel", "DeleteUser",
+                     "powershell", "net.exe", "net localgroup", "cmd.exe", "ManagementObject",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, code, StringComparison.OrdinalIgnoreCase);
+        }
+
+        // The group name is still not a parameter anywhere on the boundary.
+        var removal = groups[groups.IndexOf("public AgentMembershipResult RemoveMember", StringComparison.Ordinal)..];
+        removal = removal[..removal.IndexOf("public IReadOnlyList<string> ListMembers", StringComparison.Ordinal)];
+        Assert.Contains("_groupName", removal, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The installation action stands clear of the sentence describing it.
+    ///
+    /// It sat at the section spacing, which read as the last line of the paragraph rather than as the
+    /// control that changes the machine. It gets the room the reset used to have.
+    /// </summary>
+    [Fact]
+    public void TheInstallActionHasRoomOfItsOwn()
+    {
+        var panel = AgentPanel();
+
+        var state = panel.IndexOf("x:Name=\"AgentInstallState\"", StringComparison.Ordinal);
+        var action = panel.IndexOf("<Panel HorizontalAlignment=\"Left\"", state, StringComparison.Ordinal);
+        Assert.True(state > 0 && action > state);
+
+        var element = panel[action..panel.IndexOf('>', action)];
+        Assert.Contains("Margin=\"0,10,0,0\"", element, StringComparison.Ordinal);
+    }
+
+    /// <summary>The users tab is marked with people rather than with a machine.</summary>
+    [Fact]
+    public void TheUsersTabCarriesAnAccountGlyph()
+    {
+        var icons = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
+
+        Assert.Contains("(\"AgentIconTabUsers\", MaterialIconKind.Account", icons, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentIconTabSystem", icons, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaterialIconKind.Monitor", icons, StringComparison.Ordinal);
+    }
+
+    private static string GeneralPanel() => Panel("IsGeneralTab", "IsUsersTab");
+
+    private static string UsersPanel() => Panel("IsUsersTab", "IsAgentTab");
 
     private static string AgentPanel() => Panel("IsAgentTab", "IsAboutTab");
 
