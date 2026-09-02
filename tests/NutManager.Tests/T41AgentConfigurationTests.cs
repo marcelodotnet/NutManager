@@ -5347,6 +5347,128 @@ public sealed class T41AgentConfigViewModelTests
         Assert.True(context.ViewModel.StartsWithWindows);
     }
 
+    /// <summary>
+    /// Re-reading the machine updates the start type and the account on screen, not only inside.
+    ///
+    /// This is the panel that said "Desconhecido" twice over a service whose configuration the
+    /// diagnostics list - rebuilt in the very same pass - was reporting as Automatic and LocalSystem.
+    /// Both texts are read straight off the snapshot rather than stored, so replacing the snapshot
+    /// changes what they answer without anything announcing it, and a binding only re-reads its
+    /// source when the source speaks.
+    ///
+    /// The notifications are what this asserts. Checking the strings alone would pass against the
+    /// bug, because the strings were always right - it was the screen that was stale.
+    /// </summary>
+    [Fact]
+    public async Task ReReadingTheMachineAnnouncesTheStartTypeAndTheAccount()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+
+        var announced = new List<string>();
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is { } name) announced.Add(name);
+        };
+
+        // The machine now answers properly - the same thing that happens when the service control
+        // manager is asked again after an installation or a start type change.
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ServiceStartTypeText), announced);
+        Assert.Contains(nameof(AgentConfigViewModel.ServiceAccountText), announced);
+
+        // The switch reads the same snapshot and follows it.
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>
+    /// It keeps following on every later read, not only on the first one.
+    ///
+    /// A refresh that announced once and then went quiet would look correct at startup and drift
+    /// afterwards, which is the harder version of the same bug to notice.
+    /// </summary>
+    [Fact]
+    public async Task ConsecutiveReadsEachReportWhatTheMachineNowSays()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        foreach (var (startType, account, expected, startsWithWindows) in new[]
+                 {
+                     (AgentServiceStartType.Automatic, "LocalSystem", "Automatic", true),
+                     (AgentServiceStartType.Manual, "LocalSystem", "Manual", false),
+                     (AgentServiceStartType.Automatic, @"EXAMPLE\svc_nutmanager", "Automatic", true),
+                     (AgentServiceStartType.Disabled, "LocalSystem", "Disabled", false),
+                 })
+        {
+            context.Service.StartType = startType;
+            context.Service.Account = account;
+            await context.ViewModel.RefreshAsync();
+
+            Assert.Equal(expected, context.ViewModel.ServiceStartTypeText);
+            Assert.Equal(account, context.ViewModel.ServiceAccountText);
+            Assert.Equal(startsWithWindows, context.ViewModel.StartsWithWindows);
+        }
+
+        // And a machine that stops answering says so again rather than keeping the last good values.
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+    }
+
+    /// <summary>
+    /// The Portuguese panel reads the start type in Portuguese, and the account as Windows gave it.
+    ///
+    /// An account name is not a word to translate: it is what an administrator types into Windows to
+    /// find the principal, so it is passed through exactly as the SCM returned it.
+    /// </summary>
+    [Fact]
+    public async Task TheStartTypeIsLocalizedAndTheAccountIsNot()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.Stopped, language: UiLanguagePreference.PtBr);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        // The project already translates this one, and the diagnostics detail is built from the very
+        // same property - so the word here is the word there, and it is not a translation to revisit
+        // on the way past.
+        Assert.Equal("Autom\u00e1tico", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+
+        // And an unreadable configuration is still honestly unknown.
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Desconhecido", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Desconhecido", context.ViewModel.ServiceAccountText);
+    }
+
     // ---------------------------------------------------------------- T42: the listener, watched
 
     /// <summary>

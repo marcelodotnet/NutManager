@@ -1649,6 +1649,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             : Strings.Format("Service.StartMode", _serviceState.StartMode);
 
         OnPropertyChanged(nameof(ServiceFooterText));
+
+        // The start type and the account are read straight off the snapshot rather than stored, so
+        // replacing the snapshot changes what they answer without anything saying so. Every other
+        // property derived from it is announced when the machine is re-read; these two were not, and
+        // the Agent panel went on showing "Desconhecido" over a service whose configuration the
+        // diagnostics list - rebuilt in the same pass - was reporting correctly on the next screen.
+        //
+        // They belong here rather than in ReloadService because this is the method that turns the
+        // snapshot into words, and it is also the one that runs when the interface language changes.
+        OnPropertyChanged(nameof(ServiceStartTypeText));
+        OnPropertyChanged(nameof(ServiceAccountText));
     }
 
     // ---------------------------------------------------------------- confirmations
