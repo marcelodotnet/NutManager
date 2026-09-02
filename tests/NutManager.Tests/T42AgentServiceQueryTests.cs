@@ -29,9 +29,11 @@ public sealed class T42AgentServiceQueryTests
         Assert.Equal(
             WindowsAgentServiceQuery.ServiceQueryConfig | WindowsAgentServiceQuery.ServiceQueryStatus,
             native.ServiceAccess);
-        Assert.Equal(2, native.ConfigurationQueryCalls);
-        Assert.Equal([IntPtr.Zero, native.ConfigurationBuffer], native.ConfigurationBuffers);
-        Assert.Equal([0u, 256u], native.ConfigurationBufferSizes);
+        // One call. Room is offered up front rather than the answer depending on a call whose only
+        // job is to fail in a particular way.
+        Assert.Equal(1, native.ConfigurationQueryCalls);
+        Assert.All(native.ConfigurationBuffers, buffer => Assert.NotEqual(IntPtr.Zero, buffer));
+        Assert.All(native.ConfigurationBufferSizes, size => Assert.True(size >= 256));
         Assert.Equal(2, native.ClosedHandles);
     }
 
@@ -48,7 +50,7 @@ public sealed class T42AgentServiceQueryTests
         Assert.Equal(AgentServiceState.Stopped, snapshot.State);
         Assert.Equal(AgentServiceStartType.Manual, snapshot.StartType);
         Assert.Equal(@"EXAMPLE\svc_nutmanager", snapshot.Account);
-        Assert.Equal(2, native.ConfigurationQueryCalls);
+        Assert.Equal(1, native.ConfigurationQueryCalls);
     }
 
     [Fact]
@@ -78,7 +80,54 @@ public sealed class T42AgentServiceQueryTests
         Assert.Null(snapshot.Account);
         Assert.Equal(5, snapshot.QueryErrorCode);
         Assert.Contains("Win32 error 5", snapshot.Failure, StringComparison.Ordinal);
+        Assert.Equal(1, native.ConfigurationQueryCalls);
+    }
+
+    /// <summary>
+    /// A configuration too big for the room offered is grown once, using the size Windows asked for.
+    ///
+    /// The recoverable failure is still handled - it is simply no longer the only way to get an
+    /// answer. A service with a long dependency list or a deep path takes this path; every other
+    /// service answers on the first call.
+    /// </summary>
+    [Fact]
+    public void AConfigurationLargerThanTheOfferedBufferIsReadOnTheSecondAttempt()
+    {
+        using var native = new FakeWindowsServiceNative(
+            startType: 2, account: "LocalSystem", requiredBytes: 64 * 1024);
+
+        var snapshot = new WindowsAgentServiceQuery(native).Describe("NutManagerAgent");
+
+        Assert.Equal(AgentServiceStartType.Automatic, snapshot.StartType);
+        Assert.Equal("LocalSystem", snapshot.Account);
+        Assert.Null(snapshot.Failure);
+
+        // Exactly two: the offer, then the size Windows named. Never a third.
         Assert.Equal(2, native.ConfigurationQueryCalls);
+        Assert.Equal(64u * 1024u, native.ConfigurationBufferSizes[1]);
+    }
+
+    /// <summary>
+    /// A service that reports its state but not its configuration keeps the state it reported.
+    ///
+    /// This is the machine that started all of this: Stopped on screen beside an unknown start type
+    /// and an unknown account. The state is real and stays; the configuration is honestly unknown and
+    /// carries the Win32 code that explains why.
+    /// </summary>
+    [Fact]
+    public void AReadableStateSurvivesAnUnreadableConfiguration()
+    {
+        using var native = new FakeWindowsServiceNative(
+            currentState: 1, secondConfigurationError: 5);
+
+        var snapshot = new WindowsAgentServiceQuery(native).Describe("NutManagerAgent");
+
+        Assert.Equal(AgentServiceState.Stopped, snapshot.State);
+        Assert.True(snapshot.IsInstalled);
+        Assert.Equal(AgentServiceStartType.Unknown, snapshot.StartType);
+        Assert.Null(snapshot.Account);
+        Assert.Equal(5, snapshot.QueryErrorCode);
+        Assert.Contains("configuration could not be read", snapshot.Failure, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -100,6 +149,7 @@ public sealed class T42AgentServiceQueryTests
         private readonly uint _startType;
         private readonly int? _openServiceError;
         private readonly int? _secondConfigurationError;
+        private readonly uint _requiredBytes;
         private readonly IntPtr _account;
         private int _lastError;
 
@@ -108,12 +158,14 @@ public sealed class T42AgentServiceQueryTests
             uint startType = 2,
             string account = "LocalSystem",
             int? openServiceError = null,
-            int? secondConfigurationError = null)
+            int? secondConfigurationError = null,
+            uint requiredBytes = 256)
         {
             _currentState = currentState;
             _startType = startType;
             _openServiceError = openServiceError;
             _secondConfigurationError = secondConfigurationError;
+            _requiredBytes = requiredBytes;
             _account = Marshal.StringToHGlobalUni(account);
         }
 
@@ -156,6 +208,14 @@ public sealed class T42AgentServiceQueryTests
             return true;
         }
 
+        /// <summary>
+        /// Answers the way Windows does: by whether the buffer is big enough.
+        ///
+        /// It used to answer by call number - fail the first, succeed the second - which quietly made
+        /// the test a description of one implementation rather than of the API. A caller that offered
+        /// enough room on its first call would have been failed by this fake for no reason, which is
+        /// exactly the shape the product now uses.
+        /// </summary>
         public bool QueryServiceConfig(
             IntPtr service,
             IntPtr buffer,
@@ -165,9 +225,9 @@ public sealed class T42AgentServiceQueryTests
             ConfigurationQueryCalls++;
             ConfigurationBuffers.Add(buffer);
             ConfigurationBufferSizes.Add(bufferSize);
-            bytesNeeded = 256;
+            bytesNeeded = _requiredBytes;
 
-            if (ConfigurationQueryCalls == 1)
+            if (buffer == IntPtr.Zero || bufferSize < _requiredBytes)
             {
                 _lastError = ErrorInsufficientBuffer;
                 return false;

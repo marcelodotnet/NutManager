@@ -20,6 +20,16 @@ internal sealed class WindowsAgentServiceQuery
 
     private const int ScStatusProcessInfo = 0;
 
+    /// <summary>
+    /// Room offered to QUERY_SERVICE_CONFIGW before asking it how much it wants.
+    ///
+    /// The struct is 64 bytes on x64 and the rest is the strings it points at - a path, a display
+    /// name, a load order group, an account and a dependency list. 8 KB covers every service this
+    /// product will meet by a wide margin, and the grow-and-retry path is still there for the one
+    /// that proves otherwise.
+    /// </summary>
+    private const int InitialConfigurationBuffer = 8 * 1024;
+
     private readonly IWindowsAgentServiceNative _native;
 
     internal WindowsAgentServiceQuery()
@@ -115,42 +125,68 @@ internal sealed class WindowsAgentServiceQuery
         }
     }
 
+    /// <summary>
+    /// Reads the start type and the account, offering room before asking for a size.
+    ///
+    /// The obvious shape is to call once with a null buffer, read ERROR_INSUFFICIENT_BUFFER and the
+    /// byte count, then allocate and call again. That is what this did, and it made the whole answer
+    /// depend on one call whose only job is to fail in a particular way - so a machine on which that
+    /// call failed differently reported no start type and no account, over a service the same query
+    /// had just described perfectly well as Stopped.
+    ///
+    /// A buffer large enough for almost every service is offered first instead. The usual case now
+    /// answers on the first call and never exercises the failure shape at all; a configuration that
+    /// does not fit still reports ERROR_INSUFFICIENT_BUFFER with the size it wants, and that path is
+    /// taken exactly once. Anything else is a real failure and keeps its Win32 code.
+    ///
+    /// The strings live inside the returned buffer, so they are copied out before it is freed - which
+    /// is why the marshalling happens here rather than the pointers being carried outward.
+    /// </summary>
     private ServiceConfigurationResult ReadConfiguration(IntPtr service)
     {
-        var sizingSucceeded = _native.QueryServiceConfig(service, IntPtr.Zero, 0, out var required);
-        var sizingError = _native.GetLastError();
+        var size = InitialConfigurationBuffer;
+        var buffer = Marshal.AllocHGlobal(size);
 
-        // Microsoft documents this first call as an intentional failure. Treating any other result as
-        // a usable size hid malformed interop behind an empty account and an unknown start type.
-        if (sizingSucceeded || sizingError != ErrorInsufficientBuffer || required == 0)
-        {
-            var error = sizingError == 0 ? ErrorInsufficientBuffer : sizingError;
-            return ServiceConfigurationResult.Failed(
-                Win32Failure("the service configuration size could not be read", error),
-                error);
-        }
-
-        var buffer = Marshal.AllocHGlobal(checked((int)required));
         try
         {
-            if (!_native.QueryServiceConfig(service, buffer, required, out _))
+            for (var attempt = 0; attempt < 2; attempt++)
             {
+                if (_native.QueryServiceConfig(service, buffer, (uint)size, out var required))
+                {
+                    var configuration = Marshal.PtrToStructure<QueryServiceConfigNative>(buffer);
+                    return new ServiceConfigurationResult(
+                        TranslateStartType(configuration.StartType),
+                        Marshal.PtrToStringUni(configuration.ServiceStartName),
+                        null,
+                        null);
+                }
+
                 var error = _native.GetLastError();
-                return ServiceConfigurationResult.Failed(
-                    Win32Failure("the service configuration could not be read", error),
-                    error);
+
+                // The one recoverable failure: the configuration is bigger than the room offered, and
+                // Windows has said how much it needs. Grown once, then tried once more.
+                if (error != ErrorInsufficientBuffer || required == 0 || required <= (uint)size)
+                {
+                    return ServiceConfigurationResult.Failed(
+                        Win32Failure("the service configuration could not be read", error),
+                        error);
+                }
+
+                Marshal.FreeHGlobal(buffer);
+                buffer = IntPtr.Zero;
+
+                size = checked((int)required);
+                buffer = Marshal.AllocHGlobal(size);
             }
 
-            var configuration = Marshal.PtrToStructure<QueryServiceConfigNative>(buffer);
-            return new ServiceConfigurationResult(
-                TranslateStartType(configuration.StartType),
-                Marshal.PtrToStringUni(configuration.ServiceStartName),
-                null,
-                null);
+            // Two attempts, and the second was made with the size Windows itself asked for.
+            return ServiceConfigurationResult.Failed(
+                Win32Failure("the service configuration could not be read", ErrorInsufficientBuffer),
+                ErrorInsufficientBuffer);
         }
         finally
         {
-            Marshal.FreeHGlobal(buffer);
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
         }
     }
 
