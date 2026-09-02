@@ -6,6 +6,7 @@ using NutManager.Agent;
 using NutManager.Agent.Config.Localization;
 using NutManager.Agent.Config.ViewModels;
 using NutManager.Core.Agent;
+using NutManager.Core.Models;
 using NutManager.Infrastructure.AgentConfiguration;
 using Xunit;
 
@@ -1871,6 +1872,88 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains("(\"AgentIconTabUsers\", MaterialIconKind.Account", icons, StringComparison.Ordinal);
         Assert.DoesNotContain("AgentIconTabSystem", icons, StringComparison.Ordinal);
         Assert.DoesNotContain("MaterialIconKind.Monitor", icons, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Appearance and language share a row, and the theme keeps every word it had.
+    ///
+    /// Folding the two preferences onto one line was meant to save height, and it cost the pill its
+    /// sentence and its description - which left two glyphs carrying the whole meaning, with no way
+    /// to tell "you are here" from "go here" without pressing one and watching what happened. The
+    /// row stays; the words come back.
+    /// </summary>
+    [Fact]
+    public void AppearanceAndLanguageShareARowAndTheThemeKeepsItsWords()
+    {
+        var panel = GeneralPanel();
+
+        var row = panel[panel.IndexOf("x:Name=\"AppearanceAndLanguage\"", StringComparison.Ordinal)..];
+
+        // Two halves rather than a control-sized column and everything else: the language must not be
+        // pushed up against the theme as though they were two small fields in a sequence.
+        Assert.Contains("ColumnDefinitions=\"*,*\"", row, StringComparison.Ordinal);
+
+        var theme = row.IndexOf("Grid.Column=\"0\"", StringComparison.Ordinal);
+        var language = row.IndexOf("Grid.Column=\"1\"", StringComparison.Ordinal);
+        Assert.True(theme > 0 && language > theme, "Theme is the left half, language the right.");
+
+        var left = row[theme..language];
+        var right = row[language..];
+
+        // Both halves start on the same line, each a label over its control.
+        Assert.Equal(2, Regex.Matches(row, "VerticalAlignment=\"Top\"").Count);
+        Assert.Contains("Strings[Settings.Appearance.Theme]", left, StringComparison.Ordinal);
+        Assert.Contains("Strings[Settings.Appearance.Language]", right, StringComparison.Ordinal);
+
+        // The theme half is the control that was always there: the segmented pill, the sentence
+        // naming where pressing it goes, and the line saying what it affects.
+        Assert.Contains("x:Name=\"ThemeToggle\"", left, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"agent-theme-toggle\"", left, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(left, "Classes=\"agent-theme-option").Count);
+        Assert.Contains("{Binding ThemeActionText}", left, StringComparison.Ordinal);
+        Assert.Contains("Strings[Settings.Appearance.Theme.Description]", left, StringComparison.Ordinal);
+
+        // The pill sits left inside its half rather than stretching across it.
+        Assert.Contains("HorizontalAlignment=\"Left\"", left, StringComparison.Ordinal);
+        Assert.DoesNotContain("HorizontalAlignment=\"Stretch\"", left, StringComparison.Ordinal);
+
+        // The language half is the ComboBox of autonyms, at the width it has always had.
+        Assert.Contains("x:Name=\"LanguageSelector\"", right, StringComparison.Ordinal);
+        Assert.Contains("Width=\"200\"", right, StringComparison.Ordinal);
+        Assert.Contains("{Binding LanguageOptions}", right, StringComparison.Ordinal);
+        Assert.Contains("{Binding Title}", right, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The words themselves, in both languages: the offer, and what it affects.
+    ///
+    /// The language list stays written in autonyms rather than reverting to the culture codes it
+    /// showed before - somebody looking for their own language looks for its own name.
+    /// </summary>
+    [Fact]
+    public void TheThemeAndLanguageTextIsTheOneTheProductAgreedOn()
+    {
+        var portuguese = new AgentConfigStrings(UiLanguagePreference.PtBr);
+        var english = new AgentConfigStrings(UiLanguagePreference.EnUs);
+
+        Assert.Equal("Ativar modo claro", portuguese["Theme.EnableLight"]);
+        Assert.Equal("Ativar modo escuro", portuguese["Theme.EnableDark"]);
+        Assert.Equal(
+            "Alterna entre o tema claro e o escuro desta janela.",
+            portuguese["Settings.Appearance.Theme.Description"]);
+
+        Assert.Equal(
+            "Switches this window between the light and dark themes.",
+            english["Settings.Appearance.Theme.Description"]);
+
+        // Autonyms, never culture codes, and the same list whichever language the window is in.
+        foreach (var strings in new[] { portuguese, english })
+        {
+            Assert.Equal("Portugu\u00eas (Brasil)", strings["Language.Portuguese"]);
+            Assert.Equal("English (United States)", strings["Language.English"]);
+            Assert.NotEqual("PT-BR", strings["Language.Portuguese"]);
+            Assert.NotEqual("EN-US", strings["Language.English"]);
+        }
     }
 
     private static string GeneralPanel() => Panel("IsGeneralTab", "IsUsersTab");

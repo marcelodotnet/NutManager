@@ -1584,13 +1584,30 @@
                         <TextBlock Classes="nut-card-title"
                                    FontSize="14"
                                    Text="{Binding Strings[Settings.Appearance.Section]}" />
+                        <!--
+                          Two halves, each a label over its control, and both labels on the same line.
+
+                          The theme keeps the control it has always had: the segmented pill, the
+                          sentence naming where pressing it goes, and the line underneath saying what
+                          it affects. Folding these two preferences onto one row was meant to save
+                          height, and it briefly cost the pill its words - which left two glyphs to
+                          carry the whole meaning, with no way to tell "you are here" from "go here"
+                          without pressing one and watching.
+
+                          The pill sits left inside its half rather than filling it: the column is
+                          half the card, the control is the size it always was.
+                        -->
                         <Grid x:Name="AppearanceAndLanguage"
-                              ColumnDefinitions="Auto,*"
+                              ColumnDefinitions="*,*"
                               ColumnSpacing="28">
                           <StackPanel Grid.Column="0" Spacing="7" VerticalAlignment="Top">
                             <TextBlock Classes="nut-label"
                                        Text="{Binding Strings[Settings.Appearance.Theme]}" />
-                            <Border x:Name="ThemeToggle" Classes="agent-theme-toggle">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="12"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center">
+                              <Border x:Name="ThemeToggle" Classes="agent-theme-toggle">
                                 <StackPanel Orientation="Horizontal" Spacing="2">
                                   <Button Classes="agent-theme-option"
                                           Classes.selected="{Binding ShowDarkThemeAction}"
@@ -1624,24 +1641,33 @@
                                   </Button>
                                 </StackPanel>
                               </Border>
+                              <TextBlock x:Name="ThemeActionLabel"
+                                         VerticalAlignment="Center"
+                                         Classes="hint"
+                                         Text="{Binding ThemeActionText}" />
+                            </StackPanel>
+                            <TextBlock x:Name="ThemeDescription"
+                                       Classes="hint"
+                                       TextWrapping="Wrap"
+                                       Text="{Binding Strings[Settings.Appearance.Theme.Description]}" />
                           </StackPanel>
                           <StackPanel Grid.Column="1" Spacing="7" VerticalAlignment="Top">
                             <TextBlock Classes="nut-label"
                                        Text="{Binding Strings[Settings.Appearance.Language]}" />
-                            <ComboBox
-                                                    x:Name="LanguageSelector"
-                                                    VerticalAlignment="Center"
-                                                    Width="200"
-                                                    ItemsSource="{Binding LanguageOptions}"
-                                                    SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
-                                                    ToolTip.Tip="{Binding Strings[Language.Label]}"
-                                                    AutomationProperties.Name="{Binding Strings[Language.Label]}">
-                                            <ComboBox.ItemTemplate>
-                                              <DataTemplate DataType="viewModels:AgentLanguageOption">
-                                                <TextBlock Text="{Binding Title}" />
-                                              </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                          </ComboBox>
+                            <ComboBox x:Name="LanguageSelector"
+                                      VerticalAlignment="Center"
+                                      Width="200"
+                                      HorizontalAlignment="Left"
+                                      ItemsSource="{Binding LanguageOptions}"
+                                      SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"
+                                      ToolTip.Tip="{Binding Strings[Language.Label]}"
+                                      AutomationProperties.Name="{Binding Strings[Language.Label]}">
+                              <ComboBox.ItemTemplate>
+                                <DataTemplate DataType="viewModels:AgentLanguageOption">
+                                  <TextBlock Text="{Binding Title}" />
+                                </DataTemplate>
+                              </ComboBox.ItemTemplate>
+                            </ComboBox>
                           </StackPanel>
                         </Grid>
                       </StackPanel>
