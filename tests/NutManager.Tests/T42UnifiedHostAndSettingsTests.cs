@@ -1957,6 +1957,48 @@ public sealed class T42ServiceAdministrationSettingsTests
             "AgentApplyResultKind.Error => \"AgentIconStateError\"", converters, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The view puts the startup switch back, on the turn after the click that moved it.
+    ///
+    /// The view model refuses correctly and announces the refusal, and that was still not enough:
+    /// the announcement lands while the control is inside its own change notification, and a value
+    /// written into a control at that moment does not survive. Posting the correction is the fix,
+    /// and it lives in the view because making a control agree with the value it is bound to is
+    /// view mechanics - no decision, no machine access, no state.
+    /// </summary>
+    [Fact]
+    public void TheStartupSwitchIsPutBackByTheViewOnALaterTurn()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var codeBehind = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml.cs");
+
+        // The switch still binds two-way to the view model, and now reports its own movement.
+        var toggle = window[window.IndexOf("x:Name=\"StartWithWindowsSwitch\"", StringComparison.Ordinal)..];
+        toggle = toggle[..toggle.IndexOf("/>", StringComparison.Ordinal)];
+        Assert.Contains("IsChecked=\"{Binding StartsWithWindows, Mode=TwoWay}\"", toggle, StringComparison.Ordinal);
+        Assert.Contains("IsCheckedChanged=\"OnStartupSwitchChanged\"", toggle, StringComparison.Ordinal);
+
+        var handler = codeBehind[codeBehind.IndexOf(
+            "private void OnStartupSwitchChanged", StringComparison.Ordinal)..];
+        handler = handler[..handler.IndexOf("DispatcherPriority.Background);", StringComparison.Ordinal)];
+
+        // Posted rather than assigned inline: the turn is the whole point.
+        Assert.Contains("Dispatcher.UIThread.Post", handler, StringComparison.Ordinal);
+        Assert.Contains("toggle.IsChecked = current.StartsWithWindows;", handler, StringComparison.Ordinal);
+
+        // It stands aside while a change is in flight, so turning the switch on does not flicker.
+        Assert.Contains("IsBusy", handler, StringComparison.Ordinal);
+
+        // And it decides nothing: no confirmation, no service, no preference is touched here.
+        foreach (var forbidden in new[]
+                 {
+                     "PendingConfirmation", "SetStartupAsync", "ApplyStartup", "_service", "Command",
+                 })
+        {
+            Assert.DoesNotContain(forbidden, handler, StringComparison.Ordinal);
+        }
+    }
+
     /// <summary>The users tab is marked with people rather than with a machine.</summary>
     [Fact]
     public void TheUsersTabCarriesAnAccountGlyph()

@@ -1523,6 +1523,7 @@
                                   AutomationProperties.HelpText="{Binding StartupBlockedReason}">
                             <ToggleSwitch x:Name="StartWithWindowsSwitch"
                                           IsChecked="{Binding StartsWithWindows, Mode=TwoWay}"
+                                          IsCheckedChanged="OnStartupSwitchChanged"
                                           IsEnabled="{Binding CanChangeStartup}"
                                           OnContent=""
                                           OffContent=""

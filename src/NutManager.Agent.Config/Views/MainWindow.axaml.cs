@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using NutManager.Agent.Config.ViewModels;
 using NutManager.Core.Agent;
 using NutManager.Core.Models;
@@ -48,6 +49,42 @@ public sealed partial class MainWindow : Window
     }
 
     private void InitializeComponent() => AvaloniaXamlLoader.Load(this);
+
+    /// <summary>
+    /// Puts the startup switch back when the view model did not accept where it was moved to.
+    ///
+    /// A ToggleSwitch moves itself the instant it is clicked and only then tells anyone. When the
+    /// answer is "ask first", the view model refuses - it holds no value of its own and keeps
+    /// reporting what the service control manager says - and it announces that refusal. But the
+    /// announcement arrives while the control is still inside its own change notification, and a
+    /// value written back into a control mid-notification does not survive: the switch stayed
+    /// showing Manual over a service Windows still starts automatically, both while the question was
+    /// open and after it was cancelled.
+    ///
+    /// Posting the correction is what fixes it. On the next turn the control has finished with its
+    /// own click and accepts being told where it belongs. This is view mechanics rather than logic:
+    /// the decision, the confirmation and the machine all remain the view model's, and the only
+    /// thing happening here is a control being made to agree with the value it is bound to.
+    ///
+    /// It stands aside while a change is in flight. Turning automatic start on is applied without a
+    /// question, and until the service control manager has been re-read the view model still reports
+    /// the old value - correcting to it would flick the switch off and straight back on again.
+    /// </summary>
+    private void OnStartupSwitchChanged(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleSwitch toggle) return;
+        if (DataContext is not AgentConfigViewModel viewModel) return;
+        if (viewModel.IsBusy || toggle.IsChecked == viewModel.StartsWithWindows) return;
+
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                if (DataContext is not AgentConfigViewModel current || current.IsBusy) return;
+
+                toggle.IsChecked = current.StartsWithWindows;
+            },
+            DispatcherPriority.Background);
+    }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
     {
