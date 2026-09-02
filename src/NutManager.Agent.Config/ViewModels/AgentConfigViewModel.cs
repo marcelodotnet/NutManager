@@ -898,7 +898,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         "healthy" => "AgentIconStateReady",
         "critical" => "AgentIconStateError",
-        _ => "AgentIconStateAttention",
+        _ => "NutIconWarning",
     };
 
     public string? CertificateThumbprint => SelectedCertificate?.Thumbprint;
@@ -1750,30 +1750,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Puts the switch back where the service control manager says it belongs, and says so out loud.
+    /// Says the switch's value out loud again, so a control that moved on its own is put back.
     ///
-    /// The value is re-read from the snapshot rather than assumed to be the opposite of what was
-    /// clicked: the machine is the source of truth here as everywhere else on this panel. The
-    /// notification is raised unconditionally because the interesting case is precisely the one where
-    /// the value did not change.
+    /// The value itself never left the snapshot, so there is nothing to restore - only to announce.
+    /// It is raised on a turn of its own, after the click that opened the question and after the
+    /// click that answered it, which is what makes it reach a control that was mid-update when the
+    /// refusal happened.
     ///
     /// Nothing is applied and nothing is reported. A cancelled change is not an action, and a line
     /// saying what did not happen would be one more thing to read and then dismiss.
     /// </summary>
-    private void RestoreStartupSwitch()
-    {
-        _syncingStartup = true;
-        try
-        {
-            StartsWithWindows = _serviceState.StartType == AgentServiceStartType.Automatic;
-        }
-        finally
-        {
-            _syncingStartup = false;
-        }
-
-        OnPropertyChanged(nameof(StartsWithWindows));
-    }
+    private void RestoreStartupSwitch() => OnPropertyChanged(nameof(StartsWithWindows));
 
     // ---------------------------------------------------------------- reset HTTPS
 
@@ -2975,11 +2962,51 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// Applied immediately rather than collected into Apply. Apply writes the transport document, and
     /// a service start type is not part of that document.
     /// </summary>
-    [ObservableProperty]
-    private bool _startsWithWindows;
+    /// <summary>
+    /// Whether Windows starts the agent at boot - read from the service control manager, never stored.
+    ///
+    /// This has no backing field on purpose, and that is the whole fix for a switch that would not
+    /// come back. A ToggleSwitch moves itself the moment it is clicked and writes the new value
+    /// through the binding; when the answer is "ask first", the view model has to refuse. A stored
+    /// property makes that refusal a second write of the same value, and a property assigned the
+    /// value it already holds notifies nobody - so the control, which had already moved, was never
+    /// told to move back and sat there contradicting the machine.
+    ///
+    /// Deriving the getter from the snapshot removes the possibility. There is nowhere for an
+    /// unconfirmed value to live: the setter interprets the click and stores nothing, and every
+    /// answer the control gets back is the one the SCM last gave. The notification is raised
+    /// explicitly by the paths that refuse, or that re-read the machine, because the value they are
+    /// announcing is deliberately the one it already had.
+    /// </summary>
+    public bool StartsWithWindows
+    {
+        get => _serviceState.StartType == AgentServiceStartType.Automatic;
+        set
+        {
+            // The control echoing back what it was just given, or a click asking for the state the
+            // machine is already in. Either way there is nothing to apply - but the notification is
+            // still raised, so a control that moved on its own is put back where the machine says.
+            if (value == StartsWithWindows)
+            {
+                OnPropertyChanged();
+                return;
+            }
 
-    /// <summary>True while the switch is being set from the machine, so echoing a fact back is not a change.</summary>
-    private bool _syncingStartup;
+            // Turning automatic start off means a machine that reboots comes back without its agent.
+            // The question is opened and the switch is put straight back: it must not show Manual
+            // over a service Windows still starts, not even while somebody is deciding.
+            if (!value)
+            {
+                PendingConfirmation = AgentConfigConfirmation.ManualStartup;
+                OnPropertyChanged();
+                return;
+            }
+
+            // Turning it on takes nothing away, so asking would be a dialog for the sake of one.
+            OnPropertyChanged();
+            _ = ApplyStartupPreferenceAsync(true);
+        }
+    }
 
     /// <summary>
     /// The last thing the startup switch did.
@@ -3004,29 +3031,6 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     partial void OnStartupResultKindChanged(AgentSettingsFeedback value) =>
         OnPropertyChanged(nameof(HasStartupResult));
-
-    /// <summary>
-    /// The switch was moved. Off is asked about first; on is applied as asked.
-    ///
-    /// Turning automatic start off means a machine that reboots comes back without its agent, and
-    /// nothing on screen would have said so afterwards. Turning it on takes nothing away, so asking
-    /// would be a dialog for the sake of having one.
-    /// </summary>
-    partial void OnStartsWithWindowsChanged(bool value)
-    {
-        if (_syncingStartup) return;
-
-        if (!value && _serviceState.StartType == AgentServiceStartType.Automatic)
-        {
-            // Put back to what the machine still says while the question is open. The switch must
-            // never sit in a position the service control manager has not agreed to.
-            SyncStartupFromService();
-            PendingConfirmation = AgentConfigConfirmation.ManualStartup;
-            return;
-        }
-
-        _ = ApplyStartupPreferenceAsync(value);
-    }
 
     /// <summary>
     /// There is a start type to change only when there is a service, and only when nothing else is
@@ -3063,15 +3067,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     private void SyncStartupFromService()
     {
-        _syncingStartup = true;
-        try
-        {
-            StartsWithWindows = _serviceState.StartType == AgentServiceStartType.Automatic;
-        }
-        finally
-        {
-            _syncingStartup = false;
-        }
+        // The switch reads the snapshot, so a re-read of the machine is announced rather than
+        // assigned. There is deliberately no second writer of this value.
+        OnPropertyChanged(nameof(StartsWithWindows));
 
         OnPropertyChanged(nameof(CanChangeStartup));
         OnPropertyChanged(nameof(StartupBlockedReason));
