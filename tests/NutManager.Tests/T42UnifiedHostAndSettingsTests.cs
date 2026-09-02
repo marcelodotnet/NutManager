@@ -1266,7 +1266,7 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains(
             "(\"AgentIconStateReady\", MaterialIconKind.CheckCircle)", icons, StringComparison.Ordinal);
         Assert.Contains(
-            "(\"AgentIconFeedbackWarning\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+            "(\"NutIconWarning\", MaterialIconKind.AlertCircleOutline)", icons, StringComparison.Ordinal);
         Assert.Contains(
             "(\"AgentIconHelp\", MaterialIconKind.HelpCircleOutline)", icons, StringComparison.Ordinal);
 
@@ -1275,7 +1275,7 @@ public sealed class T42ServiceAdministrationSettingsTests
         Assert.Contains(
             "AgentSettingsFeedback.Success => \"AgentIconStateReady\"", converters, StringComparison.Ordinal);
         Assert.Contains(
-            "AgentSettingsFeedback.Warning => \"AgentIconFeedbackWarning\"", converters, StringComparison.Ordinal);
+            "AgentSettingsFeedback.Warning => \"NutIconWarning\"", converters, StringComparison.Ordinal);
         Assert.Contains(
             "AgentSettingsFeedback.Warning => \"NutWarningBrush\"", converters, StringComparison.Ordinal);
         Assert.Contains(
@@ -1877,18 +1877,84 @@ public sealed class T42ServiceAdministrationSettingsTests
     {
         var icons = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Presentation/AgentConfigIcons.cs");
 
-        // The two triangular kinds, gone.
-        Assert.DoesNotContain("MaterialIconKind.AlertOutline", icons, StringComparison.Ordinal);
-        Assert.DoesNotContain("MaterialIconKind.Alert)", icons, StringComparison.Ordinal);
+        var desktop = T42UnifiedHostTests.Read("src/NutManager.App/Presentation/Themes/NutIconLibrary.cs");
 
-        // Replaced by their round counterparts, keeping the filled and outlined distinction: the
-        // status strip reads better solid, inline prose reads better outlined.
+        foreach (var catalog in new[] { icons, desktop })
+        {
+            // The triangular kinds, gone from both applications. Alert is the filled triangle and
+            // AlertOutline the hollow one; the closing parenthesis is what keeps "MaterialIconKind
+            // .Alert" from matching AlertCircle and passing by accident.
+            Assert.DoesNotContain("MaterialIconKind.AlertOutline", catalog, StringComparison.Ordinal);
+            Assert.DoesNotContain("MaterialIconKind.Alert)", catalog, StringComparison.Ordinal);
+            Assert.DoesNotContain("MaterialIconKind.AlertCircle)", catalog, StringComparison.Ordinal);
+
+            // One round outlined exclamation, under one name.
+            Assert.Contains(
+                "(\"NutIconWarning\", MaterialIconKind.AlertCircleOutline)", catalog, StringComparison.Ordinal);
+        }
+
+        // The fallback catalog too. Both applications load it as a shared resource, and it is what
+        // draws before the library is applied - so a triangle there is a triangle on screen. It is
+        // also the one place a glyph is hand-drawn rather than named, which is why it is checked as
+        // geometry: the outer and inner arcs of the family ring, and no straight-line silhouette.
+        var inline = T42UnifiedHostTests.Read("src/NutManager.App/Presentation/Themes/NutIcons.axaml");
+        var warning = inline[inline.IndexOf("x:Key=\"NutIconWarning\"", StringComparison.Ordinal)..];
+        warning = warning[..warning.IndexOf("</StreamGeometry>", StringComparison.Ordinal)];
+
+        Assert.Contains("A9.4,9.4", warning, StringComparison.Ordinal);
+        Assert.Contains("A7.7,7.7", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("L22.6,21", warning, StringComparison.Ordinal);
+
+        // And it is the same ring its siblings use, rather than a second one drawn slightly apart.
+        foreach (var sibling in new[] { "NutIconInfo", "NutIconError", "NutIconSuccess" })
+        {
+            var glyph = inline[inline.IndexOf($"x:Key=\"{sibling}\"", StringComparison.Ordinal)..];
+            Assert.Contains("A9.4,9.4", glyph[..glyph.IndexOf("</StreamGeometry>", StringComparison.Ordinal)],
+                StringComparison.Ordinal);
+        }
+
+        // And it has no rivals: the separate attention and feedback keys are gone rather than left
+        // behind pointing at the same drawing.
+        Assert.DoesNotContain("AgentIconStateAttention", icons, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentIconFeedbackWarning", icons, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Every warning in the window draws the confirmation overlay's glyph.
+    ///
+    /// The overlay is the model - a round outlined exclamation in amber - and the status strip, the
+    /// apply banner, a settings result and an unusable certificate now all name the same resource.
+    /// One token rather than several pointing at one drawing, so they cannot drift apart.
+    /// </summary>
+    [Fact]
+    public void EveryWarningDrawsTheConfirmationOverlayGlyph()
+    {
+        var window = T42UnifiedHostTests.Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var converters = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/Presentation/AgentConfigConverters.cs");
+        var presentation = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigPresentation.cs");
+
+        // The overlay, which is where the agreed look already lived.
+        var overlay = window[window.IndexOf("{Binding IsConfirming}", StringComparison.Ordinal)..];
         Assert.Contains(
-            "(\"NutIconWarning\", MaterialIconKind.AlertCircleOutline)", icons, StringComparison.Ordinal);
+            "Data=\"{DynamicResource NutIconWarning}\"",
+            overlay[..overlay.IndexOf("</Border>", StringComparison.Ordinal)],
+            StringComparison.Ordinal);
+
+        // The status strip, the apply banner and the certificate list.
         Assert.Contains(
-            "(\"AgentIconStateAttention\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+            "AgentDiagnosticState.Attention => \"NutIconWarning\"", presentation, StringComparison.Ordinal);
         Assert.Contains(
-            "(\"AgentIconFeedbackWarning\", MaterialIconKind.AlertCircle)", icons, StringComparison.Ordinal);
+            "AgentApplyResultKind.Warning => \"NutIconWarning\"", converters, StringComparison.Ordinal);
+        Assert.Contains(
+            "usable ? \"AgentIconStateReady\" : \"NutIconWarning\"", converters, StringComparison.Ordinal);
+
+        // Success and error keep their own meanings and their own glyphs.
+        Assert.Contains(
+            "AgentApplyResultKind.Success => \"AgentIconStateReady\"", converters, StringComparison.Ordinal);
+        Assert.Contains(
+            "AgentApplyResultKind.Error => \"AgentIconStateError\"", converters, StringComparison.Ordinal);
     }
 
     /// <summary>The users tab is marked with people rather than with a machine.</summary>

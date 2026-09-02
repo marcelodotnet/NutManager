@@ -5240,6 +5240,113 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(0, context.Service.RemoveCalls);
     }
 
+    /// <summary>
+    /// The switch holds no value of its own: it reports the service control manager and nothing else.
+    ///
+    /// This is the fix for a control that would not come back. A ToggleSwitch moves the moment it is
+    /// clicked and writes the new value through the binding; refusing that used to mean writing the
+    /// old value back, and a property assigned the value it already holds notifies nobody - so the
+    /// control was never told to move back. With no backing field there is nowhere for an
+    /// unconfirmed value to live, and every answer the control gets is the one the machine gave.
+    /// </summary>
+    [Fact]
+    public async Task TheStartupSwitchReportsTheMachineAndStoresNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        // A refused click cannot leave the property holding what was clicked, because the property
+        // has nowhere to hold it.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+
+        // The machine moving is the only thing that moves the switch.
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        // And there is exactly one writer of it in the view model: none.
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        Assert.DoesNotContain("_startsWithWindows", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("_syncingStartup", viewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "get => _serviceState.StartType == AgentServiceStartType.Automatic;",
+            viewModel,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A refused click is announced, so the control that moved on its own is put back.
+    ///
+    /// The value never changes, which is exactly why the notification has to be explicit: a binding
+    /// only re-reads its source when the source says something.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedStartupClickIsAnnouncedEvenThoughNothingChanged()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        var announced = 0;
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AgentConfigViewModel.StartsWithWindows)) announced++;
+        };
+
+        // Opening the question announces it: the switch goes back before anybody answers.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.True(announced > 0, "Opening the question must put the switch back.");
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        announced = 0;
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        // And answering it announces again, on a turn of its own.
+        Assert.True(announced > 0, "Cancelling must put the switch back.");
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// Confirming leaves the machine on Manual and the switch following it.
+    ///
+    /// The snapshot is re-read after the change, so the switch is off because the SCM says Manual -
+    /// not because Manual was what somebody clicked.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingLeavesTheSnapshotAndTheSwitchOnManual()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal([AgentServiceStartupPreference.Manual], context.Service.StartupChanges);
+        Assert.Equal(AgentServiceStartType.Manual, context.Service.StartType);
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.StartupResultKind);
+
+        // Back on again, and this one is not asked about.
+        context.ViewModel.StartsWithWindows = true;
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(
+            [AgentServiceStartupPreference.Manual, AgentServiceStartupPreference.Automatic],
+            context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
     // ---------------------------------------------------------------- T42: the listener, watched
 
     /// <summary>

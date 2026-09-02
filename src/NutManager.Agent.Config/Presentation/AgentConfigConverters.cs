@@ -37,14 +37,14 @@ public static class AgentConfigConverters
     /// The glyph beside a settings result.
     ///
     /// All three are discs, so the line keeps its shape and only its meaning changes. Warning is the
-    /// exclamation rather than the status strip's triangle: manual start is what the operator asked
-    /// for and it worked, so what the line owes them is the consequence, not a hazard sign.
+    /// same outlined exclamation the confirmation overlay uses: manual start is what the operator
+    /// asked for and it worked, so what the line owes them is the consequence, not a hazard sign.
     /// </summary>
     public static readonly IValueConverter SettingsFeedbackIcon =
         new FuncValueConverter<AgentSettingsFeedback, Geometry?>(kind => Resource<Geometry>(kind switch
         {
             AgentSettingsFeedback.Success => "AgentIconStateReady",
-            AgentSettingsFeedback.Warning => "AgentIconFeedbackWarning",
+            AgentSettingsFeedback.Warning => "NutIconWarning",
             AgentSettingsFeedback.Error => "AgentIconStateError",
             _ => "AgentIconStateNotConfigured",
         }));
@@ -67,7 +67,7 @@ public static class AgentConfigConverters
         new FuncValueConverter<bool, IBrush?>(failed =>
             Resource<IBrush>(failed ? "NutCriticalBrush" : "NutTextSecondaryBrush"));
 
-    /// <summary>The tick or the warning triangle beside the certificate verdict.</summary>
+    /// <summary>The tick or the warning disc beside the certificate verdict.</summary>
     public static readonly IValueConverter VerdictIcon =
         new FuncValueConverter<bool, Geometry?>(valid =>
             Resource<Geometry>(valid ? "NutIconSuccess" : "NutIconWarning"));
@@ -91,7 +91,7 @@ public static class AgentConfigConverters
     /// </summary>
     public static readonly IValueConverter CandidateIcon =
         new FuncValueConverter<bool, Geometry?>(usable =>
-            Resource<Geometry>(usable ? "AgentIconStateReady" : "AgentIconStateAttention"));
+            Resource<Geometry>(usable ? "AgentIconStateReady" : "NutIconWarning"));
 
     public static readonly IValueConverter CandidateBrush =
         new FuncValueConverter<bool, IBrush?>(usable =>
@@ -107,7 +107,7 @@ public static class AgentConfigConverters
         new FuncValueConverter<AgentApplyResultKind, Geometry?>(kind => Resource<Geometry>(kind switch
         {
             AgentApplyResultKind.Success => "AgentIconStateReady",
-            AgentApplyResultKind.Warning => "AgentIconStateAttention",
+            AgentApplyResultKind.Warning => "NutIconWarning",
             AgentApplyResultKind.Error => "AgentIconStateError",
             _ => "NutIconInfo",
         }));

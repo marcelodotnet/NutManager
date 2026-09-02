@@ -45,7 +45,7 @@ public sealed class AgentStatusItemViewModel
     public string StateIconKey => State switch
     {
         AgentDiagnosticState.Ready => "AgentIconStateReady",
-        AgentDiagnosticState.Attention => "AgentIconStateAttention",
+        AgentDiagnosticState.Attention => "NutIconWarning",
         AgentDiagnosticState.NotConfigured => "AgentIconStateNotConfigured",
         _ => "AgentIconStateError",
     };

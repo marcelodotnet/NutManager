@@ -1716,7 +1716,7 @@
                         <PathIcon Width="15"
                                   Height="15"
                                   VerticalAlignment="Center"
-                                  Data="{DynamicResource AgentIconFeedbackWarning}"
+                                  Data="{DynamicResource NutIconWarning}"
                                   Foreground="{DynamicResource NutWarningBrush}" />
                         <TextBlock Classes="nut-metadata"
                                    FontWeight="SemiBold"

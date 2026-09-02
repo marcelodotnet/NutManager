@@ -71,7 +71,9 @@ public static class AgentConfigIcons
         // the desktop draws inline in prose; a status strip reads better with a solid disc, and giving
         // these keys of their own keeps the shared catalog untouched.
         ("AgentIconStateReady", MaterialIconKind.CheckCircle),
-        ("AgentIconStateAttention", MaterialIconKind.AlertCircle),
+        // Attention has no key of its own: every warning in this window - the status strip, the
+        // apply banner, a settings result, an unusable certificate and the confirmation overlay -
+        // draws NutIconWarning. One glyph for one meaning, and nothing to drift apart.
         ("AgentIconStateError", MaterialIconKind.CloseCircle),
         ("AgentIconStateNotConfigured", MaterialIconKind.MinusCircleOutline),
         // Settings tab glyphs. Agent and About reuse the shared server and information keys above,
@@ -87,11 +89,6 @@ public static class AgentConfigIcons
 
         // Beside a switch that cannot be used, offering the way to the thing that would make it work.
         ("AgentIconHelp", MaterialIconKind.HelpCircleOutline),
-
-        // The consequence glyph for a settings result: a disc with an exclamation, the same shape
-        // the status strip now uses. It reports what an operator just chose, and a hazard sign over
-        // their own successful choice reads as a fault. The colour carries the rest.
-        ("AgentIconFeedbackWarning", MaterialIconKind.AlertCircle),
 
         ("AgentIconImport", MaterialIconKind.FileImportOutline),
         ("AgentIconProhibit", MaterialIconKind.CancelOutline),
