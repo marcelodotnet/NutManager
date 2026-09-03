@@ -34,6 +34,15 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     private readonly IAgentHttpsResourceAdministration _resources;
     private readonly IAgentCertificateCatalog _certificates;
     private readonly IAgentRuntimeInventory _inventory;
+
+    /// <summary>
+    /// Absent in the tests that have nothing to say about the listener, which then reports that it has
+    /// not been checked rather than reporting a state nobody observed.
+    /// </summary>
+    private readonly IAgentHttpsListenerProbe? _listenerProbe;
+
+    /// <summary>Absent in tests and on any host that has no browser to hand a link to.</summary>
+    private readonly IAgentProjectPageLauncher? _projectPage;
     private readonly IAgentCertificateImporter? _certificateImporter;
     private readonly IAgentConfigUiPreferences _preferences;
     private readonly TimeProvider _time;
@@ -78,7 +87,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         UiLanguagePreference? language = null,
         TimeProvider? timeProvider = null,
         IAgentCertificateImporter? certificateImporter = null,
-        IAgentConfigUiPreferences? preferences = null)
+        IAgentConfigUiPreferences? preferences = null,
+        IAgentProjectPageLauncher? projectPage = null,
+        IAgentHttpsListenerProbe? listenerProbe = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(groups);
@@ -94,6 +105,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _certificates = certificates;
         _inventory = inventory;
         _certificateImporter = certificateImporter;
+        _projectPage = projectPage;
+        _listenerProbe = listenerProbe;
         _preferences = preferences ?? AgentConfigUiPreferences.None;
         _time = timeProvider ?? TimeProvider.System;
 
@@ -107,6 +120,16 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // A third stored state here would be a preference nobody set masquerading as one they did.
         _selectedTheme = _preferences.ReadTheme() ?? ThemePreference.System;
         _strings = new AgentConfigStrings(_selectedLanguage);
+
+        LanguageOptions =
+        [
+            new AgentLanguageOption(UiLanguagePreference.PtBr, _strings["Language.Portuguese"]),
+            new AgentLanguageOption(UiLanguagePreference.EnUs, _strings["Language.English"]),
+        ];
+
+        // The field, not the property: assigning through the setter here would be the control
+        // reporting a selection nobody made, which is the write this guard exists to prevent.
+        _selectedLanguageOption = LanguageOptions.First(option => option.Value == _selectedLanguage);
     }
 
     // ---------------------------------------------------------------- language
@@ -125,7 +148,35 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     [ObservableProperty]
     private UiLanguagePreference _selectedLanguage;
 
-    public string SelectedLanguageCode => SelectedLanguage == UiLanguagePreference.EnUs ? "EN-US" : "PT-BR";
+    /// <summary>
+    /// The two languages this product ships, named in themselves.
+    ///
+    /// Built once. Both cultures give these entries the same text - a language is called what it
+    /// calls itself - so there is nothing here for a language change to rewrite.
+    /// </summary>
+    public IReadOnlyList<AgentLanguageOption> LanguageOptions { get; }
+
+    /// <summary>
+    /// The entry the selector shows.
+    ///
+    /// Two-way, and guarded. A list control assigns its selection as it materialises, and that
+    /// assignment once reached the preference store and overwrote a saved choice with whatever
+    /// happened to be first. The guard is what makes the control safe to bind: the initial value is
+    /// put in place without going through the setter, and an echo of the current value is not a
+    /// change.
+    /// </summary>
+    [ObservableProperty]
+    private AgentLanguageOption? _selectedLanguageOption;
+
+    /// <summary>Set while the selector is being brought in line with the preference.</summary>
+    private bool _syncingLanguage;
+
+    partial void OnSelectedLanguageOptionChanged(AgentLanguageOption? value)
+    {
+        if (_syncingLanguage || value is null) return;
+
+        SelectedLanguage = value.Value;
+    }
 
     /// <summary>
     /// The selector's two states, as booleans rather than as a selected object.
@@ -160,8 +211,27 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnSelectedLanguageChanged(UiLanguagePreference value)
     {
         Strings = new AgentConfigStrings(value);
-        OnPropertyChanged(nameof(SelectedLanguageCode));
+
+        // The selector follows the preference when the change came from somewhere else, and echoing
+        // it back is not a second change.
+        _syncingLanguage = true;
+        try
+        {
+            SelectedLanguageOption = LanguageOptions.FirstOrDefault(option => option.Value == value);
+        }
+        finally
+        {
+            _syncingLanguage = false;
+        }
+
         _preferences.WriteLanguage(value);
+
+        // The terms are a document, not a string table: switching language means reading the other
+        // file. Cleared rather than re-read here, so a session that never opens the page never pays
+        // for it - and one that is looking at it gets the other language on the next open.
+        TermsBlocks.Clear();
+        if (ShowTerms) LoadTerms();
+
         RelocalizeSurface();
     }
 
@@ -181,10 +251,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     ///
     /// Deliberately its own state rather than a reuse of the Apply banner: copying a value to the
     /// clipboard is not a configuration result, and a screen that reported both through one surface
-    /// would let "Endpoint copied" overwrite the reason an Apply was refused.
+    /// would let "Copied!" overwrite the reason an Apply was refused.
     /// </summary>
     [ObservableProperty]
     private bool _isToastVisible;
+
+    /// <summary>
+    /// Keeps the anchored popup alive while its content fades out. Popup membership and visual
+    /// visibility are separate because closing a Popup removes it before a transition can render.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isToastPopupOpen;
 
     [ObservableProperty]
     private string? _toastMessage;
@@ -219,6 +296,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         ToastKind = kind;
         ToastMessage = message;
+        IsToastPopupOpen = true;
         IsToastVisible = true;
 
         HideToastAsync(_toastLifetime.Token);
@@ -234,6 +312,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         {
             await Task.Delay(ToastDuration, _time, cancellationToken).ConfigureAwait(true);
             IsToastVisible = false;
+            await Task.Delay(TimeSpan.FromMilliseconds(180), _time, cancellationToken).ConfigureAwait(true);
+            IsToastPopupOpen = false;
         }
         catch (OperationCanceledException)
         {
@@ -249,6 +329,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public void CancelTransientFeedback()
     {
         _toastLifetime?.Cancel();
+        IsToastVisible = false;
+        IsToastPopupOpen = false;
         _toastLifetime?.Dispose();
         _toastLifetime = null;
     }
@@ -288,11 +370,40 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public bool ShowDarkThemeAction => !ShowLightThemeAction;
 
     /// <summary>
-    /// The tooltip and the accessible name, which are deliberately the same string.
+    /// The two halves of the segmented control, each naming the theme it selects.
     ///
-    /// It names the action, not the state: in dark mode the button says "Enable light mode" and shows
-    /// a sun. A button that announced the theme it is already in would leave somebody using a screen
-    /// reader with no idea what pressing it does.
+    /// A pair of explicit choices rather than one toggle: the control shows both destinations at
+    /// once, and its filled half says which one you are in. Choosing writes Light or Dark outright,
+    /// which is the honest consequence of showing two positions - once somebody has chosen, this
+    /// window stops following Windows.
+    ///
+    /// Nothing here touches the Agent: no dirty flag, no Apply, no store, no service, no HTTP.sys.
+    /// </summary>
+    [RelayCommand]
+    private void SelectLightTheme() => SelectedTheme = ThemePreference.Light;
+
+    [RelayCommand]
+    private void SelectDarkTheme() => SelectedTheme = ThemePreference.Dark;
+
+    /// <summary>
+    /// Which theme is selected, resolving System against what is actually on screen.
+    ///
+    /// Reported rather than set: the two commands above are how it changes. Kept because the settings
+    /// tests read it, and because it states in one place what "currently dark" means.
+    /// </summary>
+    public bool IsDarkThemeSelected => SelectedTheme switch
+    {
+        ThemePreference.Dark => true,
+        ThemePreference.Light => false,
+        _ => IsEffectiveDark,
+    };
+
+    /// <summary>
+    /// The sentence beside the control, and the accessible name of each half.
+    ///
+    /// It names the action rather than the state: in dark mode it reads "Enable light mode". A label
+    /// that announced the theme you are already in would leave somebody using a screen reader with no
+    /// idea what the control does.
     /// </summary>
     public string ThemeActionText => ShowLightThemeAction
         ? Strings["Theme.EnableLight"]
@@ -312,6 +423,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowLightThemeAction));
         OnPropertyChanged(nameof(ShowDarkThemeAction));
         OnPropertyChanged(nameof(ThemeActionText));
+        OnPropertyChanged(nameof(IsDarkThemeSelected));
     }
 
     /// <summary>
@@ -387,24 +499,75 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         }
     }
 
-    // ---------------------------------------------------------------- which half is showing
+    // ---------------------------------------------------------------- which surface is showing
 
     /// <summary>
-    /// Whether the diagnostics list has replaced the configuration surface.
+    /// Which of the three surfaces the window is showing.
     ///
-    /// One window, two views, and no navigation rail: there are exactly two things to look at, and a
-    /// sidebar for two destinations is the desktop shell this utility is deliberately not.
+    /// One window, three views, and still no navigation rail: configuration is the window's purpose,
+    /// diagnostics is a read-only report of the same machine, and settings holds the preferences and
+    /// the one destructive action that do not belong beside the fields they act on. A sidebar for
+    /// three destinations is the desktop shell this utility is deliberately not.
+    ///
+    /// One value rather than a boolean per surface, so "both showing" and "none showing" are states
+    /// the type cannot hold.
     /// </summary>
     [ObservableProperty]
-    private bool _showDiagnostics;
+    private AgentConfigSurface _surface = AgentConfigSurface.Configuration;
 
-    partial void OnShowDiagnosticsChanged(bool value)
+    partial void OnSurfaceChanged(AgentConfigSurface value)
     {
         OnPropertyChanged(nameof(ShowConfiguration));
+        OnPropertyChanged(nameof(ShowDiagnostics));
+        OnPropertyChanged(nameof(ShowSettings));
+        OnPropertyChanged(nameof(ShowTerms));
+        OnPropertyChanged(nameof(ShowActionBar));
+        OnPropertyChanged(nameof(ShowHomeAction));
+        OnPropertyChanged(nameof(ShowSettingsAction));
+        OnPropertyChanged(nameof(HeaderActionText));
         OnPropertyChanged(nameof(ViewToggleText));
+
+        if (value == AgentConfigSurface.Settings && IsAgentTab) ReloadService();
+
+        // The group and its members can change from Windows while this window is open, so the list
+        // is read when the panel becomes visible rather than kept from whenever it was last built.
+        if (value == AgentConfigSurface.Settings && IsUsersTab) ReloadGroup();
+
+        // A result belongs to the action that produced it and to the panel it happened on. Leaving
+        // settings ends both, so the message does not greet whoever comes back later as though they
+        // had just done something.
+        if (value is not AgentConfigSurface.Settings)
+        {
+            ClearStartupResult();
+            ClearInstallResult();
+        }
+
+        // Back on the surface that shows the row. The monitor kept running while the operator was
+        // elsewhere, so this is not a catch-up - it is the answer being fresh at the moment it becomes
+        // visible again, rather than up to a second old.
+        if (value == AgentConfigSurface.Configuration) RequestListenerRefresh();
     }
 
-    public bool ShowConfiguration => !ShowDiagnostics;
+    public bool ShowConfiguration => Surface == AgentConfigSurface.Configuration;
+
+    public bool ShowDiagnostics => Surface == AgentConfigSurface.Diagnostics;
+
+    public bool ShowSettings => Surface == AgentConfigSurface.Settings;
+
+    public bool ShowTerms => Surface == AgentConfigSurface.Terms;
+
+    /// <summary>
+    /// Whether Apply and Cancel belong on screen.
+    ///
+    /// They are the draft controls of the configuration surface: they save the transport document and
+    /// nothing else. Settings changes the theme, the language and a service start type, and every one
+    /// of those takes effect when it is made; the terms are a document. Showing Apply beside either
+    /// would promise that something on the page is waiting to be saved, and nothing is.
+    ///
+    /// Diagnostics keeps them, because it is a read-only view of the same configuration the draft
+    /// belongs to and losing the buttons on the way there was never part of this.
+    /// </summary>
+    public bool ShowActionBar => !ShowSettings && !ShowTerms;
 
     /// <summary>
     /// The toggle's label names where it goes, not where you are. Localized text belongs on the view
@@ -413,7 +576,129 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     public string ViewToggleText => ShowDiagnostics ? Strings["Header.Configuration"] : Strings["Header.Diagnostics"];
 
     [RelayCommand]
-    private void ToggleDiagnostics() => ShowDiagnostics = !ShowDiagnostics;
+    private void ToggleDiagnostics() =>
+        Surface = ShowDiagnostics ? AgentConfigSurface.Configuration : AgentConfigSurface.Diagnostics;
+
+    /// <summary>
+    /// Whether the header button offers to go home rather than to open settings.
+    ///
+    /// The glyph is the action, not the location. From the configuration surface - and from
+    /// diagnostics, which keeps its own labelled control for getting back - the button opens
+    /// settings, so it is a gear. From settings and from the terms it returns to the configuration
+    /// surface, so it is a house. A gear that did not open settings would be a lie about what
+    /// pressing it does.
+    /// </summary>
+    public bool ShowHomeAction => ShowSettings || ShowTerms;
+
+    public bool ShowSettingsAction => !ShowHomeAction;
+
+    /// <summary>The tooltip and the accessible name, which are deliberately the same string.</summary>
+    public string HeaderActionText => ShowHomeAction ? Strings["Header.Home"] : Strings["Settings.Title"];
+
+    /// <summary>
+    /// Opens settings, or goes home.
+    ///
+    /// Going home is navigation and nothing else. It does not cancel, does not discard the draft and
+    /// does not re-read anything: an operator who edited a field, looked at a preference and came
+    /// back finds their edit exactly where they left it, with Apply still offering to save it.
+    /// </summary>
+    [RelayCommand]
+    private void HeaderAction() =>
+        Surface = ShowHomeAction ? AgentConfigSurface.Configuration : AgentConfigSurface.Settings;
+
+    /// <summary>
+    /// The canonical terms, as blocks the page can style.
+    ///
+    /// Filled on first use rather than at construction: most sessions never open this page, and
+    /// parsing three hundred lines of a document nobody asked for is work done on the way to the
+    /// window appearing.
+    /// </summary>
+    public ObservableCollection<AgentTermsBlock> TermsBlocks { get; } = [];
+
+    // ---------------------------------------------------------------- which settings panel
+
+    /// <summary>
+    /// The open panel of the settings surface.
+    ///
+    /// View-model state rather than a TabControl selection, because the strip is built from buttons
+    /// and dividers. It also means the panel survives a trip home and back, which is what somebody
+    /// expects of a place they were just looking at.
+    /// </summary>
+    [ObservableProperty]
+    private AgentSettingsTab _settingsTab = AgentSettingsTab.General;
+
+    partial void OnSettingsTabChanged(AgentSettingsTab value)
+    {
+        // Each result is local to its own panel: the start type line belongs to General and the
+        // registration line to Agent. Switching panels leaves the action behind with them.
+        if (value != AgentSettingsTab.General) ClearStartupResult();
+        if (value != AgentSettingsTab.Agent) ClearInstallResult();
+
+        OnPropertyChanged(nameof(IsGeneralTab));
+        OnPropertyChanged(nameof(IsUsersTab));
+        OnPropertyChanged(nameof(IsAgentTab));
+        OnPropertyChanged(nameof(IsAboutTab));
+
+        if (value == AgentSettingsTab.Agent) ReloadService();
+
+        // Arriving at the list reads it. Leaving closes the account field and drops the message, so
+        // coming back does not greet somebody with the result of an action they have forgotten.
+        if (value == AgentSettingsTab.Users)
+        {
+            ReloadGroup();
+            OperatorsMessage = null;
+        }
+        else
+        {
+            NewMemberAccount = string.Empty;
+            IsAddingOperator = false;
+        }
+    }
+
+    public bool IsGeneralTab => SettingsTab == AgentSettingsTab.General;
+
+    public bool IsUsersTab => SettingsTab == AgentSettingsTab.Users;
+
+    public bool IsAgentTab => SettingsTab == AgentSettingsTab.Agent;
+
+    public bool IsAboutTab => SettingsTab == AgentSettingsTab.About;
+
+    [RelayCommand]
+    private void SelectGeneralTab() => SettingsTab = AgentSettingsTab.General;
+
+    [RelayCommand]
+    private void SelectUsersTab() => SettingsTab = AgentSettingsTab.Users;
+
+    [RelayCommand]
+    private void SelectAgentTab() => SettingsTab = AgentSettingsTab.Agent;
+
+    [RelayCommand]
+    private void SelectAboutTab() => SettingsTab = AgentSettingsTab.About;
+
+    /// <summary>Opens the terms from About.</summary>
+    [RelayCommand]
+    private void OpenTerms()
+    {
+        LoadTerms();
+        Surface = AgentConfigSurface.Terms;
+    }
+
+    private void LoadTerms()
+    {
+        if (TermsBlocks.Count > 0) return;
+
+        foreach (var block in AgentTermsDocument.Read(SelectedLanguage)) TermsBlocks.Add(block);
+    }
+
+    /// <summary>
+    /// Back to settings, which comes back showing About.
+    ///
+    /// The tab strip holds its own selection, so returning here lands on the tab the reader left from
+    /// rather than resetting to the first one - which is the whole difference between going back and
+    /// starting over.
+    /// </summary>
+    [RelayCommand]
+    private void CloseTerms() => Surface = AgentConfigSurface.Settings;
 
     // ---------------------------------------------------------------- transports
 
@@ -459,6 +744,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         // would put a blocking Windows query on the UI thread every time a checkbox is clicked.
         RebuildResourceStatus();
         RebuildDiagnostics();
+
+        // Turning the transport off means there is nothing left to probe, and turning it on means
+        // there may be. Either way the standing observation no longer describes the current state.
+        RequestListenerRefresh();
     }
 
     /// <summary>
@@ -488,6 +777,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
         OnPropertyChanged(nameof(NamedPipeStatusText));
         OnPropertyChanged(nameof(HttpsStatusText));
+        OnPropertyChanged(nameof(ActiveTransportsText));
+        OnPropertyChanged(nameof(HttpsPortText));
         OnPropertyChanged(nameof(CanResetHttps));
         OnPropertyChanged(nameof(HttpsResetBlockedReason));
         OnPropertyChanged(nameof(HttpsResetToolTip));
@@ -607,7 +898,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     {
         "healthy" => "AgentIconStateReady",
         "critical" => "AgentIconStateError",
-        _ => "AgentIconStateAttention",
+        _ => "NutIconWarning",
     };
 
     public string? CertificateThumbprint => SelectedCertificate?.Thumbprint;
@@ -685,6 +976,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     partial void OnHttpsPortChanged(int value)
     {
         ClearImportFeedback();
+        OnPropertyChanged(nameof(HttpsPortText));
         RefreshHttpsValidation();
         RefreshDirty();
     }
@@ -998,6 +1290,24 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string OperatorsGroupName => _groupState.GroupName;
 
+    /// <summary>
+    /// The group named as a technical detail rather than as a heading.
+    ///
+    /// "Permissões de acesso" is what the section is about; NutManager Operators is the thing an
+    /// administrator types into Windows to find it. Both belong on screen, and only one of them is a
+    /// title.
+    /// </summary>
+    public string OperatorsGroupCaption => Strings.Format("Settings.Permissions.Group", OperatorsGroupName);
+
+    /// <summary>
+    /// The label on every row's remove button.
+    ///
+    /// A property rather than a lookup inside the row template: each row's data context is the
+    /// account name, so the template has to reach back out to the view model for anything else, and
+    /// a plain property is a far steadier thing to reach for than an indexer.
+    /// </summary>
+    public string RemoveMemberText => Strings["Settings.Permissions.Remove"];
+
     [ObservableProperty]
     private bool _operatorsGroupExists;
 
@@ -1045,6 +1355,31 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         ReloadGroup();
     }
 
+    /// <summary>
+    /// Whether the account field is open.
+    ///
+    /// Closed by default so the page reads as a list with one way in, and so that granting
+    /// administrative rights takes a deliberate step rather than a stray keystroke in a box that was
+    /// already focused.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isAddingOperator;
+
+    [RelayCommand]
+    private void BeginAddOperator()
+    {
+        NewMemberAccount = string.Empty;
+        OperatorsMessage = null;
+        IsAddingOperator = true;
+    }
+
+    [RelayCommand]
+    private void CancelAddOperator()
+    {
+        NewMemberAccount = string.Empty;
+        IsAddingOperator = false;
+    }
+
     [RelayCommand]
     private void AddMember()
     {
@@ -1053,21 +1388,91 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         var result = _groups.AddMember(account);
 
-        OperatorsMessage = result.Outcome switch
-        {
-            AgentMembershipOutcome.Added => Strings.Format("Operators.Added", result.AccountName),
-            // Wanting an account in a group it is already in is the desired state, reached earlier.
-            // Reporting that as a failure would be technically defensible and practically useless.
-            AgentMembershipOutcome.AlreadyMember => Strings.Format("Operators.AlreadyMember", result.AccountName),
-            _ => result.Detail,
-        };
+        OperatorsMessage = Describe(result, Strings.Format("Operators.Added", result.AccountName));
 
         if (result.Succeeded)
         {
             NewMemberAccount = string.Empty;
+            IsAddingOperator = false;
             ReloadMembers();
         }
     }
+
+    /// <summary>
+    /// The account a confirmed removal will act on.
+    ///
+    /// Captured when the button is pressed and read when the question is answered, so the operation
+    /// can only ever apply to the row that was actually clicked - not to whatever the list happens to
+    /// hold by the time somebody says yes.
+    /// </summary>
+    private string? _pendingOperator;
+
+    /// <summary>The account named in the removal question, for the sentence that asks.</summary>
+    public string? PendingOperatorAccount => _pendingOperator;
+
+    /// <summary>
+    /// Asks before taking a user out of the group, and does nothing else yet.
+    ///
+    /// Revoking administrative rights is a small click with a real consequence, so the click opens
+    /// the question and the question does the work. Nothing reaches Windows from here.
+    /// </summary>
+    [RelayCommand]
+    private void RemoveOperator(string? account)
+    {
+        if (string.IsNullOrWhiteSpace(account)) return;
+
+        _pendingOperator = account;
+        OperatorsMessage = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+        PendingConfirmation = AgentConfigConfirmation.RemoveOperator;
+    }
+
+    /// <summary>
+    /// Takes the confirmed account out of the group, and only out of the group.
+    ///
+    /// One call to the same administration boundary the rest of this screen uses. The list is read
+    /// back from Windows afterwards rather than edited here, so a row disappears because the machine
+    /// says it is gone - not because a button was pressed.
+    /// </summary>
+    private void RemoveOperatorCore()
+    {
+        if (_pendingOperator is not { } account) return;
+
+        _pendingOperator = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+
+        var result = _groups.RemoveMember(account);
+
+        OperatorsMessage = result.Outcome switch
+        {
+            AgentMembershipOutcome.Removed => Strings.Format("Operators.Removed", result.AccountName),
+            // Not being in the group is what was asked for, reached earlier.
+            AgentMembershipOutcome.NotMember => Strings.Format("Operators.NotMember", result.AccountName),
+            AgentMembershipOutcome.Rejected => Strings["Operators.NotFound"],
+            _ => Strings["Operators.RemoveFailed"],
+        };
+
+        if (result.Succeeded) ReloadMembers();
+    }
+
+    /// <summary>
+    /// The outcome in the reader's language, with the Windows text kept out of the way.
+    ///
+    /// Infrastructure explains itself in English and in its own vocabulary - "the name could not be
+    /// translated to a SID" is accurate, and is not a sentence to put in front of somebody running a
+    /// Portuguese interface. The localized line is what the panel says; the technical detail stays
+    /// available to diagnostics, which is where that vocabulary belongs.
+    /// </summary>
+    private string Describe(AgentMembershipResult result, string success) => result.Outcome switch
+    {
+        AgentMembershipOutcome.Added or AgentMembershipOutcome.Removed => success,
+        // Wanting an account in a group it is already in is the desired state, reached earlier.
+        // Reporting that as a failure would be technically defensible and practically useless.
+        AgentMembershipOutcome.AlreadyMember => Strings.Format("Operators.AlreadyMember", result.AccountName),
+        AgentMembershipOutcome.NotMember => Strings.Format("Operators.NotMember", result.AccountName),
+        AgentMembershipOutcome.Rejected => Strings["Operators.NotFound"],
+        _ => Strings["Operators.Failed"],
+    };
 
     private void ReloadGroup()
     {
@@ -1075,6 +1480,7 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OperatorsGroupExists = _groupState.Exists;
 
         OnPropertyChanged(nameof(OperatorsGroupName));
+        OnPropertyChanged(nameof(OperatorsGroupCaption));
         OnPropertyChanged(nameof(GroupCreationAffectsDirectory));
 
         ReloadMembers();
@@ -1194,8 +1600,28 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(ServiceIsInstalled));
         OnPropertyChanged(nameof(ShowStartServiceAction));
         OnPropertyChanged(nameof(ShowStopServiceAction));
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
+        OnPropertyChanged(nameof(ServiceInstallDescription));
+        OnPropertyChanged(nameof(ServiceInstallState));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
+        InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
+        SyncStartupFromService();
         RefreshCommandStates();
+
+        // The listener row reads the service state, so re-reading the service has to redraw the strip
+        // and not only the diagnostics list. Without this the card said "running" beside a listener
+        // row still describing the service as stopped, which is the disagreement an operator sees
+        // first and trusts least.
+        RebuildResourceStatus();
         RebuildDiagnostics();
+
+        // Starting, stopping or restarting changes what the endpoint will say. Asked now rather than
+        // at the next tick, and never assumed: a service that has just been started is running long
+        // before its prefix is open, so the row stays unavailable until a probe actually succeeds.
+        RequestListenerRefresh();
     }
 
     /// <summary>
@@ -1223,6 +1649,17 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             : Strings.Format("Service.StartMode", _serviceState.StartMode);
 
         OnPropertyChanged(nameof(ServiceFooterText));
+
+        // The start type and the account are read straight off the snapshot rather than stored, so
+        // replacing the snapshot changes what they answer without anything saying so. Every other
+        // property derived from it is announced when the machine is re-read; these two were not, and
+        // the Agent panel went on showing "Desconhecido" over a service whose configuration the
+        // diagnostics list - rebuilt in the same pass - was reporting correctly on the next screen.
+        //
+        // They belong here rather than in ReloadService because this is the method that turns the
+        // snapshot into words, and it is also the one that runs when the interface language changes.
+        OnPropertyChanged(nameof(ServiceStartTypeText));
+        OnPropertyChanged(nameof(ServiceAccountText));
     }
 
     // ---------------------------------------------------------------- confirmations
@@ -1261,6 +1698,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// </summary>
     public string ConfirmButtonText => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Confirm"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Action"],
+        AgentConfigConfirmation.RemoveOperator => Strings["Settings.Permissions.Remove"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryConfirm"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.RemoveAndDisable"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Confirm"],
@@ -1270,6 +1710,9 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string? ConfirmationTitle => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Title"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Title"],
+        AgentConfigConfirmation.RemoveOperator => Strings["Settings.Permissions.Remove.Title"],
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryTitle"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Title"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Title"],
@@ -1279,6 +1722,10 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
     public string? ConfirmationMessage => PendingConfirmation switch
     {
+        AgentConfigConfirmation.ManualStartup => Strings["Settings.Startup.Manual.Question"],
+        AgentConfigConfirmation.RemoveService => Strings["Settings.Agent.Remove.Question"],
+        AgentConfigConfirmation.RemoveOperator =>
+            Strings.Format("Settings.Permissions.Remove.Question", _pendingOperator ?? string.Empty),
         AgentConfigConfirmation.CreateGroupInDirectory => Strings["Operators.DirectoryWarning"],
         AgentConfigConfirmation.DisableHttps => Strings["Cleanup.Message"],
         AgentConfigConfirmation.ResetHttps => Strings["Https.Reset.Message"],
@@ -1286,8 +1733,45 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         _ => null,
     };
 
+    /// <summary>
+    /// Closes the question, and forgets what it was about.
+    ///
+    /// The captured account is dropped here as well as on confirm, so a cancelled removal cannot be
+    /// completed later by a different question being answered yes.
+    ///
+    /// The startup switch needs one thing more than forgetting. Moving it opens the question, and the
+    /// handler immediately puts the property back to what the SCM says - so by the time anybody
+    /// answers, the view model already holds the old value, and a property set to the value it
+    /// already has raises nothing. The control, which moved on its own and was never told otherwise,
+    /// then sits in a position the machine never agreed to. Re-announcing the unchanged value is what
+    /// puts it back.
+    /// </summary>
     [RelayCommand]
-    private void CancelConfirmation() => PendingConfirmation = AgentConfigConfirmation.None;
+    private void CancelConfirmation()
+    {
+        var pending = PendingConfirmation;
+        PendingConfirmation = AgentConfigConfirmation.None;
+
+        if (pending is AgentConfigConfirmation.ManualStartup) RestoreStartupSwitch();
+
+        if (_pendingOperator is null) return;
+
+        _pendingOperator = null;
+        OnPropertyChanged(nameof(PendingOperatorAccount));
+    }
+
+    /// <summary>
+    /// Says the switch's value out loud again, so a control that moved on its own is put back.
+    ///
+    /// The value itself never left the snapshot, so there is nothing to restore - only to announce.
+    /// It is raised on a turn of its own, after the click that opened the question and after the
+    /// click that answered it, which is what makes it reach a control that was mid-update when the
+    /// refusal happened.
+    ///
+    /// Nothing is applied and nothing is reported. A cancelled change is not an action, and a line
+    /// saying what did not happen would be one more thing to read and then dismiss.
+    /// </summary>
+    private void RestoreStartupSwitch() => OnPropertyChanged(nameof(StartsWithWindows));
 
     // ---------------------------------------------------------------- reset HTTPS
 
@@ -1401,6 +1885,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             }
 
             _confirmed = document;
+            OnPropertyChanged(nameof(ActiveTransportsText));
+            OnPropertyChanged(nameof(HttpsPortText));
             RefreshDirty();
             RefreshResourceState();
             RefreshHttpsValidation();
@@ -1440,6 +1926,22 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         switch (pending)
         {
+            case AgentConfigConfirmation.RemoveService:
+                await RemoveServiceCoreAsync(CancellationToken.None).ConfigureAwait(true);
+                break;
+
+            case AgentConfigConfirmation.RemoveOperator:
+                // The one place a membership is revoked. Reaching it means somebody read whose
+                // rights were about to go and said yes.
+                RemoveOperatorCore();
+                return;
+
+            case AgentConfigConfirmation.ManualStartup:
+                // The one place the start type moves to Manual. Reaching it means somebody read what
+                // it does and said yes.
+                await ApplyStartupPreferenceAsync(automatic: false).ConfigureAwait(true);
+                break;
+
             case AgentConfigConfirmation.CreateGroupInDirectory:
                 CreateGroupCore();
                 return;
@@ -1747,6 +2249,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             }
 
             _confirmed = document;
+            OnPropertyChanged(nameof(ActiveTransportsText));
+            OnPropertyChanged(nameof(HttpsPortText));
             RefreshDirty();
             RefreshResourceState();
 
@@ -1837,6 +2341,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanImportCertificate));
         OnPropertyChanged(nameof(CanResetHttps));
         OnPropertyChanged(nameof(HttpsResetBlockedReason));
+        OnPropertyChanged(nameof(CanChangeStartup));
+        OnPropertyChanged(nameof(StartupBlockedReason));
         ResetHttpsCommand.NotifyCanExecuteChanged();
         RefreshApplyState();
     }
@@ -1873,6 +2379,12 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             var certificates = _certificates.List();
             _machine = await _inventory.DescribeAsync(cancellationToken).ConfigureAwait(true);
 
+            // About binds these once. Diagnostics survived without this because it rebuilds an
+            // observable collection, so the two views disagreed: the same machine reading appeared in
+            // the diagnostics list and stayed "unknown" on the About tab.
+            OnPropertyChanged(nameof(AboutDotNetRuntime));
+            OnPropertyChanged(nameof(AboutAspNetCoreRuntime));
+
             ReloadCertificates(null, null, certificates);
 
             _confirmed = document;
@@ -1881,6 +2393,11 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             ReloadGroup();
             ReloadService();
             RefreshResourceState();
+
+            // Awaited, so the window opens on what the endpoint said rather than on "checking" and a
+            // correction a moment later. Both calls above have already queued an immediate refresh;
+            // this is the same observation, taken once, before anybody sees the strip.
+            await RefreshListenerAsync(cancellationToken).ConfigureAwait(true);
         }
         finally
         {
@@ -1955,6 +2472,8 @@ public sealed partial class AgentConfigViewModel : ObservableObject
         OnPropertyChanged(nameof(CanToggleNamedPipe));
         OnPropertyChanged(nameof(CanToggleHttps));
         OnPropertyChanged(nameof(ShowsLastTransportNotice));
+        OnPropertyChanged(nameof(ActiveTransportsText));
+        OnPropertyChanged(nameof(HttpsPortText));
 
         RefreshHttpsValidation();
         RefreshDirty();
@@ -1986,6 +2505,238 @@ public sealed partial class AgentConfigViewModel : ObservableObject
             _resourceStateWasQueried = false;
         }
 
+        RebuildResourceStatus();
+        RebuildDiagnostics();
+
+        // Apply, Reset and every endpoint change arrive here. The endpoint that was just described is
+        // the one the probe targets, so the observation is asked for in the same place the target
+        // changes rather than repeated at each of the callers.
+        RequestListenerRefresh();
+    }
+
+    // ---------------------------------------------------------------- listener monitor
+
+    /// <summary>
+    /// How often the listener is asked whether it is still there.
+    ///
+    /// One second, because this is the state an administrator watches change: they stop the service
+    /// and look at the row. Anything slower makes the screen look broken, and anything faster buys
+    /// nothing a person can perceive while costing a connect attempt per tick.
+    /// </summary>
+    private static readonly TimeSpan ListenerPollingInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// The last thing the endpoint said. Unknown until something is asked, and back to Unknown as
+    /// soon as there is nothing to ask - a stale "listening" outliving the service that served it is
+    /// the exact failure this whole section exists to remove.
+    /// </summary>
+    private AgentListenerObservation _listener = AgentListenerObservation.Unknown;
+
+    /// <summary>Cancelled when the window closes. Nothing here survives it.</summary>
+    private CancellationTokenSource? _listenerMonitor;
+
+    /// <summary>
+    /// One probe at a time, across every path that can start one - the tick, an immediate request and
+    /// the startup read all pass through this. A tick that arrives while a probe is still running is
+    /// dropped rather than queued: the answer it would produce is the answer already being fetched,
+    /// and queueing them is how a slow endpoint turns one probe per second into a backlog.
+    /// </summary>
+    private readonly SemaphoreSlim _listenerProbeGate = new(1, 1);
+
+    /// <summary>
+    /// The wake-up for an immediate refresh, replaced once per cycle.
+    ///
+    /// A completion source rather than a semaphore because several events can land together - Apply
+    /// finishes, the service is re-read, the surface changes back - and this coalesces them into the
+    /// single probe they all want, with no waiter left registered for the next one to consume.
+    /// </summary>
+    private TaskCompletionSource _listenerSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Whether the loop is running. False before the window opens and after it closes.</summary>
+    public bool IsListenerMonitorRunning => _listenerMonitor is not null;
+
+    /// <summary>
+    /// Starts the one loop this window gets.
+    ///
+    /// Idempotent on purpose: it is called when the window opens, and calling it again - from a
+    /// second Opened, a navigation, a re-bound data context - must not leave two loops probing the
+    /// same endpoint on interleaved clocks.
+    /// </summary>
+    public void StartListenerMonitor()
+    {
+        if (_listenerMonitor is not null) return;
+
+        var monitor = new CancellationTokenSource();
+        _listenerMonitor = monitor;
+        _ = MonitorListenerAsync(monitor.Token);
+    }
+
+    /// <summary>
+    /// Ends it. Called when the window closes, and safe to call when nothing is running.
+    ///
+    /// The loop is not awaited here because this runs from a Closed handler, which cannot wait. It
+    /// does not need to be: every step past an await re-checks the token before it touches this
+    /// object, so a probe still in flight completes into a loop that publishes nothing.
+    /// </summary>
+    public void StopListenerMonitor()
+    {
+        var monitor = _listenerMonitor;
+        _listenerMonitor = null;
+
+        if (monitor is null) return;
+
+        monitor.Cancel();
+        monitor.Dispose();
+    }
+
+    /// <summary>
+    /// Asks for an observation now instead of at the next tick.
+    ///
+    /// The single entry point every event uses - starting, stopping or restarting the service,
+    /// applying, resetting HTTPS, changing the endpoint, coming back to the configuration surface.
+    /// It never probes on the calling thread and never blocks: it wakes the loop that already owns
+    /// the serialisation, which is what keeps "several things just happened" to one probe.
+    /// </summary>
+    public void RequestListenerRefresh() => _listenerSignal.TrySetResult();
+
+    private async Task MonitorListenerAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var signal = _listenerSignal;
+
+            // Nothing to wait for when a request is already standing - the window has just opened, or
+            // several events landed while the last probe was running. Waiting a full period first
+            // would make the immediate refresh not immediate.
+            if (!signal.Task.IsCompleted)
+            {
+                // Whichever comes first: the period elapsing, or something asking for an answer now.
+                // WhenAny does not throw on a cancelled delay, so the token is checked rather than
+                // caught.
+                using var cycle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var period = Task.Delay(ListenerPollingInterval, _time, cycle.Token);
+
+                await Task.WhenAny(period, signal.Task).ConfigureAwait(true);
+
+                // A request that won the race leaves a timer still counting down. Cancelling releases
+                // it rather than letting one accumulate per event for as long as the window is open,
+                // and the delay is then awaited so its cancellation is observed rather than dropped.
+                cycle.Cancel();
+                await ObserveQuietlyAsync(period).ConfigureAwait(true);
+            }
+
+            if (cancellationToken.IsCancellationRequested) return;
+
+            // Arm the next cycle only if this one was woken by a request, and only if no other thread
+            // has already replaced it. Everything that arrived before this point has been served.
+            if (signal.Task.IsCompleted)
+            {
+                Interlocked.CompareExchange(
+                    ref _listenerSignal,
+                    new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                    signal);
+            }
+
+            await ObserveListenerAsync(cancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>
+    /// Reads the listener once, and waits for the answer.
+    ///
+    /// Called by the loop, and awaited by <see cref="RefreshAsync"/> so the window opens showing what
+    /// the endpoint actually said rather than opening on a guess and correcting itself.
+    /// </summary>
+    public async Task RefreshListenerAsync(CancellationToken cancellationToken = default) =>
+        await ObserveListenerAsync(cancellationToken).ConfigureAwait(true);
+
+    private async Task ObserveListenerAsync(CancellationToken cancellationToken)
+    {
+        var target = ListenerProbeTarget;
+
+        if (target is null || _listenerProbe is null)
+        {
+            // Nothing to ask: HTTPS is off, the service is not running, or the configuration the
+            // listener would need is not all there. Each of those is already reported by name in the
+            // row itself, and no network call can add to it.
+            PublishListener(AgentListenerObservation.Unknown);
+            return;
+        }
+
+        if (!await _listenerProbeGate.WaitAsync(0, cancellationToken).ConfigureAwait(true)) return;
+
+        try
+        {
+            var observation = await _listenerProbe.ProbeAsync(target, cancellationToken).ConfigureAwait(true);
+
+            // The window may have closed while the endpoint was deciding whether to answer.
+            if (cancellationToken.IsCancellationRequested) return;
+
+            PublishListener(observation);
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelled, not failed. The row keeps whatever it last knew.
+        }
+        catch (Exception exception)
+        {
+            // One probe throwing is a fact about this attempt, not the end of the loop: the next tick
+            // asks again. An adapter is expected to translate its own failures, so reaching here at
+            // all means something unexpected - which is reported rather than swallowed.
+            PublishListener(AgentListenerObservation.Unreachable(
+                $"{exception.GetType().Name}: {exception.Message}"));
+        }
+        finally
+        {
+            _listenerProbeGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The endpoint worth asking about, or null when the row is decided without asking.
+    ///
+    /// The same four conditions the row itself checks before it gets as far as the listener, in the
+    /// same order, so the monitor never probes for a state that is already reported by something
+    /// nearer the cause - and so a stopped service costs no network call at all.
+    ///
+    /// The endpoint is the one the strip already describes: the validated draft while it is valid,
+    /// and the last one described otherwise. Probing anything else would put a second definition of
+    /// "the endpoint" on the same screen.
+    /// </summary>
+    private AgentHttpsBinding? ListenerProbeTarget =>
+        HttpsEnabled
+        && _serviceState.IsInstalled
+        && _serviceState.IsRunning
+        && HttpsIsValid
+        && _resourceState.IsFullyConfigured
+            ? _appliedBinding
+            : null;
+
+    /// <summary>Awaits a task purely so that its cancellation is not left unobserved.</summary>
+    private static async Task ObserveQuietlyAsync(Task task)
+    {
+        try
+        {
+            await task.ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    /// <summary>
+    /// Records an observation, and redraws only when it actually changed.
+    ///
+    /// A listener that stays up for twenty minutes is twelve hundred identical answers, and rebuilding
+    /// the strip for each of them would repopulate an observable collection once a second under an
+    /// operator's cursor. The record compares by value, so an unchanged answer costs nothing and the
+    /// row does not flicker between identical states.
+    /// </summary>
+    private void PublishListener(AgentListenerObservation observation)
+    {
+        if (_listener == observation) return;
+
+        _listener = observation;
         RebuildResourceStatus();
         RebuildDiagnostics();
     }
@@ -2072,11 +2823,19 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// <summary>
     /// Whether the HTTPS listener is actually up.
     ///
-    /// This is a composed answer, not a probe, and the difference is worth saying out loud: it reports
-    /// that HTTPS is enabled, that its endpoint is valid, that the binding and the reservation are
-    /// ours, and that the service is running — everything the listener needs. It does not open a
-    /// socket, and it is not a claim that any client has ever authenticated over it. Those are separate
-    /// facts, and the diagnostics view keeps them separate.
+    /// The four conditions below are the ones that make the question answerable without asking: HTTPS
+    /// off, service absent, service stopped and configuration incomplete each explain the row by
+    /// themselves, and each sends an administrator somewhere different. Past them, the answer is
+    /// observed rather than composed.
+    ///
+    /// It used to be composed all the way through - enabled, valid, owned and running was reported as
+    /// listening - and that is wrong on the machine that matters most: HTTP.sys can refuse the prefix
+    /// while the service sits in Running, and the row then showed a green light for an endpoint
+    /// nothing could reach. A running service is not a running listener, so the last step asks.
+    ///
+    /// What it does not claim: that the answer came from NutManager rather than from something else
+    /// on the port, and that any client has authenticated. Ownership is the three rows above this one,
+    /// and authentication is not a resource at all.
     /// </summary>
     private AgentStatusItemViewModel DescribeListener()
     {
@@ -2117,10 +2876,31 @@ public sealed partial class AgentConfigViewModel : ObservableObject
                 Strings["Resources.Listener.Incomplete"]);
         }
 
-        return AgentStatusItemViewModel.From(
-            Strings, label, AgentDiagnosticState.Ready, Strings["Resources.State.Listener.Active"], icon,
-            Strings.Format("Resources.Listener.Listening", HttpsEndpoint));
+        return _listener.State switch
+        {
+            AgentListenerReachability.Listening => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Ready, Strings["Resources.State.Listener.Active"], icon,
+                Strings.Format("Resources.Listener.Listening", HttpsEndpoint)),
+
+            // Everything configured, the service running, and nothing answering. Reported exactly as
+            // it is: the three rows above stay green because they are still correct, and this one
+            // does not borrow their correctness. The socket error, when there is one, is the tooltip.
+            AgentListenerReachability.Unreachable => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.Attention, Strings["Resources.State.Listener.Unavailable"], icon,
+                Join(Strings.Format("Resources.Listener.NotAnswering", HttpsEndpoint), _listener.Detail)),
+
+            // The first observation has not come back yet. Claiming either answer here would be a
+            // guess, and the one that guesses "listening" is the one that shows a green light for a
+            // dead endpoint.
+            _ => AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Resources.State.Listener.Checking"], icon,
+                Strings["Resources.Listener.Checking"]),
+        };
     }
+
+    /// <summary>The localized sentence, followed by the adapter technical note when there is one.</summary>
+    private static string Join(string sentence, string? detail) =>
+        string.IsNullOrWhiteSpace(detail) ? sentence : $"{sentence} {detail}";
 
     /// <summary>
     /// One status column.
@@ -2180,6 +2960,669 @@ public sealed partial class AgentConfigViewModel : ObservableObject
     /// having authenticated over it. A screen that collapsed those would be easier to read and would
     /// answer the wrong question.
     /// </summary>
+    // ---------------------------------------------------------------- startup preference
+
+    /// <summary>
+    /// Whether Windows starts the agent by itself.
+    ///
+    /// The service control manager is the only place this lives. Writing it into agent.json as well
+    /// would create a second answer that nothing reconciles: an operator can change the start type in
+    /// services.msc, and the copy here would be wrong from that moment on without ever saying so. It
+    /// is read back from the machine after every change for the same reason.
+    ///
+    /// Applied immediately rather than collected into Apply. Apply writes the transport document, and
+    /// a service start type is not part of that document.
+    /// </summary>
+    /// <summary>
+    /// Whether Windows starts the agent at boot - read from the service control manager, never stored.
+    ///
+    /// This has no backing field on purpose, and that is the whole fix for a switch that would not
+    /// come back. A ToggleSwitch moves itself the moment it is clicked and writes the new value
+    /// through the binding; when the answer is "ask first", the view model has to refuse. A stored
+    /// property makes that refusal a second write of the same value, and a property assigned the
+    /// value it already holds notifies nobody - so the control, which had already moved, was never
+    /// told to move back and sat there contradicting the machine.
+    ///
+    /// Deriving the getter from the snapshot removes the possibility. There is nowhere for an
+    /// unconfirmed value to live: the setter interprets the click and stores nothing, and every
+    /// answer the control gets back is the one the SCM last gave. The notification is raised
+    /// explicitly by the paths that refuse, or that re-read the machine, because the value they are
+    /// announcing is deliberately the one it already had.
+    /// </summary>
+    public bool StartsWithWindows
+    {
+        get => _serviceState.StartType == AgentServiceStartType.Automatic;
+        set
+        {
+            // The control echoing back what it was just given, or a click asking for the state the
+            // machine is already in. Either way there is nothing to apply - but the notification is
+            // still raised, so a control that moved on its own is put back where the machine says.
+            if (value == StartsWithWindows)
+            {
+                OnPropertyChanged();
+                return;
+            }
+
+            // Turning automatic start off means a machine that reboots comes back without its agent.
+            // The question is opened and the switch is put straight back: it must not show Manual
+            // over a service Windows still starts, not even while somebody is deciding.
+            if (!value)
+            {
+                PendingConfirmation = AgentConfigConfirmation.ManualStartup;
+                OnPropertyChanged();
+                return;
+            }
+
+            // Turning it on takes nothing away, so asking would be a dialog for the sake of one.
+            OnPropertyChanged();
+            _ = ApplyStartupPreferenceAsync(true);
+        }
+    }
+
+    /// <summary>
+    /// The last thing the startup switch did.
+    ///
+    /// Deliberately empty until something happens. It reports an action, and the standing state is
+    /// already shown by the switch itself - a line that said "the service will start with Windows"
+    /// every time the tab opened would be a second, wordier copy of the control above it.
+    /// </summary>
+    [ObservableProperty]
+    private string? _startupResultText;
+
+    /// <summary>
+    /// Which of the three it was, so the line can carry the right glyph.
+    ///
+    /// Manual is a warning rather than an error: the operator asked for it, and it succeeded. What it
+    /// deserves is the raised eyebrow of a consequence, not the red of a fault.
+    /// </summary>
+    [ObservableProperty]
+    private AgentSettingsFeedback _startupResultKind = AgentSettingsFeedback.None;
+
+    public bool HasStartupResult => StartupResultKind is not AgentSettingsFeedback.None;
+
+    partial void OnStartupResultKindChanged(AgentSettingsFeedback value) =>
+        OnPropertyChanged(nameof(HasStartupResult));
+
+    /// <summary>
+    /// There is a start type to change only when there is a service, and only when nothing else is
+    /// already in flight against it.
+    /// </summary>
+    public bool CanChangeStartup => _serviceState.IsInstalled && !IsBusy;
+
+    /// <summary>Why the switch is unavailable, said plainly rather than left to a disabled control.</summary>
+    public string? StartupBlockedReason =>
+        _serviceState.IsInstalled ? null : Strings["Settings.Startup.NotInstalled"];
+
+    /// <summary>
+    /// Whether to offer the way to the thing that would make the switch usable.
+    ///
+    /// A disabled control with a tooltip explains the problem to whoever hovers it. This offers the
+    /// answer instead, beside the control that cannot be used, and it exists only while that is true.
+    /// </summary>
+    public bool ShowStartupHelp => !_serviceState.IsInstalled;
+
+    /// <summary>
+    /// Goes to the panel that can install the service, which is System - the panel that holds what
+    /// this product has done to the machine. Navigation and nothing else: it opens a tab in this same
+    /// window, touches no machine state, and asks nothing of the operator on the way.
+    /// </summary>
+    [RelayCommand]
+    private void ShowServiceInstallation() => SettingsTab = AgentSettingsTab.Agent;
+
+    /// <summary>Forgets the last action, so a result never outlives the panel it belongs to.</summary>
+    private void ClearStartupResult()
+    {
+        StartupResultText = null;
+        StartupResultKind = AgentSettingsFeedback.None;
+    }
+
+    private void SyncStartupFromService()
+    {
+        // The switch reads the snapshot, so a re-read of the machine is announced rather than
+        // assigned. There is deliberately no second writer of this value.
+        OnPropertyChanged(nameof(StartsWithWindows));
+
+        OnPropertyChanged(nameof(CanChangeStartup));
+        OnPropertyChanged(nameof(StartupBlockedReason));
+        OnPropertyChanged(nameof(ShowStartupHelp));
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
+        OnPropertyChanged(nameof(ServiceInstallDescription));
+        OnPropertyChanged(nameof(ServiceInstallState));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
+        InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Automatic or Manual, and never Disabled.
+    ///
+    /// Turning a boot preference off must not take away the operator's ability to start the agent by
+    /// hand, and Disabled is precisely that. Nothing is started or stopped here either: this changes
+    /// what Windows does at the next boot, and an operator changing a boot preference has not asked
+    /// for anything to happen to the running service right now.
+    /// </summary>
+    private async Task ApplyStartupPreferenceAsync(bool automatic)
+    {
+        if (!CanChangeStartup)
+        {
+            SyncStartupFromService();
+            return;
+        }
+
+        var preference = automatic
+            ? AgentServiceStartupPreference.Automatic
+            : AgentServiceStartupPreference.Manual;
+
+        IsBusy = true;
+        try
+        {
+            var outcome = await _service.SetStartupAsync(preference, CancellationToken.None).ConfigureAwait(true);
+
+            if (outcome.Succeeded)
+            {
+                StartupResultKind = automatic
+                    ? AgentSettingsFeedback.Success
+                    : AgentSettingsFeedback.Warning;
+                StartupResultText =
+                    Strings[automatic ? "Settings.Startup.Automatic.Done" : "Settings.Startup.Manual.Done"];
+            }
+            else
+            {
+                StartupResultKind = AgentSettingsFeedback.Error;
+                StartupResultText = outcome.Failure ?? Strings["Settings.Startup.Failed"];
+            }
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            StartupResultKind = AgentSettingsFeedback.Error;
+            StartupResultText = Strings["Settings.Startup.Failed"];
+        }
+        finally
+        {
+            IsBusy = false;
+
+            // Whatever happened, the switch is set from what the machine now reports rather than from
+            // what was asked for. A refused change must not leave the control claiming it succeeded.
+            ReloadService();
+        }
+    }
+
+    // ---------------------------------------------------------------- service installation
+
+    /// <summary>
+    /// Which way the one button is pointing, and whether it is mid-operation.
+    ///
+    /// One value rather than a pair of booleans, because "installing and removing at once" is a state
+    /// the machine cannot be in and the type should not be able to hold either.
+    /// </summary>
+    [ObservableProperty]
+    private AgentServiceLifecycle _serviceLifecycle = AgentServiceLifecycle.Idle;
+
+    partial void OnServiceLifecycleChanged(AgentServiceLifecycle value)
+    {
+        OnPropertyChanged(nameof(CanInstallService));
+        OnPropertyChanged(nameof(CanRemoveService));
+        OnPropertyChanged(nameof(ServiceActionText));
+        OnPropertyChanged(nameof(ServiceActionIsRemoval));
+        InstallServiceCommand.NotifyCanExecuteChanged();
+        RemoveServiceCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// Whether there is a service to register.
+    ///
+    /// Read from the service control manager rather than remembered. A preference recording that this
+    /// window once installed the service would keep claiming so after somebody removed it, and the
+    /// button would then offer an action the machine has already refused.
+    /// </summary>
+    public bool CanInstallService =>
+        !_serviceState.IsInstalled && !IsBusy && ServiceLifecycle is AgentServiceLifecycle.Idle;
+
+    /// <summary>There is something to remove only when the machine says there is.</summary>
+    public bool CanRemoveService =>
+        _serviceState.IsInstalled && !IsBusy && ServiceLifecycle is AgentServiceLifecycle.Idle;
+
+    /// <summary>
+    /// Whether the button removes rather than installs.
+    ///
+    /// Derived from the service control manager and never from what was last clicked: a registration
+    /// that the SCM has not confirmed must not flip the button, or the screen would be reporting an
+    /// intention as a fact.
+    /// </summary>
+    public bool ServiceActionIsRemoval =>
+        _serviceState.IsInstalled && ServiceLifecycle is not AgentServiceLifecycle.Installing;
+
+    /// <summary>
+    /// One label for one button, in four states.
+    ///
+    /// The button keeps its place through the whole operation rather than disappearing and being
+    /// replaced: it is the same action area, reporting what it is doing.
+    /// </summary>
+    public string ServiceActionText => ServiceLifecycle switch
+    {
+        AgentServiceLifecycle.Installing => Strings["Settings.Agent.Install.Working"],
+        AgentServiceLifecycle.Removing => Strings["Settings.Agent.Remove.Working"],
+        _ => Strings[ServiceActionIsRemoval ? "Settings.Agent.Remove.Action" : "Settings.Agent.Install.Action"],
+    };
+
+    [ObservableProperty]
+    private string? _installResultText;
+
+    [ObservableProperty]
+    private AgentSettingsFeedback _installResultKind = AgentSettingsFeedback.None;
+
+    public bool HasInstallResult => InstallResultKind is not AgentSettingsFeedback.None;
+
+    partial void OnInstallResultKindChanged(AgentSettingsFeedback value) =>
+        OnPropertyChanged(nameof(HasInstallResult));
+
+    private void ClearInstallResult()
+    {
+        InstallResultText = null;
+        InstallResultKind = AgentSettingsFeedback.None;
+    }
+
+    /// <summary>
+    /// The sentence above the button, which changes with what the machine has.
+    ///
+    /// The section stays on screen either way. An install control that disappeared once it had been
+    /// used would leave an operator wondering whether they imagined it, and the answer to "is this
+    /// registered" is worth keeping visible.
+    /// </summary>
+    public string ServiceInstallDescription => _serviceState.IsInstalled
+        ? Strings["Settings.Agent.Install.Already"]
+        : Strings["Settings.Agent.Install.Missing"];
+
+    /// <summary>
+    /// The disc beside that sentence: a tick for a machine that has the service, a raised eyebrow for
+    /// one that does not. Not an error - an agent that has not been installed yet is a normal state,
+    /// and this is the panel that offers to change it.
+    /// </summary>
+    public AgentSettingsFeedback ServiceInstallState => _serviceState.IsInstalled
+        ? AgentSettingsFeedback.Success
+        : AgentSettingsFeedback.Warning;
+
+    /// <summary>
+    /// Registers the service. It does not start it.
+    ///
+    /// Installing and running are separate decisions, and this makes only the first. The service is
+    /// created stopped, and the Start control on the configuration surface is where somebody says it
+    /// should run - the same separation the product installer keeps.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanInstallService))]
+    private async Task InstallServiceAsync(CancellationToken cancellationToken)
+    {
+        // Defence in depth behind the disabled button. ICommand.Execute does not consult CanExecute,
+        // so a keyboard binding, a test or a later refactor could reach this with a service already
+        // registered - and registering is not something to attempt and then apologise for.
+        if (!CanInstallService) return;
+
+        ClearInstallResult();
+
+        ServiceLifecycle = AgentServiceLifecycle.Installing;
+        IsBusy = true;
+        RefreshCommandStates();
+
+        try
+        {
+            // The group before the service, because the agent refuses to start without it.
+            //
+            // This is the failure that was found on a real machine: a service registered by this
+            // window, correct in every field, that would not start - Event 7023, exit code 1 - because
+            // NutManager Operators did not exist. The agent checks for its authorization group at
+            // startup and fails closed when it is missing, which is the right behaviour and left this
+            // button producing a service that could never run. Registering one without preparing what
+            // it needs is not an installation.
+            if (!EnsureOperatorsGroup()) return;
+
+            var result = await _service.InstallAsync(cancellationToken).ConfigureAwait(true);
+
+            (InstallResultKind, InstallResultText) = result.Outcome switch
+            {
+                // Nothing. The line above the button already reads "already installed" beside a
+                // green tick, because the service control manager was asked again and said so - and
+                // a second green line under it saying the same thing is the same fact twice, one of
+                // them from a variable rather than from the machine.
+                AgentServiceInstallOutcome.Installed =>
+                    (AgentSettingsFeedback.None, (string?)null),
+
+                // Somebody else got there first. Reported as the state it leaves behind rather than as
+                // a failure, and nothing is done to the service that is already registered.
+                AgentServiceInstallOutcome.AlreadyInstalled =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Install.Already"]),
+
+                _ => (AgentSettingsFeedback.Error, Strings["Settings.Agent.Install.Failed"]),
+            };
+
+            // The Win32 detail belongs in diagnostics, not in a sentence under a button.
+            _installFailure = !result.Succeeded && !string.IsNullOrWhiteSpace(result.Failure)
+                ? result.Failure
+                : null;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.Failed"];
+            _installFailure = $"{exception.GetType().Name}: {exception.Message}";
+        }
+        finally
+        {
+            ServiceLifecycle = AgentServiceLifecycle.Idle;
+            IsBusy = false;
+            RefreshCommandStates();
+
+            // Read back from the machine, so the button and the rows below it report what is actually
+            // registered rather than what was asked for. Nothing on screen says "installed" until the
+            // service control manager has been asked again and answered.
+            ReloadService();
+        }
+    }
+
+    /// <summary>
+    /// Makes sure the authorization group exists, creating it only as part of this explicit action.
+    ///
+    /// Creating a Windows group is not something a settings screen should do quietly, and it does not:
+    /// it happens because somebody pressed Install, and the agent cannot run without it. On a domain
+    /// controller there is no independent SAM and the group would become a directory object visible
+    /// across the domain - so that case keeps its own confirmation and this refuses rather than
+    /// creating it as a side effect of a different question.
+    ///
+    /// It creates the group and stops there. No account is added, to this group or any other: who may
+    /// administer the agent stays a decision somebody makes deliberately in Permissions.
+    /// </summary>
+    private bool EnsureOperatorsGroup()
+    {
+        if (_groupState.Exists) return true;
+
+        if (_groupState.CreationAffectsDirectory)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.GroupDirectory"];
+            _installFailure = Strings["Operators.DirectoryWarning"];
+            return false;
+        }
+
+        var created = _groups.Create();
+
+        if (!created.Created && created.Sid is null)
+        {
+            // Without the group the service could be registered and would never start, so nothing is
+            // registered. A machine with no agent is a better outcome than one with an agent that
+            // fails at every boot for a reason nothing on screen explains.
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Install.GroupFailed"];
+            _installFailure = created.Failure;
+            return false;
+        }
+
+        ReloadGroup();
+        return true;
+    }
+
+    /// <summary>
+    /// Removes the service, once somebody has said yes to the question.
+    ///
+    /// The command opens the confirmation and does nothing else - the confirmation is where the
+    /// consequences are stated, including the one that is not obvious: a running agent is stopped to
+    /// complete the removal.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanRemoveService))]
+    private void RemoveService()
+    {
+        if (!CanRemoveService) return;
+
+        ClearInstallResult();
+        PendingConfirmation = AgentConfigConfirmation.RemoveService;
+    }
+
+    private async Task RemoveServiceCoreAsync(CancellationToken cancellationToken)
+    {
+        ServiceLifecycle = AgentServiceLifecycle.Removing;
+        IsBusy = true;
+        RefreshCommandStates();
+
+        try
+        {
+            var result = await _service.RemoveAsync(cancellationToken).ConfigureAwait(true);
+
+            (InstallResultKind, InstallResultText) = result.Outcome switch
+            {
+                // Nothing, for the reason the registration says nothing: the sentence above the
+                // button has already changed back to "not installed yet", and it changed because the
+                // SCM stopped reporting the service rather than because this code decided it had.
+                AgentServiceRemovalOutcome.Removed =>
+                    (AgentSettingsFeedback.None, (string?)null),
+
+                // Nothing was there. Reported rather than treated as a failure: the machine is in the
+                // state the operator asked for.
+                AgentServiceRemovalOutcome.NotInstalled =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Remove.Absent"]),
+
+                // Windows removes a service when the last handle to it closes, and a console left open
+                // holds it. Saying "removed" here would be untrue.
+                AgentServiceRemovalOutcome.PendingDeletion =>
+                    (AgentSettingsFeedback.Warning, Strings["Settings.Agent.Remove.Pending"]),
+
+                // A service wearing the name that is not ours. Left exactly where it is, and this
+                // is only ever said about a configuration that was actually read.
+                AgentServiceRemovalOutcome.NotOwned =>
+                    (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.NotOwned"]),
+
+                // Windows would not say what the service is, so nothing was touched. A different
+                // fact from a mismatch, and it must not be reported as one: telling an operator that
+                // their own agent belongs to somebody else sends them looking for an intruder.
+                AgentServiceRemovalOutcome.QueryFailed =>
+                    (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.QueryFailed"]),
+
+                _ => (AgentSettingsFeedback.Error, Strings["Settings.Agent.Remove.Failed"]),
+            };
+
+            _installFailure = result.Outcome is AgentServiceRemovalOutcome.Removed
+                ? null
+                : result.Failure;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            InstallResultKind = AgentSettingsFeedback.Error;
+            InstallResultText = Strings["Settings.Agent.Remove.Failed"];
+            _installFailure = $"{exception.GetType().Name}: {exception.Message}";
+        }
+        finally
+        {
+            ServiceLifecycle = AgentServiceLifecycle.Idle;
+            IsBusy = false;
+            RefreshCommandStates();
+
+            // The group and its members are deliberately not reloaded away: removing the service does
+            // not touch them, and the next installation reuses exactly what is there.
+            ReloadService();
+        }
+    }
+
+    /// <summary>The last registration failure, kept for the diagnostics list rather than the card.</summary>
+    private string? _installFailure;
+
+    // ---------------------------------------------------------------- what the machine reports
+
+    /// <summary>
+    /// The start type in words, from the typed value rather than the raw string Windows returned, so
+    /// the two cultures say it rather than echoing an English WMI token.
+    /// </summary>
+    public string ServiceStartTypeText => _serviceState.StartType switch
+    {
+        AgentServiceStartType.Boot => Strings["Service.StartType.Boot"],
+        AgentServiceStartType.System => Strings["Service.StartType.System"],
+        AgentServiceStartType.Automatic => Strings["Service.StartType.Automatic"],
+        AgentServiceStartType.Manual => Strings["Service.StartType.Manual"],
+        AgentServiceStartType.Disabled => Strings["Service.StartType.Disabled"],
+        _ => Strings["About.Unknown"],
+    };
+
+    /// <summary>
+    /// The account the service runs as. An account name is not a credential and nothing here reads,
+    /// stores or displays a password.
+    /// </summary>
+    public string ServiceAccountText =>
+        string.IsNullOrWhiteSpace(_serviceState.Account) ? Strings["About.Unknown"] : _serviceState.Account;
+
+    /// <summary>
+    /// The transports that are on, named the way the transport card names them, from the edited state
+    /// rather than the file - this reports what the window would save, not a second reading.
+    /// </summary>
+    public string ActiveTransportsText
+    {
+        get
+        {
+            var active = new List<string>(2);
+            if (NamedPipeEnabled) active.Add(Strings["Transport.NamedPipe"]);
+            if (HttpsEnabled) active.Add(Strings["Transport.Https"]);
+            return active.Count == 0 ? Strings["Settings.Agent.None"] : string.Join(", ", active);
+        }
+    }
+
+    /// <summary>The port, or nothing at all when the transport that uses it is off.</summary>
+    public string HttpsPortText => HttpsEnabled
+        ? HttpsPort.ToString(CultureInfo.InvariantCulture)
+        : Strings["Settings.Agent.None"];
+
+    // ---------------------------------------------------------------- about
+
+    /// <summary>The product version, from the assembly that is actually running.</summary>
+    public string AboutVersion =>
+        typeof(AgentConfigViewModel).Assembly.GetName().Version?.ToString(3) ?? Strings["About.Unknown"];
+
+    /// <summary>
+    /// The build, which is the commit the version was stamped from rather than the version again.
+    ///
+    /// An informational version reads "1.0.1+bd49437e6f63249..." - correct, and forty characters of
+    /// it are a number nobody reads at that length. The version is already on the line above, so what
+    /// is useful here is the part after the plus: short enough to take in at a glance, long enough to
+    /// find. A build with no commit metadata shows the version it does have rather than nothing.
+    /// </summary>
+    public string AboutBuild => ShortenBuild(
+        typeof(AgentConfigViewModel).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+            .FirstOrDefault()?.InformationalVersion,
+        AboutVersion);
+
+    /// <summary>
+    /// The commit out of an informational version, abbreviated. Separated from the property so the
+    /// policy can be exercised against strings this build does not happen to produce.
+    /// </summary>
+    internal static string ShortenBuild(string? informational, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(informational)) return fallback;
+
+        var plus = informational.IndexOf('+', StringComparison.Ordinal);
+        if (plus < 0 || plus == informational.Length - 1) return informational;
+
+        var metadata = informational[(plus + 1)..];
+        return metadata.Length <= ShortCommitLength ? metadata : metadata[..ShortCommitLength];
+    }
+
+    /// <summary>Seven characters, which is what Git itself abbreviates to.</summary>
+    private const int ShortCommitLength = 7;
+
+    /// <summary>Read from the same inventory the diagnostics list reports, so the two cannot disagree.</summary>
+    public string AboutDotNetRuntime => _machine.DotNetRuntimeVersion ?? Strings["About.Unknown"];
+
+    public string AboutAspNetCoreRuntime => _machine.AspNetCoreRuntimeVersion ?? Strings["About.Unknown"];
+
+    public string AboutDeveloper => "Marcelo Pacheco";
+
+    /// <summary>
+    /// The address the link opens, shown as text so the target is visible before it is followed and
+    /// still reachable on a machine with no browser installed.
+    /// </summary>
+    public string AboutProjectPageUrl => _projectPage?.ProjectPageUrl ?? string.Empty;
+
+    public bool CanOpenProjectPage => _projectPage is not null;
+
+    [ObservableProperty]
+    private bool _projectPageFailed;
+
+    /// <summary>
+    /// Opens the product's own project page. No parameter, here or in the contract: there is one
+    /// address, it is a constant in the launcher, and this command cannot name another.
+    /// </summary>
+    [RelayCommand]
+    private void OpenProjectPage()
+    {
+        if (_projectPage is null) return;
+
+        ProjectPageFailed = !_projectPage.OpenProjectPage();
+    }
+
+    /// <summary>
+    /// Whether the service control manager answered when asked how the service is configured.
+    ///
+    /// Three outcomes, kept apart on purpose. A service that is not installed has no configuration to
+    /// read and is not a failure; a configuration that was read is reported with its values; and a
+    /// read that failed says so and carries the Win32 code, which is the difference between "access
+    /// denied" and "the service is gone" and the only thing that tells an administrator which it was.
+    ///
+    /// This exists because the Agent panel showed "Unknown" for the start mode and the account with
+    /// nothing anywhere to say why. Unknown is the honest answer there - and the reason belongs
+    /// somewhere, which is here.
+    /// </summary>
+    private AgentStatusItemViewModel DescribeServiceConfiguration()
+    {
+        var label = Strings["Diagnostics.ServiceConfiguration"];
+
+        if (!_serviceState.IsInstalled)
+        {
+            return AgentStatusItemViewModel.From(
+                Strings, label, AgentDiagnosticState.NotConfigured, Strings["Diagnostics.NotInstalled"]);
+        }
+
+        if (ServiceConfigurationWasRead)
+        {
+            // Read, and correct - but not necessarily what an operator wants. A service set to
+            // Manual or Disabled is configured perfectly well and will simply not be there after a
+            // reboot, which is worth a raised eyebrow on a panel whose job is to say whether this
+            // machine is ready. It is not an error: nothing failed, and somebody chose it.
+            return AgentStatusItemViewModel.From(
+                Strings,
+                label,
+                StartsWithoutAsking ? AgentDiagnosticState.Ready : AgentDiagnosticState.Attention,
+                $"{ServiceStartTypeText} · {ServiceAccountText}",
+                technicalDetail: _serviceState.Failure);
+        }
+
+        return AgentStatusItemViewModel.From(
+            Strings, label, AgentDiagnosticState.Attention,
+            Strings["Diagnostics.ServiceConfiguration.Failed"],
+            technicalDetail: _serviceState.Failure ?? Strings["Diagnostics.ServiceConfiguration.NoDetail"]);
+    }
+
+    /// <summary>
+    /// Whether the configuration query produced values rather than the absence of them.
+    ///
+    /// Both fields, because the query fills both or neither: an unknown start type beside a named
+    /// account would mean something stranger than a failed read, and reporting either half as a
+    /// success would be the guess this window exists to avoid.
+    /// </summary>
+    private bool ServiceConfigurationWasRead =>
+        _serviceState.StartType is not AgentServiceStartType.Unknown
+        && !string.IsNullOrWhiteSpace(_serviceState.Account);
+
+    /// <summary>
+    /// Whether Windows brings the service up on its own.
+    ///
+    /// Boot and System are earlier than Automatic rather than different from it - all three mean the
+    /// agent is there after a restart without anybody logging in, which is the question this answers.
+    /// Manual and Disabled mean it is not. Unknown never reaches here: an unread configuration is a
+    /// failed query, and that has an answer of its own rather than being folded in as "not
+    /// automatic".
+    /// </summary>
+    private bool StartsWithoutAsking => _serviceState.StartType
+        is AgentServiceStartType.Boot
+        or AgentServiceStartType.System
+        or AgentServiceStartType.Automatic;
+
     private void RebuildDiagnostics()
     {
         Diagnostics.Clear();
@@ -2196,8 +3639,26 @@ public sealed partial class AgentConfigViewModel : ObservableObject
 
         Diagnostics.Add(AgentStatusItemViewModel.From(
             Strings, Strings["Diagnostics.AgentRegistered"],
-            _serviceState.IsInstalled ? AgentDiagnosticState.Ready : AgentDiagnosticState.Error,
-            _serviceState.IsInstalled ? ServiceStateText : Strings["Diagnostics.NotInstalled"]));
+            !_serviceState.IsInstalled
+                ? AgentDiagnosticState.Error
+                : string.IsNullOrWhiteSpace(_serviceState.Failure)
+                    ? AgentDiagnosticState.Ready
+                    : AgentDiagnosticState.Attention,
+            _serviceState.IsInstalled ? ServiceStateText : Strings["Diagnostics.NotInstalled"],
+            technicalDetail: _serviceState.Failure));
+
+        Diagnostics.Add(DescribeServiceConfiguration());
+
+        if (_installFailure is { } installFailure)
+        {
+            // Only after an attempt, and only when it failed. A registration that worked is reported
+            // by the service rows above, which now describe a service that exists.
+            Diagnostics.Add(AgentStatusItemViewModel.From(
+                Strings, Strings["Diagnostics.ServiceInstall"],
+                AgentDiagnosticState.Error,
+                Strings["Diagnostics.ServiceInstall.Failed"],
+                technicalDetail: installFailure));
+        }
 
         Diagnostics.Add(AgentStatusItemViewModel.From(
             Strings, Strings["Diagnostics.Nut"],

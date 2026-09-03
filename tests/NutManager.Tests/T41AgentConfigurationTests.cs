@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -43,16 +44,27 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
-    public void AgentConfigIsPublishedAndOwnedByTheAgentMsi()
+    public void TheAgentMsiInstallsOneExecutableAndStartsItInTwoModes()
     {
+        // The service and the configuration window are one file now, told apart by one argument, and the
+        // installer is where that has to be exact. A ServiceInstall without --service would register a
+        // service that tries to open a window in session 0, and a shortcut without --config would hand an
+        // operator a shortcut that starts a service host with no console and nothing to show.
         var script = Read("scripts/build-release.ps1");
         var package = Read("installer/Agent/Package.wxs");
 
-        Assert.Contains("src\\NutManager.Agent.Config\\NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
-        Assert.Contains("NutManager.Agent.Config.exe", script, StringComparison.Ordinal);
-        Assert.Contains("NutManager.Agent.Config.exe", package, StringComparison.Ordinal);
+        Assert.DoesNotContain("NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        // The release script may still name the retired executable, but only in order to refuse it.
+        Assert.Contains("retired Agent Config apphost file", script, StringComparison.Ordinal);
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
+        var authoredPackage = WithoutComments(package);
+        Assert.DoesNotContain("NutManager.Agent.Config.exe", authoredPackage, StringComparison.Ordinal);
+        Assert.DoesNotContain("AgentConfigExecutableFile", authoredPackage, StringComparison.Ordinal);
+
+        Assert.Contains("Arguments=\"--service\"", package, StringComparison.Ordinal);
         Assert.Contains("AgentConfigStartMenuShortcut", package, StringComparison.Ordinal);
-        Assert.Contains("Target=\"[#AgentConfigExecutableFile]\"", package, StringComparison.Ordinal);
+        Assert.Contains("Target=\"[#AgentExecutableFile]\"", package, StringComparison.Ordinal);
+        Assert.Contains("Arguments=\"--config\"", package, StringComparison.Ordinal);
         Assert.Contains("On=\"uninstall\"", package, StringComparison.Ordinal);
     }
 
@@ -86,17 +98,31 @@ public sealed class T41InstallerAndPackagingTests
     }
 
     [Fact]
-    public void AgentConfigStaysFrameworkDependentAndCannotAddWindowsDesktop()
+    public void AgentConfigIsALibraryInsideTheAgentHostAndAddsNoSharedFramework()
     {
+        // The configuration window has no apphost of its own any more: it is a module the agent host
+        // starts. The WindowsDesktop guard outlives that change, because WPF or WinForms here would still
+        // add a third shared framework the Agent installer neither detects nor downloads.
         var project = Read("src/NutManager.Agent.Config/NutManager.Agent.Config.csproj");
+        var host = Read("src/NutManager.Agent/NutManager.Agent.csproj");
         var script = Read("scripts/build-release.ps1");
 
-        Assert.Contains("<SelfContained>false</SelfContained>", project, StringComparison.Ordinal);
         var authoredProject = WithoutComments(project);
+        Assert.Contains("<OutputType>Library</OutputType>", authoredProject, StringComparison.Ordinal);
+        Assert.DoesNotContain("ApplicationManifest", authoredProject, StringComparison.Ordinal);
+        Assert.Contains("<SelfContained>false</SelfContained>", project, StringComparison.Ordinal);
         Assert.DoesNotContain("Microsoft.WindowsDesktop.App", authoredProject, StringComparison.Ordinal);
         Assert.DoesNotContain("UseWPF", authoredProject, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("UseWindowsForms", authoredProject, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Agent Config introduced an unsupported shared framework", script, StringComparison.Ordinal);
+
+        // The window is launched by hand, so the one apphost must not be a console binary, and the
+        // elevation manifest has to follow the apphost rather than stay with the library.
+        var authoredHost = WithoutComments(host);
+        Assert.Contains("<OutputType>WinExe</OutputType>", authoredHost, StringComparison.Ordinal);
+        Assert.Contains("app.manifest", authoredHost, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.csproj", authoredHost, StringComparison.Ordinal);
+
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
         Assert.Contains("Microsoft.NETCore.App", script, StringComparison.Ordinal);
     }
 
@@ -120,10 +146,15 @@ public sealed class T41InstallerAndPackagingTests
         var script = Read("scripts/build-agent-test-package.ps1");
 
         Assert.Contains("src\\NutManager.Agent\\NutManager.Agent.csproj", script, StringComparison.Ordinal);
-        Assert.Contains("src\\NutManager.Agent.Config\\NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        // One publish, one apphost. The second publish and the hash-reconciled merge that used to follow
+        // it existed only to get two executables into one directory.
+        Assert.DoesNotContain("NutManager.Agent.Config.csproj", script, StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(script, "dotnet publish", RegexOptions.IgnoreCase));
         Assert.Single(Regex.Matches(script, "--self-contained false", RegexOptions.IgnoreCase));
         Assert.Contains("GetRelativePath", script, StringComparison.Ordinal);
-        Assert.Contains("different versions of", script, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.exe", script, StringComparison.Ordinal);
+        Assert.Contains("must contain exactly one executable", script, StringComparison.Ordinal);
+        Assert.Contains("NutManager.Agent.Config.dll", script, StringComparison.Ordinal);
 
         foreach (var marker in new[] { "coreclr.dll", "hostfxr.dll", "hostpolicy.dll", "System.Private.CoreLib.dll" })
         {
@@ -350,11 +381,17 @@ public sealed class T41InstallerAndPackagingTests
 
         var diagnostics = window.IndexOf("<!-- ================================================ diagnostics -->", StringComparison.Ordinal);
         var firstScrollViewer = window.IndexOf("<ScrollViewer", StringComparison.Ordinal);
-        var operators = window.IndexOf("Group administration remains available", StringComparison.Ordinal);
+        var users = window.IndexOf(
+            "<!-- ================================================================ users -->", StringComparison.Ordinal);
         Assert.True(firstScrollViewer > diagnostics,
             "The fixed 800x600 configuration surface must not depend on a page-level ScrollViewer.");
-        Assert.True(diagnostics >= 0 && operators > diagnostics,
-            "Operators administration must remain available without changing the reference configuration surface.");
+
+        // Operators administration moved off diagnostics, then off the page it briefly had, and is
+        // now the Users panel of the settings surface. It is still in this window and still after the
+        // reference surface, which is what this assertion protects.
+        Assert.True(diagnostics >= 0 && users > diagnostics,
+            "The authorized users must remain available without changing the reference configuration surface.");
+        Assert.DoesNotContain("Group administration remains available", window, StringComparison.Ordinal);
 
         Assert.Contains("DataTransferItem", codeBehind, StringComparison.Ordinal);
         Assert.Contains("DataFormat.Text", codeBehind, StringComparison.Ordinal);
@@ -390,8 +427,13 @@ public sealed class T41InstallerAndPackagingTests
     {
         var files = new[]
         {
-            "src/NutManager.Agent.Config/Program.cs",
+            "src/NutManager.Agent.Config/AgentConfigHost.cs",
             "src/NutManager.Agent.Config/App.axaml.cs",
+
+            // The unified host joins the guard: it is the one place that decides between two
+            // privileged modes, and the mode switch must never become a way to run something else.
+            "src/NutManager.Agent/Program.cs",
+            "src/NutManager.Agent/AgentExecutionMode.cs",
             "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentServiceAdministration.cs",
             "src/NutManager.Infrastructure/AgentConfiguration/WindowsAgentOperatorsGroupAdministration.cs",
@@ -484,11 +526,15 @@ public sealed class T41AgentConfigSurfaceTests
     }
 
     /// <summary>
-    /// The reset is a small control in the HTTPS card, and it is not the old disable button under a
-    /// new name: that one, and the status badge beside the title, both stay gone.
+    /// Reset lives in Settings, not on the HTTPS card, and it is still not the old disable button
+    /// under a new name: that one, and the status badge beside the title, both stay gone.
+    ///
+    /// The card was the wrong home for it. The one action that tears down the SSL binding, the URL
+    /// reservation and the firewall rule sat directly above the fields it clears, one row from the
+    /// checkbox that merely turns the transport off. In Settings it is reached deliberately.
     /// </summary>
     [Fact]
-    public void ResetHttpsIsASmallControlInTheHttpsCardAndNotTheOldDisableButton()
+    public void ResetHttpsHasNoButtonAnywhereInTheWindow()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
@@ -496,106 +542,131 @@ public sealed class T41AgentConfigSurfaceTests
         var fields = window.IndexOf("x:Name=\"HttpsEditorFields\"", card, StringComparison.Ordinal);
         var header = window[card..fields];
 
-        Assert.Contains("Command=\"{Binding ResetHttpsCommand}\"", header, StringComparison.Ordinal);
-        Assert.Contains("IsEnabled=\"{Binding CanResetHttps}\"", header, StringComparison.Ordinal);
-        Assert.Contains("ToolTip.Tip=\"{Binding HttpsResetToolTip}\"", header, StringComparison.Ordinal);
-        Assert.Contains("Classes=\"agent-reset-https\"", header, StringComparison.Ordinal);
+        Assert.DoesNotContain("ResetHttpsCommand", header, StringComparison.Ordinal);
 
-        // Not the filled danger treatment: that belongs to the affirmative button inside the
-        // confirmation, where the operator has already been told what will happen.
-        Assert.DoesNotContain("nut-danger", header, StringComparison.Ordinal);
+        // It left the HTTPS card first, and now the settings surface. Disabling the transport already
+        // offers to remove the same resources under the same ownership rules and the same
+        // confirmation, so a standalone reset was a second way to do one thing rather than a second
+        // thing to do.
+        Assert.Empty(Regex.Matches(window, "Command=\"{Binding ResetHttpsCommand}\""));
+        Assert.DoesNotContain("x:Name=\"SettingsResetHttps\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("HttpsResetToolTip", window, StringComparison.Ordinal);
 
         Assert.DoesNotContain("Https.Disable", window, StringComparison.Ordinal);
         Assert.DoesNotContain("HttpsStatusText", header, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The theme control is one circular button between the language selector and Diagnostics, and
-    /// it is not a switch of any kind.
+    /// The theme control in Appearance is the desktop application segmented pill, not a switch.
     ///
-    /// Circular is asserted through the shape rather than through a screenshot: equal width and
-    /// height with a radius far beyond half of either is a disc at any scaling, whereas a rounded
-    /// rectangle is what you get the moment somebody drops the explicit size.
+    /// It was a circular button in the header whose glyph showed the theme it would move to. Correct,
+    /// and a control that says only one of the two things it does. This is the control NutManager
+    /// already has: a pill holding a sun and a moon, the current one filled.
+    ///
+    /// The preferences are out of the header entirely now; the gear is what took their place.
     /// </summary>
     [Fact]
-    public void TheThemeControlIsOneCircularButtonBetweenLanguageAndDiagnostics()
+    public void TheThemeControlIsTheSegmentedPillInAppearance()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
 
         var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
         var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
-        var markup = window[header..surface];
+        var headerMarkup = window[header..surface];
 
-        var language = markup.IndexOf("Classes=\"agent-language-selector\"", StringComparison.Ordinal);
-        var theme = markup.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
-        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-theme-toggle", headerMarkup, StringComparison.Ordinal);
+        Assert.DoesNotContain("agent-language-selector", headerMarkup, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"SettingsButton\"", headerMarkup, StringComparison.Ordinal);
 
-        Assert.True(language >= 0, "The header must keep the single language selector.");
-        Assert.True(theme > language, "The theme button belongs after the language selector.");
-        Assert.True(diagnostics > theme, "The theme button belongs before Diagnostics.");
+        var toggle = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
+        Assert.True(toggle > surface, "The theme control belongs in the settings surface.");
 
-        Assert.Contains("Command=\"{Binding ToggleThemeCommand}\"", markup, StringComparison.Ordinal);
+        // Two halves, each selecting its own theme outright rather than flipping whatever is current.
+        var pill = window[toggle..(toggle + 2600)];
+        Assert.Contains("Classes=\"agent-theme-toggle\"", pill, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(pill, "Classes=\"agent-theme-option").Count);
+        Assert.Contains("Command=\"{Binding SelectLightThemeCommand}\"", pill, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding SelectDarkThemeCommand}\"", pill, StringComparison.Ordinal);
 
-        // Never a switch, a checkbox or a segmented pair.
-        Assert.DoesNotContain("ToggleSwitch", window, StringComparison.Ordinal);
-        Assert.DoesNotContain("<CheckBox", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
+        // The filled half is the theme you are in: the sun is lit while the offer is to go dark.
+        Assert.Contains("Classes.selected=\"{Binding ShowDarkThemeAction}\"", pill, StringComparison.Ordinal);
+        Assert.Contains("Classes.selected=\"{Binding ShowLightThemeAction}\"", pill, StringComparison.Ordinal);
 
-        var style = window[window.IndexOf("Button.agent-theme-button\"", StringComparison.Ordinal)..];
-        Assert.Contains("<Setter Property=\"Width\" Value=\"36\" />", style, StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"Height\" Value=\"36\" />", style, StringComparison.Ordinal);
-        Assert.Contains("<Setter Property=\"CornerRadius\" Value=\"999\" />", style, StringComparison.Ordinal);
+        // Never a switch for the theme. The one ToggleSwitch left is the startup preference, which is
+        // a machine setting with two states rather than a choice between two named things.
+        Assert.Single(Regex.Matches(window, "<ToggleSwitch"));
+        Assert.Contains("x:Name=\"StartWithWindowsSwitch\"", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
     }
 
     /// <summary>
-    /// The glyph is the action, not the state, and the markup is where that is decided: the sun is
-    /// shown when the button offers light, the moon when it offers dark. Reversing these two bindings
-    /// is the whole failure mode of this control.
+    /// The pill is the desktop application one, to the value: same sizes, same brushes, same glyph
+    /// movement. Mirrored rather than linked, because NutShellStyles is the desktop shell and depends
+    /// on controls this utility does not have - so a test is what keeps the two from drifting.
     /// </summary>
     [Fact]
-    public void TheThemeGlyphShowsTheActionRatherThanTheCurrentTheme()
-    {
-        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
-
-        var button = window.IndexOf("x:Name=\"ThemeToggle\"", StringComparison.Ordinal);
-        var end = window.IndexOf("</Button>", button, StringComparison.Ordinal);
-        var markup = window[button..end];
-
-        var sun = markup.IndexOf("NutIconSun", StringComparison.Ordinal);
-        var moon = markup.IndexOf("NutIconMoon", StringComparison.Ordinal);
-        Assert.True(sun >= 0 && moon >= 0, "Both glyphs must be present.");
-
-        // The sun sits under ShowLightThemeAction and the moon under ShowDarkThemeAction.
-        var sunGate = markup.LastIndexOf("IsVisible=", sun, StringComparison.Ordinal);
-        var moonGate = markup.LastIndexOf("IsVisible=", moon, StringComparison.Ordinal);
-        Assert.Contains("ShowLightThemeAction", markup[sunGate..sun], StringComparison.Ordinal);
-        Assert.Contains("ShowDarkThemeAction", markup[moonGate..moon], StringComparison.Ordinal);
-
-        // Tooltip and accessible name are the action, and they are the same string.
-        Assert.Contains("ToolTip.Tip=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"{Binding ThemeActionText}\"", markup, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// The glyph movement is the desktop application's, to the millisecond. Reused values rather than
-    /// a second animation that merely looks similar.
-    /// </summary>
-    [Fact]
-    public void TheThemeGlyphUsesTheDesktopMotionValues()
+    public void TheThemePillUsesTheDesktopValues()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
         var shell = Read("src/NutManager.App/Presentation/Themes/NutShellStyles.axaml");
 
         foreach (var expected in new[]
         {
+            "<Setter Property=\"Width\" Value=\"34\" />",
+            "<Setter Property=\"Height\" Value=\"30\" />",
             "<TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.34\" Easing=\"CubicEaseOut\" />",
             "rotate(45deg) scale(1.08)",
             "rotate(-18deg) scale(1.06)",
+            "NutWarningSoftBrush",
+            "NutAccentSoftBrush",
         })
         {
             Assert.Contains(expected, shell, StringComparison.Ordinal);
             Assert.Contains(expected, window, StringComparison.Ordinal);
         }
+    }
+
+    /// <summary>
+    /// The gear turns under the pointer, and only when the pointer is on the gear.
+    ///
+    /// The shared rule is ":pointerover PathIcon.nut-icon-gear" - an ancestor selector with nothing in
+    /// front of it, so it matches whenever any ancestor is hovered. In the desktop shell the nearest
+    /// hoverable ancestor is a navigation item; here the window itself is one, so pointing anywhere in
+    /// the application turned the gear. The values stay shared; only the scope is fixed.
+    /// </summary>
+    [Fact]
+    public void TheSettingsGearTurnsOnlyWhenThePointerIsOnIt()
+    {
+        var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var styles = Read("src/NutManager.App/Presentation/Themes/NutControlStyles.axaml");
+
+        // The shared definition, and the transition that carries it.
+        Assert.Contains("<Style Selector=\"PathIcon.nut-icon-gear\">", styles, StringComparison.Ordinal);
+        Assert.Contains("rotate(25deg)", styles, StringComparison.Ordinal);
+        Assert.Contains(
+            "<TransformOperationsTransition Property=\"RenderTransform\" Duration=\"0:0:0.22\" Easing=\"CubicEaseOut\" />",
+            styles,
+            StringComparison.Ordinal);
+
+        // The button wears the shared class, and takes the shared angle.
+        var gear = window.IndexOf("x:Name=\"SettingsButton\"", StringComparison.Ordinal);
+        var closing = window.IndexOf("</Button>", gear, StringComparison.Ordinal);
+        Assert.Contains("Classes=\"nut-icon-gear\"", window[gear..closing], StringComparison.Ordinal);
+        Assert.Contains(
+            "<Style Selector=\"Button.agent-settings-button:pointerover PathIcon.nut-icon-gear\">",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("rotate(25deg)", window, StringComparison.Ordinal);
+
+        // Hovering the window at large leaves it at rest.
+        Assert.Contains(
+            "<Style Selector=\"Window:pointerover PathIcon.nut-icon-gear\">",
+            window,
+            StringComparison.Ordinal);
+
+        // Never a loop: nothing here repeats.
+        Assert.DoesNotContain("IterationCount", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("RepeatBehavior", window, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -967,29 +1038,54 @@ public sealed class T41AgentConfigSurfaceTests
         Assert.DoesNotContain("<Animation", markup, StringComparison.Ordinal);
     }
 
-    /// <summary>The language selector sits beside diagnostics and offers exactly what ships.</summary>
+    /// <summary>
+    /// The language selector is the desktop application control, showing what the desktop shows:
+    /// each language written in its own name.
+    ///
+    /// It used to be a flyout labelled "PT-BR", which names a culture code rather than a language.
+    /// The flyout existed because a list control assigns its selection while it materialises, and
+    /// that assignment once overwrote a saved preference - which is handled in the view model now,
+    /// so the control can be the ordinary ComboBox the desktop uses.
+    /// </summary>
     [Fact]
-    public void TheLanguageSelectorSitsBesideDiagnostics()
+    public void TheLanguageSelectorIsAComboBoxOfLanguageNames()
     {
         var window = Read("src/NutManager.Agent.Config/Views/MainWindow.axaml");
+        var strings = Read("src/NutManager.Agent.Config/Localization/AgentConfigStrings.cs");
+        var desktop = Read("src/NutManager.App/Views/SettingsPageView.axaml");
 
-        var header = window.IndexOf("x:Name=\"AgentMainHeader\"", StringComparison.Ordinal);
-        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", header, StringComparison.Ordinal);
-        var markup = window[header..surface];
+        var surface = window.IndexOf("x:Name=\"ConfigurationSurface\"", StringComparison.Ordinal);
+        var selector = window.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
+        Assert.True(selector > surface, "The language selector belongs in the settings surface.");
 
-        var selector = markup.IndexOf("x:Name=\"LanguageSelector\"", StringComparison.Ordinal);
-        var diagnostics = markup.IndexOf("Command=\"{Binding ToggleDiagnosticsCommand}\"", StringComparison.Ordinal);
+        var markup = window[selector..(selector + 1200)];
+        Assert.Contains("ItemsSource=\"{Binding LanguageOptions}\"", markup, StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{Binding SelectedLanguageOption, Mode=TwoWay}\"",
+            markup,
+            StringComparison.Ordinal);
+        Assert.Contains("Text=\"{Binding Title}\"", markup, StringComparison.Ordinal);
 
-        Assert.True(selector >= 0, "The header must carry the language selector.");
-        Assert.True(diagnostics > selector, "The language selector belongs beside the diagnostics button.");
-        Assert.Contains("<MenuFlyout", markup, StringComparison.Ordinal);
-        Assert.Contains("Header=\"{Binding Strings[Language.Portuguese]}\"", markup, StringComparison.Ordinal);
-        Assert.Contains("Header=\"{Binding Strings[Language.English]}\"", markup, StringComparison.Ordinal);
-        Assert.Equal(2, Regex.Matches(markup, "ToggleType=\"Radio\"").Count);
-        Assert.Contains("Text=\"{Binding SelectedLanguageCode}\"", markup, StringComparison.Ordinal);
-        Assert.DoesNotContain("<RadioButton", markup, StringComparison.Ordinal);
-        Assert.Single(Regex.Matches(markup, "SelectedLanguageCode"));
+        // The same width the desktop gives its own preference dropdowns.
+        Assert.Contains("Width=\"200\"", markup, StringComparison.Ordinal);
+        Assert.Contains("Width=\"200\"", desktop, StringComparison.Ordinal);
+
+        // The culture code is gone from the window entirely, and the names are autonyms: both
+        // cultures spell them the same way, because a language is called what it calls itself.
+        Assert.DoesNotContain("SelectedLanguageCode", window, StringComparison.Ordinal);
+
+        // The control itself, not the comment above it: the markup explains at length that "PT-BR"
+        // is what this used to show, and that sentence is not the label coming back.
+        Assert.DoesNotContain("PT-BR", markup, StringComparison.Ordinal);
+        Assert.Equal(2, Regex.Matches(strings, Regex.Escape("Português (Brasil)")).Count);
+        Assert.Equal(2, Regex.Matches(strings, Regex.Escape("English (United States)")).Count);
+
+        // One selector, and no radio flyout left behind.
+        Assert.Single(Regex.Matches(window, "x:Name=\"LanguageSelector\""));
+        Assert.DoesNotContain("<MenuFlyout", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("<RadioButton", window, StringComparison.Ordinal);
     }
+
 
     private static string Read(string relativePath) =>
         File.ReadAllText(Path.Combine(RepositoryRoot(), relativePath));
@@ -1056,7 +1152,7 @@ public sealed class T41AgentTransportAndCertificateTests
         {
             NamedPipeEnabled = false,
             HttpsEnabled = true,
-            HttpsPrefix = "https://gandalf.sbra.local:5199/",
+            HttpsPrefix = "https://nut-server.example.local:5199/",
             CertificateThumbprint = Thumbprint,
         };
 
@@ -1110,11 +1206,11 @@ public sealed class T41AgentTransportAndCertificateTests
     }
 
     [Theory]
-    [InlineData("gandalf.sbra.local", "gandalf.sbra.local", true)]
-    [InlineData("*.sbra.local", "gandalf.sbra.local", true)]
-    [InlineData("*.sbra.local", "a.gandalf.sbra.local", false)]
-    [InlineData("*.sbra.local", "sbra.local", false)]
-    [InlineData("other.sbra.local", "gandalf.sbra.local", false)]
+    [InlineData("nut-server.example.local", "nut-server.example.local", true)]
+    [InlineData("*.example.local", "nut-server.example.local", true)]
+    [InlineData("*.example.local", "node.nut-server.example.local", false)]
+    [InlineData("*.example.local", "example.local", false)]
+    [InlineData("other.example.local", "nut-server.example.local", false)]
     public void SubjectAlternativeNameMatchingHonorsSingleLabelWildcards(string certificateName, string host, bool expected)
     {
         Assert.Equal(expected, AgentCertificateRules.MatchesHost(Certificate(names: [certificateName]), host));
@@ -1228,7 +1324,7 @@ public sealed class T41AgentTransportAndCertificateTests
     [InlineData(AgentPrincipalKind.DeletedAccount, false)]
     public void OnlyResolvedUsersAndGroupsCanBecomeOperators(AgentPrincipalKind kind, bool expected)
     {
-        var resolution = new AgentIdentityResolution(true, "principal", "S-1-5-21-1000", kind, "SBRA", null);
+        var resolution = new AgentIdentityResolution(true, "principal", "S-1-5-21-1000", kind, "EXAMPLE", null);
 
         Assert.Equal(expected, resolution.IsAddable);
     }
@@ -1245,8 +1341,8 @@ public sealed class T41AgentTransportAndCertificateTests
         Assert.Equal(expected, state.CreationAffectsDirectory);
     }
 
-    private const string Host = "gandalf.sbra.local";
-    private const string Thumbprint = "A909502DD82AE41433E6F83886B00D4277A32A7B";
+    private const string Host = "nut-server.example.local";
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF01234567";
     private static readonly DateTimeOffset Now = new(2026, 8, 27, 12, 0, 0, TimeSpan.Zero);
 
     private static AgentCertificateSummary Certificate(
@@ -1610,7 +1706,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "wrong.sbra.local";
+        context.ViewModel.HttpsHost = "wrong.example.local";
 
         Assert.True(context.ViewModel.IsDirty);
         Assert.False(context.ViewModel.CanApply);
@@ -1653,7 +1749,7 @@ public sealed class T41AgentConfigViewModelTests
         var written = Assert.Single(context.Store.Writes);
         Assert.False(written.NamedPipeIsEnabled);
         Assert.True(written.HttpsEnabled);
-        Assert.Equal("https://gandalf.sbra.local:5199/", written.HttpsPrefix);
+        Assert.Equal("https://nut-server.example.local:5199/", written.HttpsPrefix);
         Assert.Equal(["resources.apply", "store.write"], context.Events);
     }
 
@@ -1721,9 +1817,9 @@ public sealed class T41AgentConfigViewModelTests
     {
         var context = CreateContext(groupExists: true);
         context.Groups.AddResult = new AgentMembershipResult(
-            AgentMembershipOutcome.AlreadyMember, @"SBRA\operator");
+            AgentMembershipOutcome.AlreadyMember, @"EXAMPLE\operator");
         await context.ViewModel.RefreshAsync();
-        context.ViewModel.NewMemberAccount = @"SBRA\operator";
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\operator";
 
         context.ViewModel.AddMemberCommand.Execute(null);
 
@@ -1986,7 +2082,7 @@ public sealed class T41AgentConfigViewModelTests
     [Fact]
     public async Task CertificatesSharingANameStayDistinguishable()
     {
-        const string Subject = "CN=nut-server.example.local";
+        const string Subject = "CN=shared.example.local";
 
         var context = CreateContext();
         context.Certificates.Add(Certificate("AAAAAAAA11111111111111111111111111111111", Subject));
@@ -2493,7 +2589,7 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.True(context.ViewModel.IsToastVisible);
         Assert.Equal(AgentToastKind.Success, context.ViewModel.ToastKind);
-        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+        Assert.Equal("Copied!", context.ViewModel.ToastMessage);
     }
 
     /// <summary>
@@ -2510,7 +2606,7 @@ public sealed class T41AgentConfigViewModelTests
 
         Assert.True(context.ViewModel.IsToastVisible);
         Assert.Equal(AgentToastKind.Error, context.ViewModel.ToastKind);
-        Assert.Equal("The Endpoint could not be copied.", context.ViewModel.ToastMessage);
+        Assert.Equal("Could not copy.", context.ViewModel.ToastMessage);
     }
 
     [Fact]
@@ -2520,10 +2616,10 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.ReportEndpointCopy(succeeded: true);
-        Assert.Equal("Endpoint copiado", context.ViewModel.ToastMessage);
+        Assert.Equal("Copiado!", context.ViewModel.ToastMessage);
 
         context.ViewModel.ReportEndpointCopy(succeeded: false);
-        Assert.Equal("Não foi possível copiar o Endpoint.", context.ViewModel.ToastMessage);
+        Assert.Equal("Não foi possível copiar.", context.ViewModel.ToastMessage);
     }
 
     /// <summary>
@@ -2554,7 +2650,7 @@ public sealed class T41AgentConfigViewModelTests
     }
 
     /// <summary>
-    /// The copy confirmation is its own surface. Sharing the Apply banner would let "Endpoint copied"
+    /// The copy confirmation is its own surface. Sharing the Apply banner would let "Copied!"
     /// overwrite the reason an Apply was refused.
     /// </summary>
     [Fact]
@@ -2591,7 +2687,7 @@ public sealed class T41AgentConfigViewModelTests
         context.ViewModel.ReportEndpointCopy(succeeded: true);
 
         Assert.True(context.ViewModel.IsToastVisible);
-        Assert.Equal("Endpoint copied", context.ViewModel.ToastMessage);
+        Assert.Equal("Copied!", context.ViewModel.ToastMessage);
 
         // The first copy's timer comes due. It was superseded, so it must hide nothing.
         clock.Fire(0);
@@ -3211,7 +3307,7 @@ public sealed class T41AgentConfigViewModelTests
         await context.ViewModel.RefreshAsync();
 
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "other.sbra.local";
+        context.ViewModel.HttpsHost = "other.example.local";
         context.ViewModel.HttpsPort = 5199;
         context.ViewModel.SelectedCertificate = Assert.Single(context.ViewModel.Certificates);
 
@@ -3246,7 +3342,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.NotNull(context.ViewModel.HttpsHostValidationMessage);
         Assert.False(context.ViewModel.ShowCertificateFeedback);
 
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         context.ViewModel.HttpsPort = 0;
 
         Assert.False(context.ViewModel.HttpsHostHasError);
@@ -3261,16 +3357,16 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext();
         await context.ViewModel.RefreshAsync();
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         var imported = new AgentCertificateSummary(
-            "B909502DD82AE41433E6F83886B00D4277A32A7C",
-            "CN=gandalf.sbra.local",
+            "1123456789ABCDEF0123456789ABCDEF01234567",
+            "CN=nut-server.example.local",
             "CN=Imported Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["gandalf.sbra.local"]);
+            SubjectAlternativeNames: ["nut-server.example.local"]);
         context.Importer.Result = AgentCertificateImportResult.Imported(imported);
 
         var result = await context.ViewModel.ImportCertificateAsync("certificate.pfx", "transient-password");
@@ -3289,16 +3385,16 @@ public sealed class T41AgentConfigViewModelTests
         var context = CreateContext();
         await context.ViewModel.RefreshAsync();
         context.ViewModel.HttpsEnabled = true;
-        context.ViewModel.HttpsHost = "gandalf.sbra.local";
+        context.ViewModel.HttpsHost = "nut-server.example.local";
         var imported = new AgentCertificateSummary(
-            "C909502DD82AE41433E6F83886B00D4277A32A7D",
-            "CN=other.sbra.local",
+            "2123456789ABCDEF0123456789ABCDEF01234567",
+            "CN=other.example.local",
             "CN=Imported Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["other.sbra.local"]);
+            SubjectAlternativeNames: ["other.example.local"]);
         context.Importer.Result = AgentCertificateImportResult.Imported(imported);
 
         await context.ViewModel.ImportCertificateAsync("certificate.cer", password: null);
@@ -3341,7 +3437,7 @@ public sealed class T41AgentConfigViewModelTests
         Assert.Equal(Thumbprint, context.ViewModel.CertificateThumbprint);
     }
 
-    private const string Thumbprint = "A909502DD82AE41433E6F83886B00D4277A32A7B";
+    private const string Thumbprint = "0123456789ABCDEF0123456789ABCDEF01234567";
 
     private static TestContext CreateContext(
         AgentTransportConfigurationDocument? document = null,
@@ -3351,40 +3447,2813 @@ public sealed class T41AgentConfigViewModelTests
         FakePreferences? preferences = null,
         UiLanguagePreference? language = UiLanguagePreference.EnUs,
         bool withCertificate = true,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        FakeInventory? inventory = null,
+        FakeListener? listener = null)
     {
         var events = new List<string>();
         var store = new FakeStore(document ?? new AgentTransportConfigurationDocument(), events);
-        var groups = new FakeGroups(groupRole, groupExists);
-        var service = new FakeService(serviceState);
+        var groups = new FakeGroups(groupRole, groupExists, events);
+        var service = new FakeService(serviceState, events);
         var resources = new FakeResources(events);
         var certificate = new AgentCertificateSummary(
             Thumbprint,
-            "CN=gandalf.sbra.local",
+            "CN=nut-server.example.local",
             "CN=Test CA",
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1),
             HasPrivateKey: true,
             SupportsServerAuthentication: true,
-            SubjectAlternativeNames: ["gandalf.sbra.local"]);
+            SubjectAlternativeNames: ["nut-server.example.local"]);
         var certificates = withCertificate ? new FakeCertificates(certificate) : new FakeCertificates();
         var importer = new FakeCertificateImporter(certificates);
-        var inventory = new FakeInventory();
+        inventory ??= new FakeInventory();
         var uiPreferences = preferences ?? new FakePreferences();
+        listener ??= new FakeListener();
         var viewModel = new AgentConfigViewModel(
             store, groups, service, resources, certificates, inventory, language,
             timeProvider: clock,
             certificateImporter: importer,
-            preferences: uiPreferences);
+            preferences: uiPreferences,
+            listenerProbe: listener);
 
         return new TestContext(
-            viewModel, store, groups, service, resources, certificates, importer, events);
+            viewModel, store, groups, service, resources, certificates, importer, listener, events);
+    }
+
+    // ---------------------------------------------------------------- T42: settings presentation
+
+    /// <summary>
+    /// The start type and the account shown on the Agent tab are the ones the service control manager
+    /// reported, not defaults chosen by the screen.
+    ///
+    /// Both read "Desconhecido" on a real server while the service was installed and running, because
+    /// the values came from a WMI query that failed quietly. Nothing may put a plausible-looking value
+    /// in their place: an account this window invents is worse than one it admits it could not read.
+    /// </summary>
+    [Fact]
+    public async Task TheAgentTabReportsTheStartTypeAndAccountTheSnapshotCarries()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.Account = @"EXAMPLE\\svc_nutmanager";
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal(@"EXAMPLE\\svc_nutmanager", context.ViewModel.ServiceAccountText);
+    }
+
+    [Fact]
+    public async Task AnAutomaticServiceRunningAsLocalSystemReadsBackAsItself()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        // The same fact drives the startup switch, so the two tabs cannot disagree.
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>
+    /// A configuration that genuinely could not be read still says so. The fix was to stop the read
+    /// from failing, not to stop it from being able to fail.
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableServiceConfigurationSaysUnknownRatherThanGuessing()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        context.Service.Failure = "Win32 error 5: Access is denied.";
+        context.Service.QueryErrorCode = 5;
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.AgentRegistered"]);
+        Assert.Equal(AgentDiagnosticState.Attention, diagnostic.State);
+        Assert.Contains("Win32 error 5", diagnostic.TechnicalDetail, StringComparison.Ordinal);
+    }
+
+    /// <summary>The runtimes the inventory found are the runtimes About reports.</summary>
+    [Fact]
+    public async Task AboutReportsTheRuntimesTheInventoryFound()
+    {
+        var context = CreateContext();
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("10.0.0", context.ViewModel.AboutDotNetRuntime);
+        Assert.Equal("10.0.0", context.ViewModel.AboutAspNetCoreRuntime);
+    }
+
+    /// <summary>
+    /// A runtime that truly cannot be determined is reported as unknown. This is the fail-safe, and it
+    /// is meant to be rare: on a machine with the runtimes installed, both resolve.
+    /// </summary>
+    [Fact]
+    public async Task AbsentRuntimesFallBackToUnknown()
+    {
+        var context = CreateContext(inventory: new FakeInventory(dotNet: null, aspNetCore: null));
+
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.AboutDotNetRuntime);
+        Assert.Equal("Unknown", context.ViewModel.AboutAspNetCoreRuntime);
+    }
+
+    /// <summary>
+    /// Each half of the segmented control selects its own theme outright, and nothing else: it writes
+    /// a user preference and does not put the configuration draft into a state that needs applying.
+    /// </summary>
+    [Fact]
+    public async Task TheThemeControlWritesThePreferenceAndLeavesTheDraftAlone()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.SelectDarkThemeCommand.Execute(null);
+        Assert.Equal(ThemePreference.Dark, context.ViewModel.SelectedTheme);
+        Assert.True(context.ViewModel.IsDarkThemeSelected);
+
+        context.ViewModel.SelectLightThemeCommand.Execute(null);
+        Assert.Equal(ThemePreference.Light, context.ViewModel.SelectedTheme);
+        Assert.False(context.ViewModel.IsDarkThemeSelected);
+
+        Assert.False(context.ViewModel.IsDirty);
+    }
+
+    /// <summary>
+    /// The switch reports the theme as well as setting it, so reading it back cannot drift from what
+    /// was chosen.
+    /// </summary>
+    [Fact]
+    public void TheThemeControlReadsBackTheChosenTheme()
+    {
+        var context = CreateContext();
+
+        context.ViewModel.SelectedTheme = ThemePreference.Dark;
+        Assert.True(context.ViewModel.IsDarkThemeSelected);
+
+        context.ViewModel.SelectedTheme = ThemePreference.Light;
+        Assert.False(context.ViewModel.IsDarkThemeSelected);
+    }
+
+    /// <summary>Settings, the terms, and back - and the draft controls stay out of both.</summary>
+    [Fact]
+    public void TheTermsPageIsReachedFromSettingsAndReturnsToIt()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        Assert.True(viewModel.ShowConfiguration);
+        Assert.True(viewModel.ShowActionBar);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.OpenTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowTerms);
+        Assert.False(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.CloseTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.False(viewModel.ShowTerms);
+        Assert.False(viewModel.ShowActionBar);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+        Assert.True(viewModel.ShowActionBar);
+    }
+
+    /// <summary>Diagnostics is not settings: it keeps the draft controls it always had.</summary>
+    [Fact]
+    public void DiagnosticsKeepsTheDraftControls()
+    {
+        var context = CreateContext();
+
+        context.ViewModel.ToggleDiagnosticsCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ShowDiagnostics);
+        Assert.True(context.ViewModel.ShowActionBar);
+    }
+
+    // ---------------------------------------------------------------- T42: navigation and language
+
+    /// <summary>
+    /// The selector opens on the saved language and does not write anything on the way.
+    ///
+    /// This is the regression that made the control a flyout in the first place: a list control
+    /// assigns its selection while it materialises, and that assignment reached the preference store.
+    /// The saved value must survive a window that is merely opened and closed.
+    /// </summary>
+    [Fact]
+    public void OpeningTheWindowDoesNotWriteTheLanguagePreference()
+    {
+        var preferences = new FakePreferences(saved: UiLanguagePreference.EnUs);
+        var context = CreateContext(preferences: preferences, language: null);
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguage);
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguageOption?.Value);
+        Assert.Equal(0, preferences.Writes);
+        Assert.Equal(UiLanguagePreference.EnUs, preferences.Saved);
+    }
+
+    /// <summary>The list names each language in its own language, exactly as the desktop lists them.</summary>
+    [Fact]
+    public void TheLanguageListNamesEachLanguageInItself()
+    {
+        var context = CreateContext();
+
+        Assert.Collection(
+            context.ViewModel.LanguageOptions,
+            option =>
+            {
+                Assert.Equal(UiLanguagePreference.PtBr, option.Value);
+                Assert.Equal("Português (Brasil)", option.Title);
+            },
+            option =>
+            {
+                Assert.Equal(UiLanguagePreference.EnUs, option.Value);
+                Assert.Equal("English (United States)", option.Title);
+            });
+    }
+
+    /// <summary>
+    /// Choosing a language applies it at once and saves it, and touches nothing that belongs to the
+    /// configuration draft.
+    /// </summary>
+    [Fact]
+    public async Task ChoosingALanguageAppliesAndPersistsItWithoutTouchingTheDraft()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences, language: UiLanguagePreference.PtBr);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.SelectedLanguageOption =
+            context.ViewModel.LanguageOptions.Single(option => option.Value == UiLanguagePreference.EnUs);
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguage);
+        Assert.Equal("Settings", context.ViewModel.Strings["Settings.Title"]);
+        Assert.Equal(UiLanguagePreference.EnUs, preferences.Saved);
+        Assert.Equal(1, preferences.Writes);
+
+        // A window preference is not a configuration change.
+        Assert.False(context.ViewModel.IsDirty);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>A language set from elsewhere brings the selector with it, and is not echoed back.</summary>
+    [Fact]
+    public void TheSelectorFollowsALanguageChangedElsewhere()
+    {
+        var preferences = new FakePreferences();
+        var context = CreateContext(preferences: preferences, language: UiLanguagePreference.PtBr);
+
+        context.ViewModel.SelectedLanguage = UiLanguagePreference.EnUs;
+
+        Assert.Equal(UiLanguagePreference.EnUs, context.ViewModel.SelectedLanguageOption?.Value);
+        Assert.Equal(1, preferences.Writes);
+    }
+
+    /// <summary>
+    /// The header button offers the action that is actually available: settings from the configuration
+    /// surface and from diagnostics, home from settings and from the terms.
+    /// </summary>
+    [Fact]
+    public void TheHeaderButtonOffersSettingsUntilYouAreInThem()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        Assert.True(viewModel.ShowSettingsAction);
+        Assert.Equal("Settings", viewModel.HeaderActionText);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.True(viewModel.ShowHomeAction);
+        Assert.Equal("Home", viewModel.HeaderActionText);
+
+        // From the terms it still goes home, and home is the configuration surface - not settings.
+        viewModel.OpenTermsCommand.Execute(null);
+        Assert.True(viewModel.ShowHomeAction);
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+
+        // Diagnostics keeps its own labelled control for getting back, so the gear still offers the
+        // one thing it is for.
+        viewModel.ToggleDiagnosticsCommand.Execute(null);
+        Assert.True(viewModel.ShowDiagnostics);
+        Assert.True(viewModel.ShowSettingsAction);
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+    }
+
+    /// <summary>
+    /// Going home is navigation. An operator who edits a field, looks at a preference and comes back
+    /// finds the edit where they left it, with Apply still offering to save it.
+    /// </summary>
+    [Fact]
+    public async Task GoingHomeKeepsTheDraftExactlyAsItWas()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+
+        EnableValidHttps(context.ViewModel);
+        Assert.True(context.ViewModel.IsDirty);
+        Assert.True(context.ViewModel.CanApply);
+
+        var host = context.ViewModel.HttpsHost;
+        var port = context.ViewModel.HttpsPort;
+        var certificate = context.ViewModel.SelectedCertificate;
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowSettings);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowConfiguration);
+
+        Assert.True(context.ViewModel.IsDirty);
+        Assert.True(context.ViewModel.CanApply);
+        Assert.Equal(host, context.ViewModel.HttpsHost);
+        Assert.Equal(port, context.ViewModel.HttpsPort);
+        Assert.Same(certificate, context.ViewModel.SelectedCertificate);
+
+        // Nothing was saved and nothing was rolled back: the trip wrote no configuration at all.
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>
+    /// The panel you were reading is the panel you come back to. Nothing resets it to the first one.
+    /// </summary>
+    [Fact]
+    public void TheSettingsPanelSurvivesATripHome()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        viewModel.HeaderActionCommand.Execute(null);
+        viewModel.SelectAboutTabCommand.Execute(null);
+        Assert.True(viewModel.IsAboutTab);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowConfiguration);
+
+        viewModel.HeaderActionCommand.Execute(null);
+        Assert.True(viewModel.ShowSettings);
+        Assert.True(viewModel.IsAboutTab);
+        Assert.False(viewModel.IsGeneralTab);
+    }
+
+    /// <summary>One panel at a time, and always exactly one.</summary>
+    [Fact]
+    public void ExactlyOneSettingsPanelIsShown()
+    {
+        var context = CreateContext();
+        var viewModel = context.ViewModel;
+
+        foreach (var select in new Action[]
+                 {
+                     () => viewModel.SelectGeneralTabCommand.Execute(null),
+                     () => viewModel.SelectUsersTabCommand.Execute(null),
+                     () => viewModel.SelectAgentTabCommand.Execute(null),
+                     () => viewModel.SelectAboutTabCommand.Execute(null),
+                 })
+        {
+            select();
+
+            var shown = new[]
+            {
+                viewModel.IsGeneralTab,
+                viewModel.IsUsersTab,
+                viewModel.IsAgentTab,
+                viewModel.IsAboutTab,
+            };
+
+            Assert.Single(shown, flag => flag);
+        }
+    }
+
+    [Fact]
+    public async Task AgentTransportSummaryUsesTheCurrentConfigurationForEveryCombination()
+    {
+        var namedPipeOnly = CreateContext();
+        await namedPipeOnly.ViewModel.RefreshAsync();
+        Assert.Equal("SMB (Named Pipe)", namedPipeOnly.ViewModel.ActiveTransportsText);
+        Assert.Equal("None", namedPipeOnly.ViewModel.HttpsPortText);
+
+        var httpsOnly = CreateContext(document: new AgentTransportConfigurationDocument
+        {
+            NamedPipeEnabled = false,
+            HttpsEnabled = true,
+            HttpsPrefix = "https://nut-server.example.local:5199/",
+            CertificateThumbprint = Thumbprint,
+        });
+        await httpsOnly.ViewModel.RefreshAsync();
+        Assert.Equal("HTTPS", httpsOnly.ViewModel.ActiveTransportsText);
+        Assert.Equal("5199", httpsOnly.ViewModel.HttpsPortText);
+
+        var both = CreateContext(document: HttpsDocument());
+        await both.ViewModel.RefreshAsync();
+        Assert.Equal("SMB (Named Pipe), HTTPS", both.ViewModel.ActiveTransportsText);
+        Assert.Equal("5199", both.ViewModel.HttpsPortText);
+    }
+
+    [Fact]
+    public async Task TransportSummaryNotifiesAfterLoadApplyAndReset()
+    {
+        var loaded = CreateContext(document: HttpsDocument());
+        var loadChanges = new List<string?>();
+        loaded.ViewModel.PropertyChanged += (_, args) => loadChanges.Add(args.PropertyName);
+
+        await loaded.ViewModel.RefreshAsync();
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), loadChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), loadChanges);
+
+        var applied = CreateContext();
+        await applied.ViewModel.RefreshAsync();
+        EnableValidHttps(applied.ViewModel);
+        var applyChanges = new List<string?>();
+        applied.ViewModel.PropertyChanged += (_, args) => applyChanges.Add(args.PropertyName);
+
+        await applied.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), applyChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), applyChanges);
+        Assert.Equal("SMB (Named Pipe), HTTPS", applied.ViewModel.ActiveTransportsText);
+
+        var reset = CreateContext(document: HttpsDocument());
+        await reset.ViewModel.RefreshAsync();
+        var resetChanges = new List<string?>();
+        reset.ViewModel.PropertyChanged += (_, args) => resetChanges.Add(args.PropertyName);
+
+        reset.ViewModel.ResetHttpsCommand.Execute(null);
+        await reset.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ActiveTransportsText), resetChanges);
+        Assert.Contains(nameof(AgentConfigViewModel.HttpsPortText), resetChanges);
+        Assert.Equal("SMB (Named Pipe)", reset.ViewModel.ActiveTransportsText);
+        Assert.Equal("None", reset.ViewModel.HttpsPortText);
+    }
+
+    [Fact]
+    public async Task StartupToggleRefreshesTheAgentTabFromTheSameServiceSnapshot()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal([AgentServiceStartupPreference.Automatic], context.Service.StartupChanges);
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.True(context.Service.DescribeCalls >= 2);
+    }
+
+    [Fact]
+    public async Task OpeningTheAgentTabRefreshesItsServiceSnapshot()
+    {
+        var context = CreateContext();
+        await context.ViewModel.RefreshAsync();
+        var readsBeforeNavigation = context.Service.DescribeCalls;
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.Account = @"EXAMPLE\svc_nutmanager";
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        Assert.True(context.Service.DescribeCalls > readsBeforeNavigation);
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal(@"EXAMPLE\svc_nutmanager", context.ViewModel.ServiceAccountText);
+    }
+
+    // ---------------------------------------------------------------- T42: startup and installation
+
+    /// <summary>
+    /// Opening the panel reports nothing, because nothing has happened.
+    ///
+    /// The line under the switch is the result of an action. A panel that greeted every visit with
+    /// "the service will start with Windows" would be repeating, in a full sentence, what the switch
+    /// beside it already says by being on.
+    /// </summary>
+    [Fact]
+    public async Task TheStartupPanelSaysNothingUntilSomethingHappens()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.False(context.ViewModel.HasStartupResult);
+        Assert.Null(context.ViewModel.StartupResultText);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.StartupResultKind);
+    }
+
+    /// <summary>
+    /// Turning automatic start on is applied as asked, and reported as a success.
+    ///
+    /// No confirmation: it adds a behaviour and takes nothing away. A dialog here would be one for
+    /// the sake of symmetry with the other direction, which is not a reason to interrupt somebody.
+    /// </summary>
+    [Fact]
+    public async Task TurningAutomaticStartOnAppliesAtOnceAndSucceeds()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal([AgentServiceStartupPreference.Automatic], context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.StartupResultKind);
+        Assert.True(context.ViewModel.HasStartupResult);
+        Assert.Equal(
+            "The service will now start automatically with Windows.", context.ViewModel.StartupResultText);
+    }
+
+    /// <summary>
+    /// Turning it off asks first, and changes nothing while the question is open.
+    ///
+    /// The switch goes back to where the service control manager still has it, because a control
+    /// sitting in a position the machine has not agreed to is a lie for as long as the dialog is up.
+    /// </summary>
+    [Fact]
+    public async Task TurningAutomaticStartOffAsksBeforeChangingAnything()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        // And it says what it will do, in words that name the consequence and the thing that will not
+        // happen - the running service is not stopped.
+        Assert.Equal("Change how the service starts?", context.ViewModel.ConfirmationTitle);
+        Assert.Contains(
+            "will no longer start automatically", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Contains(
+            "will not be stopped", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Equal("Change to manual", context.ViewModel.ConfirmButtonText);
+    }
+
+    /// <summary>Answering no leaves the machine exactly as it was, and says nothing.</summary>
+    [Fact]
+    public async Task CancellingTheStartTypeQuestionChangesNothing()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentServiceStartType.Automatic, context.Service.StartType);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// Answering yes moves the start type once, and reports the consequence rather than a failure.
+    ///
+    /// Warning, not error: it is what was asked for and it worked. A red line over somebody's own
+    /// successful choice would be telling them they made a mistake.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingTheStartTypeQuestionMovesItOnceAndWarns()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal([AgentServiceStartupPreference.Manual], context.Service.StartupChanges);
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.StartupResultKind);
+        Assert.Equal("The service will now have to be started by hand.", context.ViewModel.StartupResultText);
+
+        // A boot preference is not a running state. Nothing was started, stopped or restarted.
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Equal(0, context.Service.StopCalls);
+        Assert.Equal(0, context.Service.RestartCalls);
+        Assert.Equal(AgentServiceState.Running, context.Service.State);
+    }
+
+    /// <summary>
+    /// A refused change leaves the switch reporting the machine, not the request.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedStartTypeChangeKeepsTheSwitchOnTheMachine()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        context.Service.StartupFailure = "Win32 error 5: Access is denied.";
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = true;
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.StartupResultKind);
+        Assert.Contains("Access is denied", context.ViewModel.StartupResultText!, StringComparison.Ordinal);
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentServiceStartType.Manual, context.Service.StartType);
+    }
+
+    /// <summary>
+    /// The result belongs to the panel it happened on, and to the visit it happened during.
+    ///
+    /// It used to survive both, so an operator who changed a start type, went to look at something
+    /// else and came back was told about it again as though it had just happened.
+    /// </summary>
+    [Fact]
+    public async Task AStartTypeResultDoesNotOutliveThePanelOrTheVisit()
+    {
+        var context = CreateContext();
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        context.ViewModel.StartsWithWindows = true;
+        Assert.True(context.ViewModel.HasStartupResult);
+
+        // Another panel in the same surface.
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.SelectGeneralTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        // And leaving settings entirely.
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowConfiguration);
+        Assert.False(context.ViewModel.HasStartupResult);
+
+        context.ViewModel.HeaderActionCommand.Execute(null);
+        Assert.True(context.ViewModel.ShowSettings);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// With no service there is no start type, so the switch is unusable - and beside it is the way
+    /// to make it usable.
+    /// </summary>
+    [Fact]
+    public async Task AnAbsentServiceDisablesTheSwitchAndOffersTheWayToInstallIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.CanChangeStartup);
+        Assert.True(context.ViewModel.ShowStartupHelp);
+        Assert.Equal(
+            "The NutManagerAgent service is not installed on this machine.",
+            context.ViewModel.StartupBlockedReason);
+    }
+
+    /// <summary>A service that exists needs no signpost, so there is none.</summary>
+    [Fact]
+    public async Task AnInstalledServiceHidesTheWayToInstallIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.CanChangeStartup);
+        Assert.False(context.ViewModel.ShowStartupHelp);
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.Null(context.ViewModel.StartupBlockedReason);
+    }
+
+    /// <summary>
+    /// The signpost is navigation and nothing else: it opens a panel in this window and leaves the
+    /// machine alone.
+    /// </summary>
+    [Fact]
+    public async Task TheWayToInstallOpensTheSystemPanelAndTouchesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        Assert.True(context.ViewModel.IsGeneralTab);
+
+        context.ViewModel.ShowServiceInstallationCommand.Execute(null);
+
+        // Agent, because that is where the installation section now is. A help button opening a
+        // panel that does not contain the remedy would be a signpost pointing at the wrong room.
+        Assert.True(context.ViewModel.IsAgentTab);
+        Assert.False(context.ViewModel.IsUsersTab);
+        Assert.True(context.ViewModel.ShowSettings);
+
+        // Same window, same surface. Nothing was installed, started or written on the way.
+        Assert.Equal(0, context.Service.InstallCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Empty(context.Store.Writes);
+    }
+
+    /// <summary>
+    /// Registering leaves a service that exists, is configured to start with Windows, and is not
+    /// running.
+    ///
+    /// The last of those is the point. Install and start are two decisions, and a button labelled
+    /// install that also started the service would be making the second one on the operator behalf -
+    /// the same boundary the product installer keeps when it registers the service and stops there.
+    /// </summary>
+    [Fact]
+    public async Task InstallingRegistersTheServiceAndLeavesItStopped()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.CanInstallService);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+        Assert.Equal(0, context.Service.RestartCalls);
+
+        // Read back from the machine rather than assumed.
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.False(context.ViewModel.ServiceIsRunning);
+        Assert.Equal("Stopped", context.ViewModel.ServiceStateText);
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        // The offer is spent, and the switch it was blocking now works.
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.False(context.ViewModel.InstallServiceCommand.CanExecute(null));
+        Assert.True(context.ViewModel.CanChangeStartup);
+        Assert.False(context.ViewModel.ShowStartupHelp);
+
+        // And it says so once. The line above the button already reads "already installed" beside a
+        // green tick because the SCM was asked again; a second green line under it would be the same
+        // fact twice, the second copy coming from a variable rather than from the machine.
+        Assert.False(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.InstallResultKind);
+        Assert.Null(context.ViewModel.InstallResultText);
+
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.",
+            context.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.ServiceInstallState);
+    }
+
+    /// <summary>
+    /// A service that is already there is never registered again, and never quietly repaired.
+    ///
+    /// The button is closed before the question arises. The race - somebody registering it between
+    /// the button being enabled and being pressed - is reported as the state it leaves behind rather
+    /// than as a failure, and nothing is done to the service that already exists.
+    /// </summary>
+    [Fact]
+    public async Task AnExistingServiceIsNeverRegisteredAgain()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.False(context.ViewModel.CanInstallService);
+        Assert.False(context.ViewModel.InstallServiceCommand.CanExecute(null));
+
+        context.ViewModel.InstallServiceCommand.Execute(null);
+        Assert.Equal(0, context.Service.InstallCalls);
+
+        // And when the race does happen, it is reported without touching what is there.
+        var raced = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        raced.Service.InstallResult = AgentServiceInstallation.AlreadyInstalled;
+        await raced.ViewModel.RefreshAsync();
+        await raced.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, raced.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.", raced.ViewModel.InstallResultText);
+        Assert.Equal(0, raced.Service.StartCalls);
+    }
+
+    /// <summary>
+    /// A refusal says so plainly, and the Win32 reason goes where technical detail goes.
+    /// </summary>
+    [Fact]
+    public async Task AFailedRegistrationKeepsItsReasonInDiagnostics()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        context.Service.InstallResult = AgentServiceInstallation.Failed(
+            "The NutManagerAgent service could not be registered (Win32 error 5: Access is denied.).", 5);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal("The service could not be installed.", context.ViewModel.InstallResultText);
+
+        // Nothing technical on the panel; all of it in diagnostics.
+        Assert.DoesNotContain("Win32", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.ServiceInstall"]);
+        Assert.Equal(AgentDiagnosticState.Error, diagnostic.State);
+        Assert.Contains("Win32 error 5", diagnostic.TechnicalDetail, StringComparison.Ordinal);
+
+        // Still nothing registered, so the offer stands.
+        Assert.True(context.ViewModel.CanInstallService);
+    }
+
+    /// <summary>The registration result is as local to its panel as the start type result is.</summary>
+    [Fact]
+    public async Task AnInstallResultDoesNotOutliveTheAgentPanel()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        // A registration that worked leaves no line to outlive anything, so the one that has to be
+        // cleared is a failure - which is also the one an operator would be most confused to meet
+        // again on a later visit.
+        context.Service.InstallResult = AgentServiceInstallation.Failed("Win32 error 5.");
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+
+        context.ViewModel.SelectGeneralTabCommand.Execute(null);
+        Assert.False(context.ViewModel.HasInstallResult);
+    }
+
+    /// <summary>
+    /// The sentence above the button reports what the machine has, and changes when that changes.
+    /// </summary>
+    [Fact]
+    public async Task TheInstallSectionSaysWhetherTheServiceIsThere()
+    {
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+        Assert.Equal(
+            "NutManager Agent is not installed as a Windows service yet.",
+            absent.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Warning, absent.ViewModel.ServiceInstallState);
+
+        await absent.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.Equal(
+            "NutManager Agent is already installed as a Windows service.",
+            absent.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Success, absent.ViewModel.ServiceInstallState);
+    }
+
+    /// <summary>
+    /// Diagnostics answers the question the Agent panel cannot: did the configuration query work.
+    ///
+    /// Three outcomes kept apart, because a server showing "Unknown" for the start mode and the
+    /// account needs to know which of them it is in. Not installed is not a failure; a failure has a
+    /// Win32 code; and a success has values.
+    /// </summary>
+    [Fact]
+    public async Task DiagnosticsReportWhetherTheServiceConfigurationCouldBeRead()
+    {
+        var read = CreateContext(serviceState: AgentServiceState.Running);
+        read.Service.StartType = AgentServiceStartType.Automatic;
+        read.Service.Account = "LocalSystem";
+        await read.ViewModel.RefreshAsync();
+
+        var readRow = ServiceConfigurationRow(read.ViewModel);
+        Assert.Equal(AgentDiagnosticState.Ready, readRow.State);
+        Assert.Equal("Automatic \u00b7 LocalSystem", readRow.Detail);
+
+        // Installed, status readable, configuration refused. This is the server case.
+        var refused = CreateContext(serviceState: AgentServiceState.Running);
+        refused.Service.StartType = AgentServiceStartType.Unknown;
+        refused.Service.Account = string.Empty;
+        refused.Service.Failure =
+            "The NutManagerAgent service configuration could not be read (Win32 error 5: Access is denied.).";
+        refused.Service.QueryErrorCode = 5;
+        await refused.ViewModel.RefreshAsync();
+
+        var refusedRow = ServiceConfigurationRow(refused.ViewModel);
+        Assert.Equal(AgentDiagnosticState.Attention, refusedRow.State);
+        Assert.Equal("Could not be queried", refusedRow.Detail);
+        Assert.Contains("Win32 error 5", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+        Assert.Contains("Access is denied", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+
+        // And the service being absent is its own thing, not a query failure.
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        absent.Service.StartType = AgentServiceStartType.Unknown;
+        absent.Service.Account = string.Empty;
+        await absent.ViewModel.RefreshAsync();
+
+        var absentRow = ServiceConfigurationRow(absent.ViewModel);
+        Assert.Equal(AgentDiagnosticState.NotConfigured, absentRow.State);
+        Assert.Equal("Not installed", absentRow.Detail);
+        Assert.NotEqual(refusedRow.State, absentRow.State);
+    }
+
+    /// <summary>
+    /// A service that will not start with Windows is reported as attention, not as ready.
+    ///
+    /// Manual is configured perfectly well and nothing failed to read it - it simply means the agent
+    /// is not there after a reboot until somebody starts it, which is exactly the kind of thing a
+    /// panel answering "is this machine ready" should raise an eyebrow at. It is not an error and it
+    /// is emphatically not a failed query: those have their own states and their own sentences.
+    /// </summary>
+    [Theory]
+    [InlineData(AgentServiceStartType.Automatic, AgentDiagnosticState.Ready, "Automatic")]
+    [InlineData(AgentServiceStartType.Manual, AgentDiagnosticState.Attention, "Manual")]
+    [InlineData(AgentServiceStartType.Disabled, AgentDiagnosticState.Attention, "Disabled")]
+    // Boot and System are earlier than Automatic rather than different from it: the agent is there
+    // after a restart without anybody logging in, which is the question being asked.
+    [InlineData(AgentServiceStartType.Boot, AgentDiagnosticState.Ready, "Boot")]
+    [InlineData(AgentServiceStartType.System, AgentDiagnosticState.Ready, "System")]
+    public async Task TheServiceConfigurationRowRaisesAnEyebrowAtAStartTypeThatWaitsForSomebody(
+        AgentServiceStartType startType,
+        AgentDiagnosticState expected,
+        string expectedWord)
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = startType;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        var row = ServiceConfigurationRow(context.ViewModel);
+
+        Assert.Equal(expected, row.State);
+        Assert.Equal($"{expectedWord} \u00b7 LocalSystem", row.Detail);
+
+        // The values are still reported either way. Attention is a judgement about the start type,
+        // never a refusal to say what it is.
+        Assert.Null(row.TechnicalDetail);
+    }
+
+    /// <summary>
+    /// Attention over Manual is not the same attention as a query that failed.
+    ///
+    /// Both raise an eyebrow, and an operator has to be able to tell which: one says what the start
+    /// type is, the other says it could not find out and carries the Win32 code that explains why.
+    /// </summary>
+    [Fact]
+    public async Task ManualAttentionIsNotConfusedWithAFailedQuery()
+    {
+        var manual = CreateContext(serviceState: AgentServiceState.Running);
+        manual.Service.StartType = AgentServiceStartType.Manual;
+        manual.Service.Account = "LocalSystem";
+        await manual.ViewModel.RefreshAsync();
+
+        var refused = CreateContext(serviceState: AgentServiceState.Running);
+        refused.Service.StartType = AgentServiceStartType.Unknown;
+        refused.Service.Account = string.Empty;
+        refused.Service.Failure =
+            "The NutManagerAgent service configuration could not be read (Win32 error 5: Access is denied.).";
+        refused.Service.QueryErrorCode = 5;
+        await refused.ViewModel.RefreshAsync();
+
+        var manualRow = ServiceConfigurationRow(manual.ViewModel);
+        var refusedRow = ServiceConfigurationRow(refused.ViewModel);
+
+        // The same state, deliberately - and never the same words.
+        Assert.Equal(AgentDiagnosticState.Attention, manualRow.State);
+        Assert.Equal(AgentDiagnosticState.Attention, refusedRow.State);
+        Assert.NotEqual(manualRow.Detail, refusedRow.Detail);
+
+        Assert.Equal("Manual \u00b7 LocalSystem", manualRow.Detail);
+        Assert.Equal("Could not be queried", refusedRow.Detail);
+        Assert.Null(manualRow.TechnicalDetail);
+        Assert.Contains("Win32 error 5", refusedRow.TechnicalDetail, StringComparison.Ordinal);
+
+        // And an absent service is neither of them.
+        var absent = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await absent.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.NotConfigured, ServiceConfigurationRow(absent.ViewModel).State);
+    }
+
+    /// <summary>
+    /// The row says "Aviso" in Portuguese, and wears the round outlined exclamation.
+    ///
+    /// The glyph is not chosen here: attention resolves to it everywhere, which is the point of
+    /// having moved every warning onto one resource.
+    /// </summary>
+    [Fact]
+    public async Task ManualReadsAsAWarningInBothLanguages()
+    {
+        var portuguese = CreateContext(
+            serviceState: AgentServiceState.Running, language: UiLanguagePreference.PtBr);
+        portuguese.Service.StartType = AgentServiceStartType.Manual;
+        portuguese.Service.Account = "LocalSystem";
+        await portuguese.ViewModel.RefreshAsync();
+
+        var row = ServiceConfigurationRow(portuguese.ViewModel);
+        Assert.Equal("Aten\u00e7\u00e3o", row.StatusText);
+        Assert.Equal("Manual \u00b7 LocalSystem", row.Detail);
+
+        // StateIconKey rather than IconKey: one names the subject of the row, the other judges it.
+        Assert.Equal("NutIconWarning", row.StateIconKey);
+
+        // Automatic keeps the tick and the word that goes with it.
+        portuguese.Service.StartType = AgentServiceStartType.Automatic;
+        await portuguese.ViewModel.RefreshAsync();
+
+        var ready = ServiceConfigurationRow(portuguese.ViewModel);
+        Assert.Equal("Pronto", ready.StatusText);
+        Assert.Equal("Autom\u00e1tico \u00b7 LocalSystem", ready.Detail);
+        Assert.Equal("AgentIconStateReady", ready.StateIconKey);
+
+        // And in English the same row says Attention.
+        var english = CreateContext(serviceState: AgentServiceState.Running);
+        english.Service.StartType = AgentServiceStartType.Manual;
+        english.Service.Account = "LocalSystem";
+        await english.ViewModel.RefreshAsync();
+        Assert.Equal("Attention", ServiceConfigurationRow(english.ViewModel).StatusText);
+    }
+
+    /// <summary>Both new panels are written in the window language, in both of them.</summary>
+    [Fact]
+    public async Task TheNewSettingsTextIsLocalized()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.NotInstalled, language: UiLanguagePreference.PtBr);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal(
+            "O NutManager Agent ainda n\u00e3o est\u00e1 instalado como servi\u00e7o do Windows.",
+            context.ViewModel.ServiceInstallDescription);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.Equal(
+            "O NutManager Agent j\u00e1 est\u00e1 instalado como servi\u00e7o do Windows.",
+            context.ViewModel.ServiceInstallDescription);
+
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal("Alterar inicializa\u00e7\u00e3o do servi\u00e7o?", context.ViewModel.ConfirmationTitle);
+        Assert.Equal("Alterar para manual", context.ViewModel.ConfirmButtonText);
+
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.Equal("O servi\u00e7o passar\u00e1 a exigir in\u00edcio manual.", context.ViewModel.StartupResultText);
+    }
+
+    private static AgentStatusItemViewModel ServiceConfigurationRow(AgentConfigViewModel viewModel) =>
+        Assert.Single(
+            viewModel.Diagnostics,
+            item => item.Label == viewModel.Strings["Diagnostics.ServiceConfiguration"]);
+
+    // ---------------------------------------------------------------- T42: lifecycle and permissions
+
+    /// <summary>
+    /// The group comes before the service, because the agent will not start without it.
+    ///
+    /// This is the failure found on a real machine: a service registered by this window, correct in
+    /// every field, that would not start - Event 7023, exit code 1 - because NutManager Operators did
+    /// not exist. The agent fails closed when its authorization group is missing, which is right, and
+    /// left this button producing a service that could never run.
+    /// </summary>
+    [Fact]
+    public async Task InstallingCreatesTheOperatorsGroupBeforeRegisteringTheService()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.OperatorsGroupExists);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        // And the order is the order, not merely both having happened.
+        var group = context.Events.IndexOf("groups.create");
+        var install = context.Events.IndexOf("service.install");
+        Assert.True(group >= 0 && install > group, "The group has to exist before the service is registered.");
+    }
+
+    /// <summary>
+    /// A group that could not be created means no service, rather than a service that cannot start.
+    ///
+    /// A machine with no agent is a better outcome than one with an agent that fails at every boot
+    /// for a reason nothing on screen explains.
+    /// </summary>
+    [Fact]
+    public async Task AServiceIsNotRegisteredWhenItsGroupCouldNotBeCreated()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        context.Groups.CreateFailure = "Access is denied.";
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(0, context.Service.InstallCalls);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "The NutManager Operators group could not be created, so the service was not installed.",
+            context.ViewModel.InstallResultText);
+    }
+
+    /// <summary>An existing group is reused, never recreated, and its members are left alone.</summary>
+    [Fact]
+    public async Task InstallingReusesAnExistingGroupAndItsMembers()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: true);
+        context.Groups.MemberList.Add(@"EXAMPLE\svc_nutmanager");
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.Equal(0, context.Groups.AddCalls);
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.Equal([@"EXAMPLE\operator", @"EXAMPLE\svc_nutmanager"], context.Groups.MemberList);
+    }
+
+    /// <summary>
+    /// Installing authorizes nobody.
+    ///
+    /// The group is a prerequisite the agent needs to run; who is in it is a decision an administrator
+    /// makes deliberately. Adding the current account, or Administrators, would be this window handing
+    /// out administrative rights as a side effect of an installation.
+    /// </summary>
+    [Fact]
+    public async Task InstallingAddsNoMemberToTheGroup()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(0, context.Groups.AddCalls);
+        Assert.Empty(context.ViewModel.Members);
+    }
+
+    /// <summary>
+    /// The button reports the operation while it runs, and refuses a second one.
+    /// </summary>
+    [Fact]
+    public async Task TheActionReportsItselfWhileItRunsAndRefusesASecondClick()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+
+        // Observed from inside the operation, which is where the in-progress state actually exists.
+        // A held task and assertions from another thread would be a race; this runs on the operation.
+        AgentServiceLifecycle lifecycle = default;
+        string? label = null;
+        var enabled = true;
+        var removable = true;
+
+        context.Service.WhileInstalling = () =>
+        {
+            lifecycle = context.ViewModel.ServiceLifecycle;
+            label = context.ViewModel.ServiceActionText;
+
+            // Both refusals, which is what keeps the button dark and a second press inert.
+            enabled = context.ViewModel.CanInstallService
+                      || context.ViewModel.InstallServiceCommand.CanExecute(null);
+
+            // And the other action is closed too, so a registration in flight cannot be answered by
+            // a removal.
+            removable = context.ViewModel.CanRemoveService
+                        || context.ViewModel.RemoveServiceCommand.CanExecute(null);
+        };
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentServiceLifecycle.Installing, lifecycle);
+        Assert.Equal("Installing...", label);
+        Assert.False(enabled);
+        Assert.False(removable);
+        Assert.Equal(1, context.Service.InstallCalls);
+
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+    }
+
+    /// <summary>
+    /// The button turns around only once the service control manager says the service is there.
+    ///
+    /// A registration that returned a handle is not a registration the machine has confirmed, and the
+    /// screen must not claim one before the other.
+    /// </summary>
+    [Fact]
+    public async Task TheActionTurnsAroundOnlyAfterTheMachineConfirmsIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled);
+        await context.ViewModel.RefreshAsync();
+
+        // The registration succeeds, and the machine has not caught up.
+        context.Service.InstallResult = AgentServiceInstallation.Installed;
+        context.Service.SuppressInstallStateChange = true;
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.InstallCalls);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+
+        // Now it has, and only now does the action change.
+        context.Service.State = AgentServiceState.Stopped;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+    }
+
+    /// <summary>Removing asks first, and does nothing before the answer.</summary>
+    [Fact]
+    public async Task RemovingAsksBeforeItTouchesAnything()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        Assert.True(context.ViewModel.CanRemoveService);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.RemoveService, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Service.RemoveCalls);
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+
+        // The question names what happens to the running service, and what is left alone.
+        Assert.Equal("Remove NutManager Agent?", context.ViewModel.ConfirmationTitle);
+        Assert.Contains("will be stopped", context.ViewModel.ConfirmationMessage!, StringComparison.Ordinal);
+        Assert.Contains(
+            "NutManager Operators group and its users will not be removed",
+            context.ViewModel.ConfirmationMessage!,
+            StringComparison.Ordinal);
+        Assert.Equal("Remove service", context.ViewModel.ConfirmButtonText);
+    }
+
+    /// <summary>Answering no leaves the service exactly where it was.</summary>
+    [Fact]
+    public async Task CancellingTheRemovalChangesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Service.RemoveCalls);
+        Assert.Equal(0, context.Service.StopCalls);
+        Assert.Equal(AgentServiceState.Running, context.Service.State);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+        Assert.False(context.ViewModel.HasInstallResult);
+    }
+
+    /// <summary>
+    /// Answering yes removes the service, and leaves everything that is not the service.
+    ///
+    /// The group, its members and the configuration outlive the registration on purpose: removing and
+    /// reinstalling must not quietly discard who was authorized or what was configured.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingRemovesOnlyTheService()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        context.Groups.MemberList.Add(@"EXAMPLE\svc_nutmanager");
+        await context.ViewModel.RefreshAsync();
+
+        var writes = context.Store.Writes.Count;
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Service.RemoveCalls);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.False(context.ViewModel.ServiceActionIsRemoval);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+
+        // Silent, for the same reason the registration is: the sentence above the button has already
+        // gone back to "not installed yet", and it did so because the SCM stopped reporting the
+        // service rather than because this code decided it had.
+        Assert.False(context.ViewModel.HasInstallResult);
+        Assert.Equal(AgentSettingsFeedback.None, context.ViewModel.InstallResultKind);
+        Assert.Null(context.ViewModel.InstallResultText);
+
+        Assert.Equal(
+            "NutManager Agent is not installed as a Windows service yet.",
+            context.ViewModel.ServiceInstallDescription);
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.ServiceInstallState);
+
+        // The group and its members are untouched.
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal([@"EXAMPLE\operator", @"EXAMPLE\svc_nutmanager"], context.Groups.MemberList);
+        Assert.Equal(0, context.Groups.DeleteCalls);
+
+        // And so is everything else this window can act on.
+        Assert.Equal(writes, context.Store.Writes.Count);
+        Assert.Empty(context.Resources.RemoveRequests);
+    }
+
+    /// <summary>
+    /// A removal the machine has not finished is reported as pending, never as done.
+    ///
+    /// Windows removes a service when the last handle to it closes, so an open console can hold one
+    /// indefinitely. Saying "removed" over a service that is still registered would be a lie the next
+    /// refresh would expose.
+    /// </summary>
+    [Fact]
+    public async Task APendingRemovalIsReportedAsPending()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.RemoveResult = AgentServiceRemoval.PendingDeletion;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.InstallResultKind);
+        Assert.Contains("still registered", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+
+        // The service is still there, so the action still offers to remove it.
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.True(context.ViewModel.ServiceActionIsRemoval);
+    }
+
+    /// <summary>A service that is not this product is reported and left exactly where it is.</summary>
+    [Fact]
+    public async Task AForeignServiceIsRefusedRatherThanRemoved()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.RemoveResult = AgentServiceRemoval.NotOwned(
+            "A service named NutManagerAgent exists but does not run NutManager.Agent.exe.");
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Contains("does not belong to NutManager", context.ViewModel.InstallResultText!, StringComparison.Ordinal);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        var diagnostic = Assert.Single(
+            context.ViewModel.Diagnostics,
+            item => item.Label == context.ViewModel.Strings["Diagnostics.ServiceInstall"]);
+        Assert.Contains("does not run", diagnostic.TechnicalDetail, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Install, authorize, remove, reinstall - and the same people are still authorized.
+    ///
+    /// The whole point of leaving the group behind: an operator who removes the service to replace the
+    /// binaries does not have to remember who had access.
+    /// </summary>
+    [Fact]
+    public async Task AuthorizedUsersSurviveARemovalAndAReinstall()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_nutmanager";
+        context.ViewModel.AddMemberCommand.Execute(null);
+        Assert.Equal([@"EXAMPLE\svc_nutmanager"], context.ViewModel.Members);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(1, context.Groups.CreateCalls);
+        Assert.Equal(2, context.Service.InstallCalls);
+
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+        Assert.Equal([@"EXAMPLE\svc_nutmanager"], context.ViewModel.Members);
+    }
+
+    /// <summary>
+    /// The users list is a settings panel, not a page behind one.
+    ///
+    /// Selecting the tab is the whole navigation: there is no second click, nothing to come back
+    /// from, and the settings surface never gives way to an inner page for it.
+    /// </summary>
+    [Fact]
+    public async Task TheUsersTabIsThePanelRatherThanAWayToOne()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        Assert.True(context.ViewModel.IsUsersTab);
+        Assert.True(context.ViewModel.ShowSettings);
+        Assert.True(context.ViewModel.ShowHomeAction);
+        Assert.False(context.ViewModel.ShowActionBar);
+
+        // Arriving reads the group rather than creating one.
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.False(context.ViewModel.IsAddingOperator);
+        Assert.NotEmpty(context.ViewModel.Members);
+    }
+
+    /// <summary>
+    /// Adding an account takes two steps, and the field is closed until the first one is taken.
+    /// </summary>
+    [Fact]
+    public async Task AuthorizingAnAccountTakesTwoDeliberateSteps()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        Assert.False(context.ViewModel.IsAddingOperator);
+        var before = context.ViewModel.Members.Count;
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        Assert.True(context.ViewModel.IsAddingOperator);
+        Assert.Equal(0, context.Groups.AddCalls);
+
+        context.ViewModel.CancelAddOperatorCommand.Execute(null);
+        Assert.False(context.ViewModel.IsAddingOperator);
+        Assert.Equal(0, context.Groups.AddCalls);
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_backup";
+        context.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal(1, context.Groups.AddCalls);
+        Assert.False(context.ViewModel.IsAddingOperator);
+        Assert.True(context.ViewModel.HasMembers);
+        Assert.Equal(before + 1, context.ViewModel.Members.Count);
+    }
+
+    /// <summary>Opening the users panel never creates a Windows group as a side effect of looking.</summary>
+    [Fact]
+    public async Task OpeningPermissionsWithNoGroupCreatesNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: false);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        Assert.True(context.ViewModel.IsUsersTab);
+        Assert.False(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.CreateCalls);
+        Assert.Empty(context.ViewModel.Members);
+    }
+
+    /// <summary>The group is named as a detail, and the page is named for what it is about.</summary>
+    [Fact]
+    public async Task TheGroupIsNamedAsADetailRatherThanAsATitle()
+    {
+        var context = CreateContext(groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        // The tab is named for the people; the group is a technical detail underneath it.
+        Assert.Equal("Users", context.ViewModel.Strings["Settings.Tab.Users"]);
+        Assert.Equal("Windows group: NutManager Operators", context.ViewModel.OperatorsGroupCaption);
+
+        var portuguese = CreateContext(groupExists: true, language: UiLanguagePreference.PtBr);
+        await portuguese.ViewModel.RefreshAsync();
+        Assert.Equal(
+            "Grupo do Windows: NutManager Operators", portuguese.ViewModel.OperatorsGroupCaption);
+    }
+
+    /// <summary>
+    /// Removing a user asks first, and the question names who it is about.
+    ///
+    /// Revoking administrative rights is one small click with a real consequence, so nothing reaches
+    /// Windows until somebody has read whose rights are going and said yes.
+    /// </summary>
+    [Fact]
+    public async Task RemovingAUserAsksBeforeItRevokesAnything()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        var account = context.ViewModel.Members.Single();
+
+        context.ViewModel.RemoveOperatorCommand.Execute(account);
+
+        // Asked, and nothing done.
+        Assert.Equal(AgentConfigConfirmation.RemoveOperator, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Groups.RemoveCalls);
+        Assert.Equal(account, context.ViewModel.PendingOperatorAccount);
+
+        // The question names the account and says what is not happening to it.
+        var message = context.ViewModel.ConfirmationMessage;
+        Assert.NotNull(message);
+        Assert.Contains(account, message, StringComparison.Ordinal);
+        Assert.Contains("Windows account will not be removed", message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Cancelling changes nothing, and leaves no message behind claiming otherwise.</summary>
+    [Fact]
+    public async Task CancellingAUserRemovalLeavesTheGroupAlone()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        var before = context.ViewModel.Members.ToArray();
+        context.ViewModel.RemoveOperatorCommand.Execute(before[0]);
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(0, context.Groups.RemoveCalls);
+        Assert.Equal(before, context.ViewModel.Members);
+        Assert.Null(context.ViewModel.OperatorsMessage);
+
+        // And the cancelled account is forgotten, so a later question cannot complete it.
+        Assert.Null(context.ViewModel.PendingOperatorAccount);
+    }
+
+    /// <summary>
+    /// Confirming revokes exactly one membership, and the list is read back from Windows.
+    ///
+    /// The row disappears because the machine says it is gone, not because a button was pressed.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingAUserRemovalRevokesOneMembershipAndRereadsTheList()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = @"EXAMPLE\svc_backup";
+        context.ViewModel.AddMemberCommand.Execute(null);
+        Assert.Equal(2, context.ViewModel.Members.Count);
+
+        context.ViewModel.RemoveOperatorCommand.Execute(@"EXAMPLE\svc_backup");
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.RemoveCalls);
+        Assert.Equal([@"EXAMPLE\svc_backup"], context.Groups.Removed);
+        Assert.Equal([@"EXAMPLE\operator"], context.ViewModel.Members);
+        Assert.Equal(
+            @"EXAMPLE\svc_backup was removed from the group.", context.ViewModel.OperatorsMessage);
+
+        // The group itself, and everybody else in it, are untouched.
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.CreateCalls);
+    }
+
+    /// <summary>
+    /// The last member can be removed, and the panel then says the group is empty.
+    ///
+    /// Nobody is added back automatically to keep the list populated: an agent with a group and no
+    /// authorized operators is a state an administrator is allowed to be in, and inventing a member
+    /// would be granting rights nobody asked for.
+    /// </summary>
+    [Fact]
+    public async Task TheLastAuthorizedUserCanBeRemoved()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.ViewModel.RemoveOperatorCommand.Execute(context.ViewModel.Members.Single());
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Empty(context.ViewModel.Members);
+        Assert.False(context.ViewModel.HasMembers);
+        Assert.True(context.ViewModel.OperatorsGroupExists);
+        Assert.Equal(0, context.Groups.AddCalls);
+    }
+
+    /// <summary>A removal Windows refused is reported as a failure rather than as a removal.</summary>
+    [Fact]
+    public async Task AFailedUserRemovalKeepsTheMemberAndSaysSo()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.Groups.RemoveResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Failed, @"EXAMPLE\operator", "Windows status 5.");
+
+        context.ViewModel.RemoveOperatorCommand.Execute(@"EXAMPLE\operator");
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, context.Groups.RemoveCalls);
+        Assert.Equal([@"EXAMPLE\operator"], context.ViewModel.Members);
+        Assert.Equal("The user could not be removed.", context.ViewModel.OperatorsMessage);
+    }
+
+    /// <summary>
+    /// An account Windows cannot find is refused in the reader's language.
+    ///
+    /// Infrastructure explains itself in its own vocabulary - "the name could not be translated to a
+    /// SID" - and that sentence appeared verbatim in a Portuguese interface. The panel says what
+    /// happened; the Windows text stays out of it.
+    /// </summary>
+    [Fact]
+    public async Task AnUnresolvableAccountIsRefusedInTheReadersLanguage()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.Running,
+            groupExists: true,
+            language: UiLanguagePreference.PtBr);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectUsersTabCommand.Execute(null);
+
+        context.Groups.AddResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Rejected,
+            "edw",
+            "The name 'edw' could not be translated to a SID.");
+
+        context.ViewModel.BeginAddOperatorCommand.Execute(null);
+        context.ViewModel.NewMemberAccount = "edw";
+        context.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal(
+            "O usu\u00e1rio informado n\u00e3o foi encontrado.", context.ViewModel.OperatorsMessage);
+        Assert.DoesNotContain("SID", context.ViewModel.OperatorsMessage!, StringComparison.Ordinal);
+
+        var english = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await english.ViewModel.RefreshAsync();
+        english.Groups.AddResult = new AgentMembershipResult(
+            AgentMembershipOutcome.Rejected, "edw", "The name could not be translated to a SID.");
+        english.ViewModel.Surface = AgentConfigSurface.Settings;
+        english.ViewModel.SelectUsersTabCommand.Execute(null);
+        english.ViewModel.BeginAddOperatorCommand.Execute(null);
+        english.ViewModel.NewMemberAccount = "edw";
+        english.ViewModel.AddMemberCommand.Execute(null);
+
+        Assert.Equal("The Windows account could not be found.", english.ViewModel.OperatorsMessage);
+    }
+
+    /// <summary>
+    /// A removal the SCM could not verify is not reported as somebody else's service.
+    ///
+    /// This is the sentence the operator actually saw: an agent this product had installed, showing
+    /// correctly as installed, refusing to be removed because it supposedly belonged to someone else.
+    /// The two outcomes now say different things.
+    /// </summary>
+    [Fact]
+    public async Task AnUnreadableServiceConfigurationIsNotReportedAsForeign()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        context.Service.RemoveResult = AgentServiceRemoval.QueryFailed(
+            "The NutManagerAgent service configuration could not be read (Win32 error 5).", 5);
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentSettingsFeedback.Error, context.ViewModel.InstallResultKind);
+        Assert.Equal(
+            "The service configuration could not be verified, so nothing was removed.",
+            context.ViewModel.InstallResultText);
+
+        // Emphatically not the mismatch sentence.
+        Assert.DoesNotContain(
+            "does not belong to NutManager",
+            context.ViewModel.InstallResultText!,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// An operation that worked reports itself once, through the state it produced.
+    ///
+    /// The panel used to say it twice: the sentence above the button changed, because the service
+    /// control manager was asked again, and then a second green line appeared underneath repeating
+    /// it. The second copy came from a variable rather than from the machine, so it was both
+    /// redundant and the less trustworthy of the two. Only the first is kept.
+    ///
+    /// The rule is narrow. Success is quiet; anything that failed or needs attention still says so,
+    /// and the tests either side of this one hold that end of it.
+    /// </summary>
+    [Fact]
+    public async Task AnOperationThatWorkedIsReportedOnlyByTheStateItProduced()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.NotInstalled, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        context.ViewModel.SelectAgentTabCommand.Execute(null);
+
+        // Installed: the state says so, and nothing else does.
+        await context.ViewModel.InstallServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(AgentSettingsFeedback.Success, context.ViewModel.ServiceInstallState);
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.HasInstallResult);
+
+        // Removed: likewise.
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.False(context.ViewModel.ServiceIsInstalled);
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.ServiceInstallState);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+        Assert.False(context.ViewModel.HasInstallResult);
+
+        // Not moved to a popup either: nothing is left open waiting to be dismissed.
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+    }
+
+    /// <summary>
+    /// The two sentences are gone from both cultures, rather than merely unused in one.
+    /// </summary>
+    [Fact]
+    public void TheServiceSuccessSentencesAreGoneFromBothCultures()
+    {
+        foreach (var language in new[] { UiLanguagePreference.PtBr, UiLanguagePreference.EnUs })
+        {
+            var strings = new AgentConfigStrings(language);
+
+            Assert.Equal("Settings.Agent.Install.Done", strings["Settings.Agent.Install.Done"]);
+            Assert.Equal("Settings.Agent.Remove.Done", strings["Settings.Agent.Remove.Done"]);
+
+            // The states that replaced them are still there, in that language.
+            Assert.NotEqual("Settings.Agent.Install.Already", strings["Settings.Agent.Install.Already"]);
+            Assert.NotEqual("Settings.Agent.Install.Missing", strings["Settings.Agent.Install.Missing"]);
+        }
+    }
+
+    /// <summary>
+    /// A removal in flight reports itself on the button that started it.
+    ///
+    /// Observed from inside the operation, which is where the in-progress state actually exists.
+    /// </summary>
+    [Fact]
+    public async Task ARemovalInProgressIsReportedOnTheButtonThatStartedIt()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Remove service", context.ViewModel.ServiceActionText);
+
+        AgentServiceLifecycle lifecycle = default;
+        string? label = null;
+        var enabled = true;
+        var installable = true;
+
+        context.Service.WhileRemoving = () =>
+        {
+            lifecycle = context.ViewModel.ServiceLifecycle;
+            label = context.ViewModel.ServiceActionText;
+
+            enabled = context.ViewModel.CanRemoveService
+                      || context.ViewModel.RemoveServiceCommand.CanExecute(null);
+
+            installable = context.ViewModel.CanInstallService
+                          || context.ViewModel.InstallServiceCommand.CanExecute(null);
+        };
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal(AgentServiceLifecycle.Removing, lifecycle);
+        Assert.Equal("Removing...", label);
+        Assert.False(enabled);
+        Assert.False(installable);
+
+        // And it hands back to the state the machine reports.
+        Assert.Equal(AgentServiceLifecycle.Idle, context.ViewModel.ServiceLifecycle);
+        Assert.Equal("Install service", context.ViewModel.ServiceActionText);
+    }
+
+    /// <summary>
+    /// Cancelling the manual-startup question puts the switch back, and changes nothing.
+    ///
+    /// The switch moves itself when clicked, which opens the question - and the handler immediately
+    /// puts the property back to what the SCM says. So by the time Cancel is pressed the view model
+    /// already holds the old value, and a property assigned the value it already has notifies nobody.
+    /// The control was never told to go back, and sat there showing Manual over a service Windows
+    /// still starts automatically.
+    ///
+    /// The notification is therefore what this asserts, not the value.
+    /// </summary>
+    [Fact]
+    public async Task CancellingTheStartupQuestionPutsTheSwitchBack()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        var announced = 0;
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AgentConfigViewModel.StartsWithWindows)) announced++;
+        };
+
+        // The switch moves, so the question opens.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+
+        // Everything the move itself announced is water under the bridge. What matters is whether
+        // anything is said from here on, because from here on the value never changes again.
+        announced = 0;
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        // Back on, and said out loud, so the control that moved on its own hears about it.
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.True(announced > 0, "The switch must be told to go back, not merely left correct.");
+
+        // Nothing reached the service control manager, and nothing claims anything happened.
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.Equal(AgentServiceStartType.Automatic, context.Service.StartType);
+        Assert.False(context.ViewModel.HasStartupResult);
+        Assert.Null(context.ViewModel.StartupResultText);
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+    }
+
+    /// <summary>
+    /// The switch follows the machine rather than the last click, even after a cancelled question.
+    ///
+    /// If somebody else sets the service to Manual while the question is open, cancelling must leave
+    /// the switch off - because that is what the service control manager now says, and the snapshot
+    /// is the source of truth here as everywhere else on this panel.
+    /// </summary>
+    [Fact]
+    public async Task ACancelledQuestionRestoresWhatTheMachineSaysRatherThanWhatWasClicked()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+
+        // Somebody changed it from services.msc while the question sat open.
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+    }
+
+    /// <summary>Cancelling any other question leaves the startup switch alone entirely.</summary>
+    [Fact]
+    public async Task CancellingAnotherQuestionDoesNotTouchTheStartupSwitch()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running, groupExists: true);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.RemoveServiceCommand.Execute(null);
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.Equal(0, context.Service.RemoveCalls);
+    }
+
+    /// <summary>
+    /// The switch holds no value of its own: it reports the service control manager and nothing else.
+    ///
+    /// This is the fix for a control that would not come back. A ToggleSwitch moves the moment it is
+    /// clicked and writes the new value through the binding; refusing that used to mean writing the
+    /// old value back, and a property assigned the value it already holds notifies nobody - so the
+    /// control was never told to move back. With no backing field there is nowhere for an
+    /// unconfirmed value to live, and every answer the control gets is the one the machine gave.
+    /// </summary>
+    [Fact]
+    public async Task TheStartupSwitchReportsTheMachineAndStoresNothing()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        // A refused click cannot leave the property holding what was clicked, because the property
+        // has nowhere to hold it.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Equal(AgentConfigConfirmation.ManualStartup, context.ViewModel.PendingConfirmation);
+        Assert.Empty(context.Service.StartupChanges);
+
+        // The machine moving is the only thing that moves the switch.
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        // And there is exactly one writer of it in the view model: none.
+        var viewModel = T42UnifiedHostTests.Read(
+            "src/NutManager.Agent.Config/ViewModels/AgentConfigViewModel.cs");
+        Assert.DoesNotContain("_startsWithWindows", viewModel, StringComparison.Ordinal);
+        Assert.DoesNotContain("_syncingStartup", viewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "get => _serviceState.StartType == AgentServiceStartType.Automatic;",
+            viewModel,
+            StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A refused click is announced, so the control that moved on its own is put back.
+    ///
+    /// The value never changes, which is exactly why the notification has to be explicit: a binding
+    /// only re-reads its source when the source says something.
+    /// </summary>
+    [Fact]
+    public async Task ARefusedStartupClickIsAnnouncedEvenThoughNothingChanged()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        var announced = 0;
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(AgentConfigViewModel.StartsWithWindows)) announced++;
+        };
+
+        // Opening the question announces it: the switch goes back before anybody answers.
+        context.ViewModel.StartsWithWindows = false;
+        Assert.True(announced > 0, "Opening the question must put the switch back.");
+        Assert.True(context.ViewModel.StartsWithWindows);
+
+        announced = 0;
+        context.ViewModel.CancelConfirmationCommand.Execute(null);
+
+        // And answering it announces again, on a turn of its own.
+        Assert.True(announced > 0, "Cancelling must put the switch back.");
+        Assert.True(context.ViewModel.StartsWithWindows);
+        Assert.Empty(context.Service.StartupChanges);
+        Assert.False(context.ViewModel.HasStartupResult);
+    }
+
+    /// <summary>
+    /// Confirming leaves the machine on Manual and the switch following it.
+    ///
+    /// The snapshot is re-read after the change, so the switch is off because the SCM says Manual -
+    /// not because Manual was what somebody clicked.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmingLeavesTheSnapshotAndTheSwitchOnManual()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Running);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartsWithWindows = false;
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+
+        Assert.Equal([AgentServiceStartupPreference.Manual], context.Service.StartupChanges);
+        Assert.Equal(AgentServiceStartType.Manual, context.Service.StartType);
+        Assert.False(context.ViewModel.StartsWithWindows);
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+
+        Assert.Equal(AgentSettingsFeedback.Warning, context.ViewModel.StartupResultKind);
+
+        // Back on again, and this one is not asked about.
+        context.ViewModel.StartsWithWindows = true;
+        Assert.Equal(AgentConfigConfirmation.None, context.ViewModel.PendingConfirmation);
+        Assert.Equal(
+            [AgentServiceStartupPreference.Manual, AgentServiceStartupPreference.Automatic],
+            context.Service.StartupChanges);
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>
+    /// Re-reading the machine updates the start type and the account on screen, not only inside.
+    ///
+    /// This is the panel that said "Desconhecido" twice over a service whose configuration the
+    /// diagnostics list - rebuilt in the very same pass - was reporting as Automatic and LocalSystem.
+    /// Both texts are read straight off the snapshot rather than stored, so replacing the snapshot
+    /// changes what they answer without anything announcing it, and a binding only re-reads its
+    /// source when the source speaks.
+    ///
+    /// The notifications are what this asserts. Checking the strings alone would pass against the
+    /// bug, because the strings were always right - it was the screen that was stale.
+    /// </summary>
+    [Fact]
+    public async Task ReReadingTheMachineAnnouncesTheStartTypeAndTheAccount()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+
+        var announced = new List<string>();
+        context.ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is { } name) announced.Add(name);
+        };
+
+        // The machine now answers properly - the same thing that happens when the service control
+        // manager is asked again after an installation or a start type change.
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Automatic", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        Assert.Contains(nameof(AgentConfigViewModel.ServiceStartTypeText), announced);
+        Assert.Contains(nameof(AgentConfigViewModel.ServiceAccountText), announced);
+
+        // The switch reads the same snapshot and follows it.
+        Assert.True(context.ViewModel.StartsWithWindows);
+    }
+
+    /// <summary>
+    /// It keeps following on every later read, not only on the first one.
+    ///
+    /// A refresh that announced once and then went quiet would look correct at startup and drift
+    /// afterwards, which is the harder version of the same bug to notice.
+    /// </summary>
+    [Fact]
+    public async Task ConsecutiveReadsEachReportWhatTheMachineNowSays()
+    {
+        var context = CreateContext(serviceState: AgentServiceState.Stopped);
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.False(context.ViewModel.StartsWithWindows);
+
+        foreach (var (startType, account, expected, startsWithWindows) in new[]
+                 {
+                     (AgentServiceStartType.Automatic, "LocalSystem", "Automatic", true),
+                     (AgentServiceStartType.Manual, "LocalSystem", "Manual", false),
+                     (AgentServiceStartType.Automatic, @"EXAMPLE\svc_nutmanager", "Automatic", true),
+                     (AgentServiceStartType.Disabled, "LocalSystem", "Disabled", false),
+                 })
+        {
+            context.Service.StartType = startType;
+            context.Service.Account = account;
+            await context.ViewModel.RefreshAsync();
+
+            Assert.Equal(expected, context.ViewModel.ServiceStartTypeText);
+            Assert.Equal(account, context.ViewModel.ServiceAccountText);
+            Assert.Equal(startsWithWindows, context.ViewModel.StartsWithWindows);
+        }
+
+        // And a machine that stops answering says so again rather than keeping the last good values.
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Unknown", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Unknown", context.ViewModel.ServiceAccountText);
+    }
+
+    /// <summary>
+    /// The Portuguese panel reads the start type in Portuguese, and the account as Windows gave it.
+    ///
+    /// An account name is not a word to translate: it is what an administrator types into Windows to
+    /// find the principal, so it is passed through exactly as the SCM returned it.
+    /// </summary>
+    [Fact]
+    public async Task TheStartTypeIsLocalizedAndTheAccountIsNot()
+    {
+        var context = CreateContext(
+            serviceState: AgentServiceState.Stopped, language: UiLanguagePreference.PtBr);
+        context.Service.StartType = AgentServiceStartType.Automatic;
+        context.Service.Account = "LocalSystem";
+        await context.ViewModel.RefreshAsync();
+
+        // The project already translates this one, and the diagnostics detail is built from the very
+        // same property - so the word here is the word there, and it is not a translation to revisit
+        // on the way past.
+        Assert.Equal("Autom\u00e1tico", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("LocalSystem", context.ViewModel.ServiceAccountText);
+
+        context.Service.StartType = AgentServiceStartType.Manual;
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal("Manual", context.ViewModel.ServiceStartTypeText);
+
+        // And an unreadable configuration is still honestly unknown.
+        context.Service.StartType = AgentServiceStartType.Unknown;
+        context.Service.Account = string.Empty;
+        await context.ViewModel.RefreshAsync();
+
+        Assert.Equal("Desconhecido", context.ViewModel.ServiceStartTypeText);
+        Assert.Equal("Desconhecido", context.ViewModel.ServiceAccountText);
+    }
+
+    // ---------------------------------------------------------------- T42: the listener, watched
+
+    /// <summary>
+    /// A running service is not a running listener, and the row says which one it is.
+    ///
+    /// This is the machine the composed answer got wrong: HTTPS enabled, the endpoint valid, the SSL
+    /// binding, the URL reservation and the firewall rule all NutManager owned, the service
+    /// comfortably Running - and nothing accepting connections, because HTTP.sys refused the prefix.
+    /// The old row added those facts up and showed a green light. The three configuration rows are
+    /// still correct and stay green; only the row that made a claim about the endpoint changes,
+    /// because only that row was wrong.
+    /// </summary>
+    [Fact]
+    public async Task TheListenerIsObservedRatherThanInferredFromEverythingAroundIt()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused: no listener.");
+        await context.ViewModel.RefreshAsync();
+
+        var status = context.ViewModel.ResourceStatus;
+        Assert.Equal(4, status.Count);
+
+        // Everything that is genuinely configured still reports as configured.
+        Assert.Equal(AgentDiagnosticState.Ready, status[0].State);
+        Assert.Equal(AgentDiagnosticState.Ready, status[1].State);
+        Assert.Equal(AgentDiagnosticState.Ready, status[2].State);
+
+        // And the one fact nobody verified is now the one fact somebody asked about.
+        Assert.Equal(AgentDiagnosticState.Attention, status[3].State);
+        Assert.Equal("Listener unavailable", status[3].Detail);
+        Assert.Contains("nothing is listening", status[3].TechnicalDetail, StringComparison.Ordinal);
+        Assert.Contains("ConnectionRefused", status[3].TechnicalDetail, StringComparison.Ordinal);
+
+        // The service card is untouched by any of it: it reports the service, which is running.
+        Assert.True(context.ViewModel.ServiceIsRunning);
+    }
+
+    /// <summary>An endpoint that answers is reported as listening, and names itself.</summary>
+    [Fact]
+    public async Task AnEndpointThatAnswersIsReportedActive()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Ready, listener.State);
+        Assert.Equal("Active", listener.Detail);
+        Assert.Contains("https://nut-server.example.local:5199/", listener.TechnicalDetail, StringComparison.Ordinal);
+
+        // Asked about the endpoint the rest of the strip describes, not one of its own.
+        var target = Assert.Single(context.Listener.Targets);
+        Assert.Equal("nut-server.example.local", target.Host);
+        Assert.Equal(5199, target.Port);
+    }
+
+    /// <summary>
+    /// The row follows the endpoint on its own, with nobody touching the window.
+    ///
+    /// Down, then up, then down again, across three periods of the clock - no navigation, no Refresh,
+    /// and no reopening. This is the whole point of the monitor, so it is asserted as one sequence
+    /// rather than three tests that each prove a single edge.
+    /// </summary>
+    [Fact]
+    public async Task TheRowFollowsTheEndpointAcrossPeriodsWithoutAnybodyTouchingTheWindow()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+
+        context.ViewModel.StartListenerMonitor();
+
+        // It comes up.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var active = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(1);
+        clock.Tick();
+        await active;
+
+        // It goes away again.
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        var gone = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await gone;
+
+        // And it comes back.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var back = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(3);
+        clock.Tick();
+        await back;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// With the transport off there is nothing on the network to ask about, and nothing is asked.
+    ///
+    /// Several periods, and the count stays at zero. A monitor that probed a disabled endpoint would
+    /// be attempting a connection to whatever happens to be on that port on a machine whose
+    /// administrator has deliberately turned the transport off.
+    /// </summary>
+    [Fact]
+    public async Task DisabledHttpsIsNeverProbed()
+    {
+        var clock = new ManualClock();
+        var context = CreateContext(clock: clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(0, context.Listener.Calls);
+        Assert.Equal("HTTPS disabled", context.ViewModel.ResourceStatus[3].Detail);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A stopped service costs no network call.
+    ///
+    /// The row already names the reason - the service is stopped - and a connection attempt could add
+    /// nothing to it. Asking anyway, once a second, for as long as the window is open, is the version
+    /// of this feature that would have been rejected.
+    /// </summary>
+    [Fact]
+    public async Task AStoppedServiceIsNeverProbed()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Stopped, clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(0, context.Listener.Calls);
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Attention, listener.State);
+        Assert.Equal("Listener unavailable", listener.Detail);
+        Assert.Contains("stopped", listener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Starting the service asks at once, and the green light waits for the answer.
+    ///
+    /// The order matters and is asserted as an order: the service reaches Running, the endpoint is
+    /// asked, it is not ready yet and the row says so, and only a later successful answer turns it
+    /// green. A screen that went green on the start succeeding would be reporting an intention.
+    /// </summary>
+    [Fact]
+    public async Task StartingTheServiceAsksAtOnceAndWaitsForARealAnswer()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Stopped, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        // The prefix is not open yet, which is the normal state of a service one moment old.
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.StartServiceCommand.ExecuteAsync(null);
+
+        Assert.True(context.ViewModel.ServiceIsRunning);
+
+        // Asked immediately, without waiting for the period to elapse.
+        await context.Listener.WaitForCallsAsync(1);
+        await WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+
+        // And green only once the endpoint actually answers.
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var active = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await active;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Stopping the service reports it at once, and asks nothing.
+    ///
+    /// The row does not wait for a period, and it does not attempt a connection to an endpoint whose
+    /// service has just been stopped: the reason is known, and it is the one shown.
+    /// </summary>
+    [Fact]
+    public async Task StoppingTheServiceReportsTheListenerAtOnce()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        var probesBefore = context.Listener.Calls;
+        await context.ViewModel.StopServiceCommand.ExecuteAsync(null);
+
+        var listener = context.ViewModel.ResourceStatus[3];
+        Assert.Equal(AgentDiagnosticState.Attention, listener.State);
+        Assert.Equal("Listener unavailable", listener.Detail);
+        Assert.Contains("stopped", listener.TechnicalDetail, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(probesBefore, context.Listener.Calls);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A restart goes down and comes back, and the row goes with it.
+    ///
+    /// Restart leaves the service Running the moment it returns, so this is the case where reporting
+    /// the service state as the listener state would be least visible and most wrong.
+    /// </summary>
+    [Fact]
+    public async Task RestartingTheServiceGoesDownAndComesBack()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        var down = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await context.ViewModel.RestartServiceCommand.ExecuteAsync(null);
+        await down;
+
+        Assert.True(context.ViewModel.ServiceIsRunning);
+
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        var up = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await up;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Applying refreshes the row and still does not restart anything.
+    ///
+    /// The product rule that Apply never restarts the agent is older than this feature and outranks
+    /// it: what a saved configuration changes is what the listener will be after somebody restarts
+    /// it, and until then the row keeps reporting the listener that is actually there.
+    /// </summary>
+    [Fact]
+    public async Task ApplyingAsksAgainWithoutRestartingTheService()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        var probesBefore = context.Listener.Calls;
+        context.ViewModel.HttpsPort = 5443;
+        await context.ViewModel.ApplyCommand.ExecuteAsync(null);
+
+        await context.Listener.WaitForCallsAsync(probesBefore + 1);
+        Assert.Equal(0, context.Service.RestartCalls);
+        Assert.Equal(0, context.Service.StartCalls);
+
+        // The new endpoint is the one now being asked about.
+        Assert.Equal(5443, context.Listener.Targets[^1].Port);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// After a reset there is no endpoint left, so nothing is asked about one.
+    ///
+    /// Continuing to probe a removed binding would be a connection attempt against whatever inherits
+    /// the port, once a second, for a transport the operator has just switched off.
+    /// </summary>
+    [Fact]
+    public async Task ResettingHttpsStopsAskingAboutTheEndpoint()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.ViewModel.ResetHttpsCommand.Execute(null);
+        await context.ViewModel.ConfirmCommand.ExecuteAsync(null);
+        Assert.False(context.ViewModel.HttpsEnabled);
+
+        var probesAfterReset = context.Listener.Calls;
+
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(probesAfterReset, context.Listener.Calls);
+        Assert.Equal("HTTPS disabled", context.ViewModel.ResourceStatus[3].Detail);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A slow endpoint is never asked twice at once.
+    ///
+    /// The tick that arrives while a probe is still waiting is dropped, not queued. Queueing is how a
+    /// connection attempt that takes longer than the period turns one probe per second into a backlog
+    /// that outlives the window.
+    /// </summary>
+    [Fact]
+    public async Task ASlowEndpointIsNeverAskedTwiceAtOnce()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Listener.Held = held;
+
+        var opening = context.ViewModel.RefreshAsync();
+        await context.Listener.WaitForCallsAsync(1);
+
+        context.ViewModel.StartListenerMonitor();
+
+        // Three periods elapse while the first probe is still waiting for an answer.
+        for (var period = 1; period <= 3; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+        }
+
+        await clock.WaitForTimerCountAsync(4);
+        Assert.Equal(1, context.Listener.Calls);
+
+        context.Listener.Held = null;
+        held.SetResult();
+        await opening;
+
+        Assert.Equal(1, context.Listener.MaximumConcurrent);
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// An answer that has not changed does not redraw anything.
+    ///
+    /// Twenty minutes of a healthy listener is over a thousand identical answers, and repopulating the
+    /// strip for each of them would rebuild an observable collection once a second underneath the
+    /// operator. Ten periods, one answer, and the collection is left alone.
+    /// </summary>
+    [Fact]
+    public async Task AnUnchangedAnswerRedrawsNothing()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        var redraws = 0;
+        context.ViewModel.ResourceStatus.CollectionChanged += (_, _) => redraws++;
+
+        context.ViewModel.StartListenerMonitor();
+
+        for (var period = 1; period <= 10; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+            await context.Listener.WaitForCallsAsync(period + 1);
+        }
+
+        Assert.Equal(0, redraws);
+        Assert.Equal(AgentDiagnosticState.Ready, context.ViewModel.ResourceStatus[3].State);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// Closing the window while a probe is in flight updates nothing afterwards.
+    ///
+    /// The connection attempt cannot be recalled, so what matters is that its answer lands nowhere: a
+    /// late write into a view model whose window is gone is the bug this asserts is absent.
+    /// </summary>
+    [Fact]
+    public async Task ClosingTheWindowDuringAProbeUpdatesNothing()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        context.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await context.ViewModel.RefreshAsync();
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.Listener.Held = held;
+
+        // Opening the window left a request standing, so the monitor asks straight away - and the
+        // endpoint takes its time answering.
+        context.ViewModel.StartListenerMonitor();
+        await context.Listener.WaitForCallsAsync(2);
+
+        // The window closes with the answer still outstanding, and the answer then arrives.
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+
+        context.Listener.Answer = AgentListenerObservation.Listening;
+        held.SetResult();
+
+        var probes = context.Listener.Calls;
+        clock.Tick();
+
+        // Nothing further was asked, and the answer that arrived late changed nothing on screen.
+        Assert.Equal(probes, context.Listener.Calls);
+        Assert.Equal(AgentDiagnosticState.Attention, context.ViewModel.ResourceStatus[3].State);
+    }
+
+    /// <summary>
+    /// One failed probe is one failed probe, not the end of the monitor.
+    ///
+    /// An adapter is expected to translate its own failures, so a throw is unexpected by definition -
+    /// and a loop that died on the first unexpected thing would leave a window whose listener row
+    /// silently stopped being true.
+    /// </summary>
+    [Fact]
+    public async Task AThrownProbeDoesNotEndTheLoop()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.Listener.Throws = new InvalidOperationException("the adapter fell over");
+        var failed = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Attention);
+        await clock.WaitForTimerCountAsync(1);
+        clock.Tick();
+        await failed;
+
+        Assert.Contains(
+            "InvalidOperationException",
+            context.ViewModel.ResourceStatus[3].TechnicalDetail,
+            StringComparison.Ordinal);
+
+        // And the next period asks again.
+        context.Listener.Throws = null;
+        var recovered = WaitForListenerAsync(context.ViewModel, AgentDiagnosticState.Ready);
+        await clock.WaitForTimerCountAsync(2);
+        clock.Tick();
+        await recovered;
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// One window, one loop. Starting it again does not add a second one.
+    ///
+    /// Two loops on interleaved clocks would double the connection attempts and race each other to
+    /// publish, which is the failure mode a window that starts its monitor from more than one place
+    /// would produce. A period is one probe however many times Start was called.
+    /// </summary>
+    [Fact]
+    public async Task StartingTheMonitorTwiceLeavesOneLoop()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        var opening = context.Listener.Calls;
+
+        context.ViewModel.StartListenerMonitor();
+        context.ViewModel.StartListenerMonitor();
+        context.ViewModel.StartListenerMonitor();
+        Assert.True(context.ViewModel.IsListenerMonitorRunning);
+
+        // Opening the window left a request standing, and it is served once however many times the
+        // monitor was started. One timer then waits for the next period - not three.
+        await context.Listener.WaitForCallsAsync(opening + 1);
+        await clock.WaitForTimerCountAsync(1);
+        Assert.Equal(1, clock.TimerCount);
+
+        var served = context.Listener.Calls;
+        clock.Tick();
+
+        await context.Listener.WaitForCallsAsync(served + 1);
+        await clock.WaitForTimerCountAsync(2);
+
+        Assert.Equal(served + 1, context.Listener.Calls);
+        Assert.Equal(2, clock.TimerCount);
+
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+    }
+
+    /// <summary>
+    /// The monitor ends with the window, and schedules nothing after it.
+    ///
+    /// Asserted on the clock rather than on the loop: a timer scheduled after the window closed is a
+    /// loop still running, whatever the loop believes about itself.
+    /// </summary>
+    [Fact]
+    public async Task TheMonitorStopsWithTheWindow()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        context.ViewModel.StartListenerMonitor();
+        await clock.WaitForTimerCountAsync(1);
+
+        context.ViewModel.StopListenerMonitor();
+        Assert.False(context.ViewModel.IsListenerMonitorRunning);
+
+        var scheduled = clock.TimerCount;
+        var probes = context.Listener.Calls;
+
+        clock.Tick();
+        clock.Tick();
+
+        Assert.Equal(scheduled, clock.TimerCount);
+        Assert.Equal(probes, context.Listener.Calls);
+
+        // Safe to call again on a window that is already closed.
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>The row is written in the window language, in both of them.</summary>
+    [Fact]
+    public async Task TheListenerRowIsLocalized()
+    {
+        var portuguese = ConfiguredContext(AgentServiceState.Running, language: UiLanguagePreference.PtBr);
+        portuguese.Listener.Answer = AgentListenerObservation.Unreachable("ConnectionRefused");
+        await portuguese.ViewModel.RefreshAsync();
+
+        var row = portuguese.ViewModel.ResourceStatus[3];
+        Assert.Equal("Listener HTTPS", row.Label);
+        Assert.Equal("Listener indisponível", row.Detail);
+        Assert.Contains("nada está ouvindo", row.TechnicalDetail, StringComparison.Ordinal);
+
+        var english = ConfiguredContext(AgentServiceState.Running);
+        await english.ViewModel.RefreshAsync();
+        Assert.Equal("HTTPS listener", english.ViewModel.ResourceStatus[3].Label);
+        Assert.Equal("Active", english.ViewModel.ResourceStatus[3].Detail);
+    }
+
+    /// <summary>
+    /// Coming back to the configuration surface asks again, so the row is current when it reappears.
+    /// </summary>
+    [Fact]
+    public async Task ReturningToTheConfigurationSurfaceAsksAgain()
+    {
+        var context = ConfiguredContext(AgentServiceState.Running);
+        await context.ViewModel.RefreshAsync();
+        context.ViewModel.StartListenerMonitor();
+
+        context.ViewModel.Surface = AgentConfigSurface.Settings;
+        var probes = context.Listener.Calls;
+
+        context.ViewModel.Surface = AgentConfigSurface.Configuration;
+        await context.Listener.WaitForCallsAsync(probes + 1);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// The periodic monitor is a listener monitor, and nothing more.
+    ///
+    /// This is the constraint that keeps a one-second cadence acceptable. The SSL binding, the URL
+    /// reservation and the firewall rule are HTTP.sys and firewall queries; the service configuration
+    /// is a service control manager call; the document is a file read. Repeating any of them every
+    /// second, on every open window, is a machine-wide poll wearing a listener row as a disguise -
+    /// so ten periods here move exactly one counter.
+    /// </summary>
+    [Fact]
+    public async Task ThePeriodicMonitorAsksNothingButTheEndpoint()
+    {
+        var clock = new ManualClock();
+        var context = ConfiguredContext(AgentServiceState.Running, clock);
+        await context.ViewModel.RefreshAsync();
+
+        var reads = context.Store.Reads;
+        var resources = context.Resources.DescribeCalls;
+        var certificates = context.Certificates.ListCalls;
+        var service = context.Service.DescribeCalls;
+        var groups = context.Groups.DescribeCalls;
+
+        context.ViewModel.StartListenerMonitor();
+        await context.Listener.WaitForCallsAsync(2);
+
+        for (var period = 1; period <= 10; period++)
+        {
+            await clock.WaitForTimerCountAsync(period);
+            clock.Tick();
+            await context.Listener.WaitForCallsAsync(period + 2);
+        }
+
+        // Eleven observations of the endpoint.
+        Assert.True(context.Listener.Calls >= 11, $"Expected the endpoint to be asked, saw {context.Listener.Calls}.");
+
+        // And not one query of anything else.
+        Assert.Equal(reads, context.Store.Reads);
+        Assert.Equal(resources, context.Resources.DescribeCalls);
+        Assert.Equal(certificates, context.Certificates.ListCalls);
+        Assert.Equal(service, context.Service.DescribeCalls);
+        Assert.Equal(groups, context.Groups.DescribeCalls);
+
+        context.ViewModel.StopListenerMonitor();
+    }
+
+    /// <summary>
+    /// A window with everything HTTPS needs: enabled, valid, every resource owned by NutManager, and
+    /// a service in whichever state the case under test requires.
+    /// </summary>
+    private static TestContext ConfiguredContext(
+        AgentServiceState serviceState,
+        TimeProvider? clock = null,
+        UiLanguagePreference? language = UiLanguagePreference.EnUs)
+    {
+        var context = CreateContext(
+            document: HttpsDocument(), serviceState: serviceState, clock: clock, language: language);
+
+        context.Resources.Snapshot = new AgentHttpsResourceSnapshot(
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager),
+            new AgentResourceState(AgentResourceOwnership.OwnedByNutManager));
+
+        return context;
+    }
+
+    /// <summary>
+    /// Waits for the listener row to reach a state, driven by the collection rather than by the clock.
+    ///
+    /// The monitor publishes from a thread pool thread, so a test that asserted immediately after
+    /// ticking would be asserting on a race. Waiting on the redraw itself keeps these tests off the
+    /// wall clock; the timeout exists only so a broken monitor fails the test rather than hanging it.
+    /// </summary>
+    private static async Task WaitForListenerAsync(AgentConfigViewModel viewModel, AgentDiagnosticState state)
+    {
+        var reached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        bool Matches() =>
+            viewModel.ResourceStatus.Count == 4 && viewModel.ResourceStatus[3].State == state;
+
+        void OnChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            if (Matches()) reached.TrySetResult();
+        }
+
+        viewModel.ResourceStatus.CollectionChanged += OnChanged;
+
+        try
+        {
+            if (Matches()) return;
+
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            viewModel.ResourceStatus.CollectionChanged -= OnChanged;
+        }
     }
 
     private static void EnableValidHttps(AgentConfigViewModel viewModel)
     {
         viewModel.HttpsEnabled = true;
-        viewModel.HttpsHost = "gandalf.sbra.local";
+        viewModel.HttpsHost = "nut-server.example.local";
         viewModel.HttpsPort = 5199;
         viewModel.SelectedCertificate = Assert.Single(viewModel.Certificates);
         Assert.True(viewModel.HttpsIsValid, viewModel.HttpsValidationMessage);
@@ -3394,7 +6263,7 @@ public sealed class T41AgentConfigViewModelTests
     {
         NamedPipeEnabled = true,
         HttpsEnabled = true,
-        HttpsPrefix = "https://gandalf.sbra.local:5199/",
+        HttpsPrefix = "https://nut-server.example.local:5199/",
         CertificateThumbprint = Thumbprint,
     };
 
@@ -3406,6 +6275,7 @@ public sealed class T41AgentConfigViewModelTests
         FakeResources Resources,
         FakeCertificates Certificates,
         FakeCertificateImporter Importer,
+        FakeListener Listener,
         List<string> Events);
 
     private sealed class FakeStore(AgentTransportConfigurationDocument document, List<string> events)
@@ -3415,7 +6285,14 @@ public sealed class T41AgentConfigViewModelTests
         public AgentConfigurationWriteResult WriteResult { get; set; } = AgentConfigurationWriteResult.Success;
         public string Path => "agent.json";
         public bool Exists => true;
-        public AgentTransportConfigurationDocument Read() => document;
+
+        public int Reads { get; private set; }
+
+        public AgentTransportConfigurationDocument Read()
+        {
+            Reads++;
+            return document;
+        }
 
         public AgentConfigurationWriteResult Write(AgentTransportConfigurationDocument value)
         {
@@ -3425,58 +6302,257 @@ public sealed class T41AgentConfigViewModelTests
         }
     }
 
-    private sealed class FakeGroups(AgentMachineRole role, bool exists) : IAgentOperatorsGroupAdministration
+    private sealed class FakeGroups : IAgentOperatorsGroupAdministration
     {
+        private readonly AgentMachineRole _role;
+        private readonly List<string> _events;
+        private bool _exists;
+
+        internal FakeGroups(AgentMachineRole role, bool exists, List<string>? events = null)
+        {
+            _role = role;
+            _exists = exists;
+            _events = events ?? [];
+
+            if (exists) MemberList.Add(@"EXAMPLE\operator");
+        }
+
         public int CreateCalls { get; private set; }
         public int AddCalls { get; private set; }
-        public AgentMembershipResult AddResult { get; set; } =
-            new(AgentMembershipOutcome.Added, @"SBRA\operator");
 
-        public AgentOperatorsGroupState Describe() =>
-            new(exists || CreateCalls > 0, "NutManager Operators", CreateCalls > 0 || exists ? "S-1-5-32-1000" : null, role, null);
+        /// <summary>
+        /// Never incremented by anything, and asserted against.
+        ///
+        /// Removing the service must not remove the group, and the way to prove a call did not happen
+        /// is to have somewhere it would have been counted.
+        /// </summary>
+        public int DeleteCalls => 0;
+
+        /// <summary>Set to make the machine refuse to create the group.</summary>
+        public string? CreateFailure { get; set; }
+
+        /// <summary>
+        /// The members, as a list a test can seed and then read back.
+        ///
+        /// A real group keeps its members across a service being registered and removed, so the fake
+        /// has to as well - a fixed answer could never show that they survived.
+        /// </summary>
+        public List<string> MemberList { get; } = [];
+
+        public AgentMembershipResult AddResult { get; set; } =
+            new(AgentMembershipOutcome.Added, @"EXAMPLE\operator");
+
+        /// <summary>How many memberships this fake was asked to revoke.</summary>
+        public int RemoveCalls { get; private set; }
+
+        /// <summary>The accounts it was asked to revoke, in order.</summary>
+        public List<string> Removed { get; } = [];
+
+        /// <summary>Set to make a removal fail, so the panel has to report it rather than assume.</summary>
+        public AgentMembershipResult? RemoveResult { get; set; }
+
+        public int DescribeCalls { get; private set; }
+
+        public AgentOperatorsGroupState Describe()
+        {
+            DescribeCalls++;
+            return new(
+                _exists,
+                "NutManager Operators",
+                _exists ? "S-1-5-32-1000" : null,
+                _role,
+                null);
+        }
 
         public AgentGroupCreationResult Create()
         {
             CreateCalls++;
+            _events.Add("groups.create");
+
+            if (CreateFailure is not null)
+            {
+                return new AgentGroupCreationResult(false, "NutManager Operators", null, CreateFailure);
+            }
+
+            _exists = true;
             return new AgentGroupCreationResult(true, "NutManager Operators", "S-1-5-32-1000", null);
         }
 
         public AgentIdentityResolution ResolveIdentity(string accountName) =>
-            new(true, accountName, "S-1-5-21-1000", AgentPrincipalKind.User, "SBRA", null);
+            new(true, accountName, "S-1-5-21-1000", AgentPrincipalKind.User, "EXAMPLE", null);
 
         public AgentMembershipResult AddMember(string accountName)
         {
             AddCalls++;
+
+            if (AddResult.Succeeded && !MemberList.Contains(accountName)) MemberList.Add(accountName);
+
             return AddResult with { AccountName = accountName };
         }
 
-        public IReadOnlyList<string> ListMembers() => exists ? [@"SBRA\operator"] : [];
+        /// <summary>
+        /// Takes one account out of the list, and touches nothing else.
+        ///
+        /// There is deliberately no way to delete an account here, because the interface it
+        /// implements has none - which is the property the tests are asserting.
+        /// </summary>
+        public AgentMembershipResult RemoveMember(string accountName)
+        {
+            RemoveCalls++;
+            Removed.Add(accountName);
+
+            if (RemoveResult is { } failure) return failure with { AccountName = accountName };
+
+            if (!MemberList.Remove(accountName))
+            {
+                return new AgentMembershipResult(AgentMembershipOutcome.NotMember, accountName);
+            }
+
+            return new AgentMembershipResult(AgentMembershipOutcome.Removed, accountName);
+        }
+
+        public IReadOnlyList<string> ListMembers() => _exists ? [.. MemberList] : [];
     }
 
-    private sealed class FakeService(AgentServiceState state) : IAgentServiceAdministration
+    private sealed class FakeService(AgentServiceState state, List<string> events) : IAgentServiceAdministration
     {
+        /// <summary>
+        /// What the service control manager would say now.
+        ///
+        /// Settable, and moved by the operations below, because a fake that answers Stopped after a
+        /// successful start cannot exercise the rule that matters: a service reaching Running is not
+        /// the same event as its listener opening.
+        /// </summary>
+        public AgentServiceState State { get; set; } = state;
+
         public int StartCalls { get; private set; }
         public int StopCalls { get; private set; }
         public int RestartCalls { get; private set; }
+        public int DescribeCalls { get; private set; }
 
-        public AgentServiceSnapshot Describe() => new(state, "Automatic", null);
+        /// <summary>Every start-type change asked for, so a test can prove which one and how many.</summary>
+        public List<AgentServiceStartupPreference> StartupChanges { get; } = [];
+
+        /// <summary>Set to make the service control manager refuse the change.</summary>
+        public string? StartupFailure { get; set; }
+
+        public AgentServiceStartType StartType { get; set; } = AgentServiceStartType.Automatic;
+
+        public string Account { get; set; } = "LocalSystem";
+        public string? Failure { get; set; }
+        public int? QueryErrorCode { get; set; }
+
+        public AgentServiceSnapshot Describe()
+        {
+            DescribeCalls++;
+            return new(State, StartType.ToString(), Failure, StartType, Account, QueryErrorCode);
+        }
+
+        public Task<AgentServiceOutcome> SetStartupAsync(
+            AgentServiceStartupPreference preference, CancellationToken cancellationToken)
+        {
+            StartupChanges.Add(preference);
+
+            if (StartupFailure is not null)
+            {
+                return Task.FromResult(new AgentServiceOutcome(false, State, StartupFailure));
+            }
+
+            StartType = preference is AgentServiceStartupPreference.Automatic
+                ? AgentServiceStartType.Automatic
+                : AgentServiceStartType.Manual;
+
+            return Task.FromResult(new AgentServiceOutcome(true, State, null));
+        }
 
         public Task<AgentServiceOutcome> StartAsync(CancellationToken cancellationToken)
         {
             StartCalls++;
+            State = AgentServiceState.Running;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Running, null));
         }
 
         public Task<AgentServiceOutcome> StopAsync(CancellationToken cancellationToken)
         {
             StopCalls++;
+            State = AgentServiceState.Stopped;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Stopped, null));
         }
 
         public Task<AgentServiceOutcome> RestartAsync(CancellationToken cancellationToken)
         {
             RestartCalls++;
+            State = AgentServiceState.Running;
             return Task.FromResult(new AgentServiceOutcome(true, AgentServiceState.Running, null));
+        }
+
+        public int InstallCalls { get; private set; }
+
+        /// <summary>
+        /// Run while the registration is in flight, so the in-progress state can be observed.
+        ///
+        /// A callback rather than a held task: parking a registration on a completion source and
+        /// asserting from another thread is a race, and one that took the xUnit host down with it.
+        /// This runs inside the operation, where the state being asserted is the state that exists.
+        /// </summary>
+        public Action? WhileInstalling { get; set; }
+
+        /// <summary>
+        /// Set to make a registration succeed without the machine catching up.
+        ///
+        /// The real service control manager can report a service a moment after CreateService returns,
+        /// and the window must not claim the registration before the SCM confirms it.
+        /// </summary>
+        public bool SuppressInstallStateChange { get; set; }
+
+
+        /// <summary>What registration answers. Settable so a refusal and a race can both be exercised.</summary>
+        public AgentServiceInstallation InstallResult { get; set; } = AgentServiceInstallation.Installed;
+
+        public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken)
+        {
+            InstallCalls++;
+            events.Add("service.install");
+
+            WhileInstalling?.Invoke();
+
+            // A real registration leaves the service present and stopped, with automatic start and no
+            // process running. The fake has to do the same or the tests would be asserting against a
+            // machine state Windows never produces.
+            if (InstallResult.Succeeded && !SuppressInstallStateChange)
+            {
+                State = AgentServiceState.Stopped;
+                StartType = AgentServiceStartType.Automatic;
+                Account = "LocalSystem";
+            }
+
+            return Task.FromResult(InstallResult);
+        }
+
+        public int RemoveCalls { get; private set; }
+
+        /// <summary>What removal answers. Settable so a refusal and a pending deletion are reachable.</summary>
+        public AgentServiceRemoval RemoveResult { get; set; } = AgentServiceRemoval.Removed;
+
+        /// <summary>Runs on the removal, which is the only place its in-progress state exists.</summary>
+        public Action? WhileRemoving { get; set; }
+
+        public Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken)
+        {
+            RemoveCalls++;
+            WhileRemoving?.Invoke();
+
+            // A real removal leaves nothing registered, so the fake has to stop reporting a service.
+            // Anything else and the tests would be asserting against a machine state Windows never
+            // produces - a deleted service that still answers.
+            if (RemoveResult.Succeeded)
+            {
+                State = AgentServiceState.NotInstalled;
+                StartType = AgentServiceStartType.Unknown;
+                Account = string.Empty;
+            }
+
+            return Task.FromResult(RemoveResult);
         }
     }
 
@@ -3487,7 +6563,13 @@ public sealed class T41AgentConfigViewModelTests
         public int ApplyCalls { get; private set; }
         public List<AgentHttpsCleanupRequest> RemoveRequests { get; } = [];
 
-        public AgentHttpsResourceSnapshot Describe(AgentHttpsBinding binding) => Snapshot;
+        public int DescribeCalls { get; private set; }
+
+        public AgentHttpsResourceSnapshot Describe(AgentHttpsBinding binding)
+        {
+            DescribeCalls++;
+            return Snapshot;
+        }
 
         public AgentHttpsResourceResult Apply(AgentHttpsBinding binding)
         {
@@ -3511,7 +6593,13 @@ public sealed class T41AgentConfigViewModelTests
     {
         private readonly List<AgentCertificateSummary> _certificates = [.. certificates];
 
-        public IReadOnlyList<AgentCertificateSummary> List() => _certificates;
+        public int ListCalls { get; private set; }
+
+        public IReadOnlyList<AgentCertificateSummary> List()
+        {
+            ListCalls++;
+            return _certificates;
+        }
 
         public void Add(AgentCertificateSummary certificate)
         {
@@ -3558,27 +6646,91 @@ public sealed class T41AgentConfigViewModelTests
     /// </summary>
     private sealed class ManualClock : TimeProvider
     {
+        private readonly Lock _gate = new();
         private readonly List<ManualTimer> _timers = [];
+        private TaskCompletionSource _scheduled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public int TimerCount => _timers.Count;
+        public int TimerCount
+        {
+            get
+            {
+                lock (_gate) return _timers.Count;
+            }
+        }
 
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
             var timer = new ManualTimer(callback, state);
-            _timers.Add(timer);
+
+            lock (_gate)
+            {
+                _timers.Add(timer);
+                _scheduled.TrySetResult();
+                _scheduled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+
             return timer;
         }
 
         /// <summary>Fires one timer by creation order, whether or not it still matters.</summary>
-        public void Fire(int index) => _timers[index].Fire();
+        public void Fire(int index)
+        {
+            ManualTimer timer;
+            lock (_gate) timer = _timers[index];
+            timer.Fire();
+        }
+
+        /// <summary>
+        /// Fires every timer that has been scheduled and not yet fired.
+        ///
+        /// This is one tick of the polling period for anything waiting on the clock. It is separate
+        /// from <see cref="Fire(int)"/> because that one deliberately re-fires a stale timer to prove
+        /// it does nothing, and a period is the opposite: everything currently waiting, once.
+        /// </summary>
+        public void Tick()
+        {
+            List<ManualTimer> due;
+            lock (_gate) due = _timers.Where(timer => timer.IsPending).ToList();
+            foreach (var timer in due) timer.Fire();
+        }
+
+        /// <summary>
+        /// Completes once at least this many timers have been scheduled.
+        ///
+        /// A loop that waits on the clock schedules its timer from a thread pool thread, so a test
+        /// that ticked immediately would usually tick nothing. Waiting on the schedule rather than on
+        /// elapsed milliseconds is what keeps these tests off the wall clock.
+        /// </summary>
+        public async Task WaitForTimerCountAsync(int expected)
+        {
+            while (true)
+            {
+                Task wait;
+
+                lock (_gate)
+                {
+                    if (_timers.Count >= expected) return;
+                    wait = _scheduled.Task;
+                }
+
+                await wait.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
 
         private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
         {
             private bool _disposed;
+            private bool _fired;
+
+            /// <summary>Still waiting: neither fired nor abandoned.</summary>
+            public bool IsPending => !_disposed && !_fired;
 
             public void Fire()
             {
-                if (!_disposed) callback(state);
+                if (_disposed) return;
+
+                _fired = true;
+                callback(state);
             }
 
             public bool Change(TimeSpan dueTime, TimeSpan period) => true;
@@ -3589,6 +6741,81 @@ public sealed class T41AgentConfigViewModelTests
             {
                 _disposed = true;
                 return ValueTask.CompletedTask;
+            }
+        }
+    }
+
+    /// <summary>
+    /// An endpoint that answers what a test tells it to, when a test lets it.
+    ///
+    /// It counts, so a test can prove that a stopped service and a disabled transport cost no network
+    /// call at all; it records the endpoint it was handed, so a test can prove which one is being
+    /// asked about; and it tracks how many probes were in flight at once, because one at a time is a
+    /// rule rather than an accident of how fast the fake answers.
+    /// </summary>
+    private sealed class FakeListener : IAgentHttpsListenerProbe
+    {
+        private readonly Lock _gate = new();
+        private TaskCompletionSource _called = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _active;
+
+        public int Calls { get; private set; }
+
+        public int MaximumConcurrent { get; private set; }
+
+        public List<AgentHttpsBinding> Targets { get; } = [];
+
+        public AgentListenerObservation Answer { get; set; } = AgentListenerObservation.Listening;
+
+        /// <summary>Set to hold a probe open until the test releases it.</summary>
+        public TaskCompletionSource? Held { get; set; }
+
+        /// <summary>Set to make the adapter itself fail, which the loop has to survive.</summary>
+        public Exception? Throws { get; set; }
+
+        public async Task<AgentListenerObservation> ProbeAsync(
+            AgentHttpsBinding binding, CancellationToken cancellationToken)
+        {
+            TaskCompletionSource? held;
+
+            lock (_gate)
+            {
+                Calls++;
+                Targets.Add(binding);
+                _active++;
+                MaximumConcurrent = Math.Max(MaximumConcurrent, _active);
+                _called.TrySetResult();
+                _called = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                held = Held;
+            }
+
+            try
+            {
+                if (held is not null) await held.Task.WaitAsync(cancellationToken);
+                if (Throws is { } failure) throw failure;
+
+                return Answer;
+            }
+            finally
+            {
+                lock (_gate) _active--;
+            }
+        }
+
+        /// <summary>Completes once the endpoint has been asked at least this many times.</summary>
+        public async Task WaitForCallsAsync(int expected)
+        {
+            while (true)
+            {
+                Task wait;
+
+                lock (_gate)
+                {
+                    if (Calls >= expected) return;
+                    wait = _called.Task;
+                }
+
+                await wait.WaitAsync(TimeSpan.FromSeconds(10));
             }
         }
     }
@@ -3622,9 +6849,10 @@ public sealed class T41AgentConfigViewModelTests
         }
     }
 
-    private sealed class FakeInventory : IAgentRuntimeInventory
+    private sealed class FakeInventory(string? dotNet = "10.0.0", string? aspNetCore = "10.0.0")
+        : IAgentRuntimeInventory
     {
         public Task<AgentRuntimeInventorySnapshot> DescribeAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new AgentRuntimeInventorySnapshot("10.0.0", "10.0.0", true, true, "NUT"));
+            Task.FromResult(new AgentRuntimeInventorySnapshot(dotNet, aspNetCore, true, true, "NUT"));
     }
 }

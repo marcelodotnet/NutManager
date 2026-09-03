@@ -1,3 +1,4 @@
+using NutManager.Core.Models;
 using System.Globalization;
 using NutManager.Agent.Config.Localization;
 using NutManager.Core.Agent;
@@ -44,7 +45,7 @@ public sealed class AgentStatusItemViewModel
     public string StateIconKey => State switch
     {
         AgentDiagnosticState.Ready => "AgentIconStateReady",
-        AgentDiagnosticState.Attention => "AgentIconStateAttention",
+        AgentDiagnosticState.Attention => "NutIconWarning",
         AgentDiagnosticState.NotConfigured => "AgentIconStateNotConfigured",
         _ => "AgentIconStateError",
     };
@@ -362,4 +363,122 @@ public enum AgentConfigConfirmation
 
     /// <summary>Configuration was saved while the service was running.</summary>
     RestartService,
+
+    /// <summary>
+    /// The service is being removed from the machine.
+    ///
+    /// Asked because it is destructive and because one of its consequences is not obvious: a running
+    /// agent is stopped to complete the removal. What it does not touch is worth saying in the same
+    /// breath, which is why the question names the operators group it leaves alone.
+    /// </summary>
+    RemoveService,
+
+    /// <summary>
+    /// A user is being taken out of the operators group.
+    ///
+    /// Asked because revoking administrative rights is not something to do on one stray click, and
+    /// because the question is the place to say what is not happening: the Windows account itself
+    /// survives, and only the membership is removed.
+    /// </summary>
+    RemoveOperator,
+
+    /// <summary>
+    /// The service is being taken off automatic start.
+    ///
+    /// Asked only in this direction. Turning automatic start on adds a behaviour and takes nothing
+    /// away, so it needs no confirmation; turning it off means a machine that reboots comes back
+    /// without its agent, and that is worth one deliberate answer.
+    /// </summary>
+    ManualStartup,
 }
+
+/// <summary>
+/// How a settings action turned out, for the one line that reports it.
+///
+/// Three outcomes rather than a boolean, because "the service will now need starting by hand" is
+/// neither a success to celebrate nor a failure to fix - it is the thing the operator asked for, and
+/// a consequence they should see. A red line there would be wrong and a green tick would be worse.
+/// </summary>
+/// <summary>
+/// What the one service action is doing right now.
+///
+/// It exists so the button can report an operation in progress in the place the operation was started
+/// from, rather than disappearing, greying out anonymously, or letting a second click through while
+/// the first is still talking to the service control manager.
+/// </summary>
+public enum AgentServiceLifecycle
+{
+    Idle,
+    Installing,
+    Removing,
+}
+
+public enum AgentSettingsFeedback
+{
+    None,
+    Success,
+    Warning,
+    Error,
+}
+
+/// <summary>
+/// Which of the window's three surfaces is showing.
+///
+/// One value rather than a boolean per surface. Two booleans could already describe a state that does
+/// not exist - both true, or both false - and a third would make four such states. An enum cannot.
+/// </summary>
+public enum AgentConfigSurface
+{
+    /// <summary>The transports, HTTPS and access fields. The window's purpose.</summary>
+    Configuration,
+
+    /// <summary>The read-only report of the same machine.</summary>
+    Diagnostics,
+
+    /// <summary>Preferences, the authorized users, and the agent's own installation.</summary>
+    Settings,
+
+    /// <summary>
+    /// The full terms of use, reached from About and returning to it.
+    ///
+    /// A surface rather than a second window or a browser: the terms are part of this product, and
+    /// sending an operator out to a browser to read what they have already installed - on a server
+    /// that may have no browser at all - is not reading the terms, it is hoping.
+    /// </summary>
+    Terms,
+}
+
+/// <summary>
+/// Which panel of the settings surface is showing.
+///
+/// The strip that selects these is four buttons rather than a TabControl: the desktop draws this
+/// pattern as a list of items with dividers between them, and a TabControl generates its own strip
+/// with nothing to put a divider into.
+/// </summary>
+public enum AgentSettingsTab
+{
+    /// <summary>The startup preference, and how the window looks and reads.</summary>
+    General,
+
+    /// <summary>
+    /// Who may administer the agent.
+    ///
+    /// The list itself rather than a way to reach it. Choosing who holds administrative rights over
+    /// the service is a task in its own right and earns a destination, not a summary with a button
+    /// under it - so this panel is the management surface, and there is no page behind it.
+    /// </summary>
+    Users,
+
+    /// <summary>What the agent reports, and whether it is installed at all.</summary>
+    Agent,
+
+    About,
+}
+
+/// <summary>
+/// One entry of the language list: the preference, and the name of that language in that language.
+///
+/// Autonyms, exactly as the desktop application lists them - "Português (Brasil)" reads the same in
+/// an English interface, because somebody looking for their own language looks for its own name.
+/// </summary>
+public sealed record AgentLanguageOption(UiLanguagePreference Value, string Title);

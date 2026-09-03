@@ -39,21 +39,17 @@
 
     <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
       <!--
-        Everything except the two executables, which need components of their own: one so the service
-        can be declared against it, the other so the Start Menu shortcut has a keypath to point at.
+        Everything except the executable, which needs a component of its own so the service can be
+        declared against it and the Start Menu shortcut has a keypath to point at.
 
-        NutManager.Agent.Config.exe is published into the same directory as the service and is
-        installed and removed with it. It is a local administrative utility, not a second service —
-        nothing registers it, nothing starts it, and it runs only when an administrator opens it.
+        There is one executable now. NutManager.Agent.Config.exe used to be published beside the
+        service and installed with it; the configuration window is now a mode of the agent host
+        rather than an application of its own, and its assembly ships as an ordinary dependency
+        through the Files element below.
       -->
       <Files Include="$(PublishDir)\**">
         <Exclude Files="$(PublishDir)\NutManager.Agent.exe" />
-        <Exclude Files="$(PublishDir)\NutManager.Agent.Config.exe" />
       </Files>
-
-      <Component Id="AgentConfigExecutable" Guid="{1F7A6C38-95D2-4E80-B3A5-6C4907E1D2B8}">
-        <File Id="AgentConfigExecutableFile" Source="$(PublishDir)\NutManager.Agent.Config.exe" KeyPath="yes" />
-      </Component>
 
       <Component Id="AgentExecutable" Guid="{7B3E5D91-8A26-4C7F-9E14-5B08D2A6F730}">
         <File Id="AgentExecutableFile" Source="$(PublishDir)\NutManager.Agent.exe" KeyPath="yes" />
@@ -75,6 +71,7 @@
                         Start="auto"
                         Account="LocalSystem"
                         ErrorControl="normal"
+                        Arguments="--service"
                         Vital="yes" />
 
         <!--
@@ -101,6 +98,7 @@
                         Remove="uninstall"
                         Wait="yes" />
       </Component>
+
 
       <!--
         The Event Log source, as a registry key the installer owns and therefore may remove. The
@@ -159,7 +157,8 @@
           <Shortcut Id="AgentConfigStartMenuShortcut"
                     Name="$(AgentConfigName)"
                     Description="Configures transports, the operators group and HTTPS for the local NutManager Agent."
-                    Target="[#AgentConfigExecutableFile]"
+                    Target="[#AgentExecutableFile]"
+                    Arguments="--config"
                     WorkingDirectory="INSTALLFOLDER" />
           <RemoveFolder Id="RemoveAgentStartMenuFolder" Directory="AgentStartMenuFolder" On="uninstall" />
           <RegistryValue Root="HKLM"

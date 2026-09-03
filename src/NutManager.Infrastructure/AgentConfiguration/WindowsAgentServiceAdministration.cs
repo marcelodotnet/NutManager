@@ -1,4 +1,4 @@
-using System.Management;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.ServiceProcess;
 using NutManager.Core.Agent;
@@ -25,28 +25,34 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
 
     private static readonly TimeSpan TransitionTimeout = TimeSpan.FromSeconds(30);
 
-    public AgentServiceSnapshot Describe()
-    {
-        try
-        {
-            using var controller = new ServiceController(ServiceName);
+    private readonly WindowsAgentServiceQuery _query;
+    private readonly WindowsAgentServiceInstallation _installation;
+    private readonly TimeProvider _time;
 
-            // Reading Status is what proves the service exists: ServiceController's constructor does
-            // not contact the SCM, so an absent service surfaces here rather than on the line above.
-            var state = Translate(controller.Status);
-            return new AgentServiceSnapshot(state, ReadStartMode(), Failure: null);
-        }
-        catch (InvalidOperationException)
-        {
-            // The documented shape of "no such service" from ServiceController.
-            return AgentServiceSnapshot.NotInstalled();
-        }
-        catch (Exception exception)
-        {
-            return AgentServiceSnapshot.NotInstalled(
-                $"The {ServiceName} service could not be queried ({exception.GetType().Name}).");
-        }
+    public WindowsAgentServiceAdministration()
+        : this(new WindowsAgentServiceQuery(), new WindowsAgentServiceInstallation())
+    {
     }
+
+    internal WindowsAgentServiceAdministration(WindowsAgentServiceQuery query)
+        : this(query, new WindowsAgentServiceInstallation())
+    {
+    }
+
+    internal WindowsAgentServiceAdministration(
+        WindowsAgentServiceQuery query,
+        WindowsAgentServiceInstallation installation,
+        TimeProvider? timeProvider = null)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        ArgumentNullException.ThrowIfNull(installation);
+
+        _query = query;
+        _installation = installation;
+        _time = timeProvider ?? TimeProvider.System;
+    }
+
+    public AgentServiceSnapshot Describe() => _query.Describe(ServiceName);
 
     public Task<AgentServiceOutcome> StartAsync(CancellationToken cancellationToken) =>
         TransitionAsync(ServiceControllerStatus.Running, start: true, cancellationToken);
@@ -142,34 +148,115 @@ public sealed class WindowsAgentServiceAdministration : IAgentServiceAdministrat
     }
 
     /// <summary>
-    /// The start type, read through WMI because ServiceController does not expose it.
+    /// Changes the start type through the service control manager, and touches nothing else.
     ///
-    /// It matters on this screen for one reason: the installer registers the service as Automatic and
-    /// deliberately leaves it stopped, so an operator looking at a stopped service needs to see that
-    /// it will come up on the next boot rather than conclude the installation failed.
+    /// ChangeServiceConfig with SERVICE_NO_CHANGE in every other field, so the binary path, the
+    /// account, the dependencies and the display name are carried through untouched - this call can
+    /// only ever move the service between starting with Windows and not. It never starts or stops
+    /// anything: the running state is a separate concern with its own explicit commands.
+    ///
+    /// The Win32 API rather than sc.exe or a WMI method call, for the same reason the rest of this
+    /// file uses it: no shell, no argument string, and a return value that says what happened.
     /// </summary>
-    private static string? ReadStartMode()
+    public Task<AgentServiceOutcome> SetStartupAsync(
+        AgentServiceStartupPreference preference, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var manager = IntPtr.Zero;
+        var service = IntPtr.Zero;
+
         try
         {
-            // The name is this file's own constant, so there is no caller-supplied text in the query.
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT StartMode FROM Win32_Service WHERE Name = '{ServiceName}'");
+            manager = OpenSCManager(null, null, ScManagerConnect);
+            if (manager == IntPtr.Zero) return Task.FromResult(StartupFailure());
 
-            foreach (var item in searcher.Get())
-            {
-                using var service = (ManagementObject)item;
-                return service["StartMode"] as string;
-            }
+            service = OpenService(manager, ServiceName, ServiceChangeConfig);
+            if (service == IntPtr.Zero) return Task.FromResult(StartupFailure());
 
-            return null;
+            var startType = preference is AgentServiceStartupPreference.Automatic
+                ? ServiceAutoStart
+                : ServiceDemandStart;
+
+            var changed = ChangeServiceConfig(
+                service, ServiceNoChange, startType, ServiceNoChange,
+                null, null, IntPtr.Zero, null, null, null, null);
+
+            return Task.FromResult(changed
+                ? new AgentServiceOutcome(true, Describe().State, null)
+                : StartupFailure());
         }
-        catch (Exception)
+        catch (Exception exception)
         {
-            // A start mode that cannot be read is a missing detail, not a failure of the screen.
-            return null;
+            return Task.FromResult(new AgentServiceOutcome(
+                false, Describe().State,
+                $"The {ServiceName} start type could not be changed ({exception.GetType().Name})."));
+        }
+        finally
+        {
+            if (service != IntPtr.Zero) CloseServiceHandle(service);
+            if (manager != IntPtr.Zero) CloseServiceHandle(manager);
         }
     }
+
+    /// <summary>
+    /// Registers the service, and does not start it.
+    ///
+    /// Delegated rather than inlined so the whole of the "which binary, under which name, with which
+    /// arguments" question lives in one small file whose every answer is a constant. There is nothing
+    /// to pass in here because there is nothing a caller is allowed to choose.
+    ///
+    /// Run off the UI thread for the same reason start and stop are: the service control manager can
+    /// take a moment, and a window that stops repainting while it does looks like one that has hung.
+    /// </summary>
+    public Task<AgentServiceInstallation> InstallAsync(CancellationToken cancellationToken) =>
+        Task.Run(() => _installation.Install(), cancellationToken);
+
+    /// <summary>
+    /// Removes the service, stopping it first when it is running.
+    ///
+    /// Off the UI thread because it waits: for the service to stop, and then for the service control
+    /// manager to stop reporting it at all. Both waits are bounded, and neither is something a window
+    /// should perform while it is supposed to be painting.
+    /// </summary>
+    public Task<AgentServiceRemoval> RemoveAsync(CancellationToken cancellationToken) =>
+        Task.Run(() => _installation.Remove(_time, cancellationToken), cancellationToken);
+
+    private static AgentServiceOutcome StartupFailure() => new(
+        false,
+        AgentServiceState.Unknown,
+        $"The {ServiceName} start type could not be changed (Win32 error {Marshal.GetLastWin32Error()}).");
+
+    private const uint ScManagerConnect = 0x0001;
+    private const uint ServiceChangeConfig = 0x0002;
+    private const uint ServiceNoChange = 0xFFFFFFFF;
+    private const uint ServiceAutoStart = 0x00000002;
+    private const uint ServiceDemandStart = 0x00000003;
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint access);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenService(IntPtr manager, string serviceName, uint access);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ChangeServiceConfig(
+        IntPtr service,
+        uint serviceType,
+        uint startType,
+        uint errorControl,
+        string? binaryPathName,
+        string? loadOrderGroup,
+        IntPtr tagId,
+        string? dependencies,
+        string? serviceStartName,
+        string? password,
+        string? displayName);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr handle);
 
     private static AgentServiceState Translate(ServiceControllerStatus status) => status switch
     {

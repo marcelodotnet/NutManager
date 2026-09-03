@@ -161,16 +161,13 @@ Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.App\NutManag
 Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent\NutManager.Agent.csproj') `
                 -Output $agentPublish -SelfContained $false
 
-# Agent Config is part of the Agent product, not a separately deployed runtime island. Publishing it
-# framework-dependent into the same staging directory lets the MSI own both executables while their
-# shared Core/Infrastructure assemblies and the machine runtimes remain single copies.
-Publish-Product -Project (Join-Path $repositoryRoot 'src\NutManager.Agent.Config\NutManager.Agent.Config.csproj') `
-                -Output $agentPublish -SelfContained $false
+# The configuration window is no longer published separately: it is a mode of the agent host and
+# arrives as an ordinary dependency of the publish above. There is one Agent executable.
 
 foreach ($expected in @(
     @{ Path = (Join-Path $desktopPublish 'NutManager.App.exe'); Name = 'desktop application' },
-    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.exe'); Name = 'agent service' },
-    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.Config.exe'); Name = 'agent configuration utility' }))
+    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.exe'); Name = 'agent host' },
+    @{ Path = (Join-Path $agentPublish 'NutManager.Agent.Config.dll'); Name = 'agent configuration module' }))
 {
     if (-not (Test-Path -LiteralPath $expected.Path))
     {
@@ -210,47 +207,28 @@ foreach ($requiredFramework in @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.
 }
 Write-Host '  agent runtimeconfig requires Microsoft.NETCore.App and Microsoft.AspNetCore.App 10.x' -ForegroundColor Green
 
-# The configuration utility may use only frameworks already guaranteed by the Agent bundle. Avalonia
-# is packaged as ordinary application assemblies; introducing WindowsDesktop here would silently add
-# a third prerequisite that the installer neither detects nor installs.
-$configRuntimeConfigPath = Join-Path $agentPublish 'NutManager.Agent.Config.runtimeconfig.json'
-if (-not (Test-Path -LiteralPath $configRuntimeConfigPath))
+# One apphost in the Agent payload, asserted rather than assumed.
+#
+# The configuration utility used to publish its own executable and its own runtime contract beside
+# the service. Both are retired, and a staging directory that still produced either would mean the
+# unified host did not take over - the MSI would install two executables again.
+foreach ($obsolete in @(
+    'NutManager.Agent.Config.exe',
+    'NutManager.Agent.Config.deps.json',
+    'NutManager.Agent.Config.runtimeconfig.json'))
 {
-    throw 'The Agent Config runtimeconfig is missing from the framework-dependent publish.'
-}
-
-$configRuntimeConfig = Get-Content -LiteralPath $configRuntimeConfigPath -Raw | ConvertFrom-Json
-$configFrameworks = @()
-$runtimeOptionNames = @($configRuntimeConfig.runtimeOptions.PSObject.Properties.Name)
-if ($runtimeOptionNames -contains 'framework')
-{
-    $configFrameworks += $configRuntimeConfig.runtimeOptions.framework
-}
-if ($runtimeOptionNames -contains 'frameworks')
-{
-    $configFrameworks += @($configRuntimeConfig.runtimeOptions.frameworks)
-}
-
-if ($configFrameworks.Count -eq 0)
-{
-    throw 'The Agent Config runtimeconfig declares no shared framework.'
-}
-
-$allowedAgentConfigFrameworks = @('Microsoft.NETCore.App', 'Microsoft.AspNetCore.App')
-foreach ($framework in $configFrameworks)
-{
-    if ($allowedAgentConfigFrameworks -notcontains [string] $framework.name -or
-        -not ([string] $framework.version).StartsWith('10.', [StringComparison]::Ordinal))
+    if (Test-Path -LiteralPath (Join-Path $agentPublish $obsolete))
     {
-        throw "Agent Config introduced an unsupported shared framework: $($framework.name) $($framework.version)."
+        throw "The Agent publish still contains the retired Agent Config apphost file '$obsolete'."
     }
 }
 
-if (@($configFrameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' }).Count -ne 1)
+$agentApphosts = @(Get-ChildItem -LiteralPath $agentPublish -Recurse -File -Filter '*.exe')
+if ($agentApphosts.Count -ne 1 -or $agentApphosts[0].Name -ne 'NutManager.Agent.exe')
 {
-    throw 'The Agent Config runtimeconfig must require exactly one Microsoft.NETCore.App 10.x framework.'
+    throw 'The Agent publish must contain exactly one executable, NutManager.Agent.exe.'
 }
-Write-Host '  Agent Config uses only the Agent bundle shared runtimes' -ForegroundColor Green
+Write-Host '  Agent ships a single unified apphost' -ForegroundColor Green
 
 # Some native Avalonia runtime packages carry vendor PDBs independently of the project's DebugType.
 # They are useful to a developer but are not part of the release payload; remove symbols only from

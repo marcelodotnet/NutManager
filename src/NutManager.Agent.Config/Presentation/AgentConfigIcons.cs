@@ -26,6 +26,9 @@ public static class AgentConfigIcons
     /// </summary>
     private static readonly (string Key, MaterialIconKind Kind)[] SharedMap =
     [
+        // The desktop maps this key to the cog as well. The catalog drawing behind it is a set of
+        // sliders, which is a fine glyph for a settings page and the wrong one for a gear button.
+        ("NutIconSettings", MaterialIconKind.CogOutline),
         ("NutIconDiagnostics", MaterialIconKind.Pulse),
         ("NutIconNetwork", MaterialIconKind.Web),
         ("NutIconTls", MaterialIconKind.LockOutline),
@@ -36,7 +39,10 @@ public static class AgentConfigIcons
         ("NutIconRestart", MaterialIconKind.Restart),
         ("NutIconApply", MaterialIconKind.CheckCircleOutline),
         ("NutIconInfo", MaterialIconKind.InformationOutline),
-        ("NutIconWarning", MaterialIconKind.AlertOutline),
+        // A disc rather than a hazard triangle, matching NutIconError beside it. The triangle is
+        // the road-sign shape for danger, and most of what this key marks is a condition to read
+        // rather than a hazard to back away from.
+        ("NutIconWarning", MaterialIconKind.AlertCircleOutline),
         ("NutIconSuccess", MaterialIconKind.CheckCircleOutline),
         ("NutIconError", MaterialIconKind.AlertCircleOutline),
         ("NutIconCopy", MaterialIconKind.ContentCopy),
@@ -65,9 +71,25 @@ public static class AgentConfigIcons
         // the desktop draws inline in prose; a status strip reads better with a solid disc, and giving
         // these keys of their own keeps the shared catalog untouched.
         ("AgentIconStateReady", MaterialIconKind.CheckCircle),
-        ("AgentIconStateAttention", MaterialIconKind.Alert),
+        // Attention has no key of its own: every warning in this window - the status strip, the
+        // apply banner, a settings result, an unusable certificate and the confirmation overlay -
+        // draws NutIconWarning. One glyph for one meaning, and nothing to drift apart.
         ("AgentIconStateError", MaterialIconKind.CloseCircle),
         ("AgentIconStateNotConfigured", MaterialIconKind.MinusCircleOutline),
+        // Settings tab glyphs. Agent and About reuse the shared server and information keys above,
+        // because the catalog already has exactly the right drawing for both; only these two needed
+        // a key of their own.
+        // The desktop has no Home key: its first destination is an overview dashboard, and this
+        // window has no dashboard to go back to - it goes back to the configuration it opened on.
+        ("AgentIconHome", MaterialIconKind.HomeOutline),
+
+        ("AgentIconTabGeneral", MaterialIconKind.TuneVariant),
+        // People, for the panel that decides which of them may administer the agent.
+        ("AgentIconTabUsers", MaterialIconKind.AccountMultipleOutline),
+
+        // Beside a switch that cannot be used, offering the way to the thing that would make it work.
+        ("AgentIconHelp", MaterialIconKind.HelpCircleOutline),
+
         ("AgentIconImport", MaterialIconKind.FileImportOutline),
         ("AgentIconProhibit", MaterialIconKind.CancelOutline),
     ];

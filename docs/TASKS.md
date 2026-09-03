@@ -1702,6 +1702,76 @@ progress and completion experience without a custom bootstrapper application.
 The source, automated tests and release packaging are gated. A clean Windows Sandbox install/upgrade/
 uninstall run remains pending and must not be reported as completed before it is actually observed.
 
+## T42 - Unified Agent host and settings surface
+
+**Status:** IMPLEMENTED - MANUAL WINDOWS SANDBOX ACCEPTANCE PENDING
+
+### Objective
+
+Ship one Agent executable instead of two, and move the window preferences and the one destructive
+HTTPS action off the surfaces where they did not belong.
+
+### Implemented boundaries
+
+- `NutManager.Agent.exe` is both the Windows service and the configuration window, selected by one
+  argument: `--service` or `--config`. `NutManager.Agent.Config` is a library inside it and no longer
+  builds an apphost, a `deps.json` or a runtime contract of its own.
+- The two modes never share a process. The service branch never touches the Avalonia module, and the
+  elevation manifest that moved with the apphost does not affect the service, because the SCM starts
+  a service with the account token rather than through the shell.
+- No arguments resolves by context so an already-registered service keeps starting: without a visible
+  window station the process is a service, otherwise it opens the window. Any other command line is
+  refused with exit code 2. No argument names a path, a command or an executable, and none is passed
+  through to anything.
+- The MSI registers the service with `--service` and points the Start Menu shortcut at the same file
+  with `--config`. The retired executable is removed by the ordinary major-upgrade path; no
+  `RemoveFile` is introduced, so uninstall still removes only what the installer owns.
+- A gear in the header opens a settings surface with four tabs. The three surfaces are one enum value
+  rather than a boolean each, so "both showing" and "none showing" are states the type cannot hold.
+- General holds the startup preference and the HTTPS reset. Appearance holds the theme control and
+  the language selector, both moved out of the header; the selector names each language in its own
+  language rather than by culture code. Agent installs the service and reports service state, start
+  type, account, transports and HTTPS port. About reports version, build, both runtimes, the
+  developer, one fixed project page and the terms.
+- The startup preference is the service start type and nothing else. It is Automatic or Manual, never
+  Disabled, changed through the SCM with `SERVICE_NO_CHANGE` in every other field, and it neither
+  starts nor stops the service. It is not persisted in `agent.json` or in the window preferences: the
+  SCM is the only place it lives, and it is re-read from the machine after every change. Turning it
+  off is confirmed first, because a machine that reboots then comes back without its agent; turning
+  it on is applied as asked. The result is reported as one line that belongs to the panel and to the
+  visit, and is cleared on leaving either.
+- The Agent tab can register `NutManagerAgent` with the SCM. Every value `CreateService` takes is
+  fixed by the implementation - the name, the display name, the type, `SERVICE_AUTO_START`,
+  `SERVICE_ERROR_NORMAL` and the LocalSystem account expressed as the null service start name - and
+  the image path is the running apphost, validated to be a fully qualified `NutManager.Agent.exe`
+  that exists, and quoted. The contract takes no parameters, so no name, path, command line or
+  account can reach it from the window. It registers and stops: the service is created stopped, and
+  starting it stays the operator's explicit action. It does not create the Event Log source, which
+  the MSI owns as a registry key it may remove and which the agent deliberately refuses to create for
+  itself; it installs no runtime; and it touches no HTTPS resource, `agent.json` or NUT. An existing
+  service is never overwritten or repaired - `ERROR_SERVICE_EXISTS` is reported as already installed.
+- The HTTPS listener row is observed rather than composed. A single cancellable loop, owned by the
+  window, opens a TCP connection to the configured endpoint once a second and only when HTTPS is on,
+  the service is running and the configuration is complete; service actions, Apply, Reset and
+  returning to the configuration surface ask for an answer immediately. One probe runs at a time, an
+  unchanged answer redraws nothing, and the periodic path queries no certificate store, firewall, URL
+  reservation, SSL binding, service configuration or configuration file.
+- Diagnostics reports whether `QueryServiceConfig` answered, keeping three outcomes apart: no service
+  to query, values read, or a query that failed with its Win32 code and message. The Agent tab still
+  says "Unknown" when the configuration cannot be read; the reason for it now has somewhere to live.
+- The project page opens through a contract with no URL parameter and a constant in the
+  implementation. No `Run` registry entry, Startup folder item or scheduled task was added, and no
+  generic process launcher exists.
+- No change to the T13/T14 configuration model, the T16 service and UAC boundary, the T20 credential
+  handling, HTTPS resource ownership, the safe-write pipeline, or NUT.
+
+### Remaining acceptance
+
+The source, automated tests and release packaging are gated. A clean Windows Sandbox install of the
+unified host, an upgrade from a version that installed two executables, and the Start Menu shortcut
+and service both starting the correct mode, remain pending and must not be reported as completed
+before they are actually observed.
+
 ## Task execution template
 
 Use this structure when assigning a task to a coding agent:

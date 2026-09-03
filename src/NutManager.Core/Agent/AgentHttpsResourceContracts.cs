@@ -417,3 +417,56 @@ public interface IAgentRuntimeInventory
 {
     Task<AgentRuntimeInventorySnapshot> DescribeAsync(CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// Whether anything is actually accepting connections on the agent's HTTPS endpoint.
+///
+/// Deliberately not a resource state. The SSL binding, the URL reservation and the firewall rule are
+/// configuration — they are written once and stay written — while this is an observation of the
+/// machine at a moment, and it is the only part of the strip that can change while a window sits open.
+/// </summary>
+public enum AgentListenerReachability
+{
+    /// <summary>Nothing has been asked yet, or there is nothing to ask about.</summary>
+    Unknown,
+
+    /// <summary>The endpoint accepted a connection.</summary>
+    Listening,
+
+    /// <summary>The endpoint was asked and did not answer.</summary>
+    Unreachable,
+}
+
+/// <summary>
+/// One listener observation.
+///
+/// The detail is a technical token — a socket error, a timeout — kept for the tooltip and the
+/// diagnostics list. It never carries a stack trace and never reaches the status column itself.
+/// </summary>
+public sealed record AgentListenerObservation(AgentListenerReachability State, string? Detail = null)
+{
+    public static AgentListenerObservation Unknown { get; } = new(AgentListenerReachability.Unknown);
+
+    public static AgentListenerObservation Listening { get; } = new(AgentListenerReachability.Listening);
+
+    public static AgentListenerObservation Unreachable(string? detail = null) =>
+        new(AgentListenerReachability.Unreachable, detail);
+}
+
+/// <summary>
+/// Asks the endpoint whether it is there.
+///
+/// It exists because a running service is not a running listener. HTTP.sys can refuse to open a
+/// prefix — a certificate that no longer has its private key, a reservation another account holds —
+/// and the service stays comfortably in the Running state while nothing is accepting connections.
+/// Composing "listening" out of the configuration rows and the service state produced a green light
+/// for exactly that machine, so the answer is now observed rather than inferred.
+///
+/// The observation is read-only by construction: it opens a connection and closes it. It never sends
+/// a request, never authenticates, and never touches the service, the binding, the firewall or the
+/// configuration file.
+/// </summary>
+public interface IAgentHttpsListenerProbe
+{
+    Task<AgentListenerObservation> ProbeAsync(AgentHttpsBinding binding, CancellationToken cancellationToken);
+}

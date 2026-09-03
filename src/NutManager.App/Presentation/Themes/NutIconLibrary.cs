@@ -82,7 +82,9 @@ public static class NutIconLibrary
         // Feedback
         ("NutIconHelp", MaterialIconKind.HelpCircleOutline),
         ("NutIconInfo", MaterialIconKind.InformationOutline),
-        ("NutIconWarning", MaterialIconKind.AlertOutline),
+        // A disc rather than a hazard triangle, matching NutIconError beside it. The triangle is
+        // the road-sign shape for danger, and what this marks is a condition to read.
+        ("NutIconWarning", MaterialIconKind.AlertCircleOutline),
         ("NutIconError", MaterialIconKind.AlertCircleOutline),
         ("NutIconSuccess", MaterialIconKind.CheckCircleOutline),
         ("NutIconCheck", MaterialIconKind.Check),

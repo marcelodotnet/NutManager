@@ -1,23 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!--
-      Framework-dependent, exactly like the agent it ships beside. The two publish into one directory
-      and are installed by one package, so a self-contained utility would drag a private copy of the
-      runtime into a deployment whose whole point is to share the machine's.
+      A library, not an application.
+
+      This used to build its own NutManager.Agent.Config.exe beside the service host, which meant the
+      product shipped two apphosts for one thing: the same runtime contract declared twice, two files
+      to keep in step in the installer, and two names for an operator to tell apart. The window never
+      needed an executable of its own - it needed an entry point, and the agent host already has one.
+      What lives here is unchanged; only the apphost is gone.
+
+      The application manifest and the icon moved to NutManager.Agent with the apphost, because those
+      are properties of an executable and there is now exactly one.
     -->
+    <OutputType>Library</OutputType>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <ApplicationIcon>..\NutManager.App\Assets\Branding\NutManager.ico</ApplicationIcon>
-    <!--
-      Elevation is declared, not negotiated at runtime. Everything this utility does is machine-level
-      - a local group, an HTTP.sys binding, a firewall rule, a file under ProgramData that only SYSTEM
-      and Administrators may write - so an unelevated instance could do nothing but display failures.
-      Asking once at launch through the manifest is the documented Windows way, and it keeps the
-      process from ever holding a half-privileged state where some operations work and others do not.
-    -->
-    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <ItemGroup>
@@ -73,6 +71,20 @@
       draws, and a test asserts every one of them resolves to the same Material kind the desktop
       uses, which catches the drift that copying a table would otherwise hide.
     -->
+  </ItemGroup>
+
+  <!--
+    The canonical terms of use, linked rather than copied.
+
+    The same two files generate the RTF the installers display. Linking them means the text an
+    operator accepts at install time and the text this window shows are one document; a copy here
+    would be a second set of terms that drifts the first time either is edited.
+  -->
+  <ItemGroup>
+    <AvaloniaResource Include="..\..\docs\TERMS-OF-USE.md"
+                      Link="Assets\Terms\TERMS-OF-USE.md" />
+    <AvaloniaResource Include="..\..\docs\TERMS-OF-USE.en-US.md"
+                      Link="Assets\Terms\TERMS-OF-USE.en-US.md" />
   </ItemGroup>
 
   <ItemGroup>

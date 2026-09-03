@@ -36,9 +36,9 @@ that it has no authority and refuses every control operation.
   installer detects each framework independently and installs the pinned official Microsoft package
   when a compatible 10.x runtime is missing. It does not install the Hosting Bundle and does not use
   IIS.
-- `NutManager Agent Config`, the elevated local administration utility, is included in the Agent
-  installation. It is framework-dependent too and uses `Microsoft.NETCore.App` already supplied by
-  the same prerequisite chain; it does not introduce `Microsoft.WindowsDesktop.App`.
+- `NutManager Agent Config`, the elevated local administration utility, is a mode of the same
+  executable rather than a second one: the Start Menu shortcut runs `NutManager.Agent.exe --config`.
+  It shares the agent runtime prerequisites and does not introduce `Microsoft.WindowsDesktop.App`.
 - Administrative rights on the server for the installation steps below. The agent itself never
   performs any of them.
 
@@ -107,9 +107,9 @@ hold it.
 
 ## Installation
 
-The normal path is `NutManager-Agent-Setup-x.y.z.exe`. It installs the service and
-`NutManager Agent Config`, registers the Event Log source, and registers `NutManagerAgent` as
-LocalSystem with Automatic start type. A fresh installation deliberately leaves the service stopped:
+The normal path is `NutManager-Agent-Setup-x.y.z.exe`. It installs one executable that is both the
+service and the configuration window, registers the Event Log source, and registers `NutManagerAgent`
+as LocalSystem with Automatic start type, started with `--service`. A fresh installation deliberately leaves the service stopped:
 the installer neither creates the authorization group nor guesses which transports and identities an
 administrator intends to enable.
 

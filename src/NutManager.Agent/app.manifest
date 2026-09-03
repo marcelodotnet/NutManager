@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
-  <assemblyIdentity version="1.0.0.0" name="NutManager.Agent.Config" />
+  <assemblyIdentity version="1.0.0.0" name="NutManager.Agent" />
 
   <!--
     Administrator, required, and asked for once.
 
-    Every operation here changes machine state: the NutManager Operators group, the NutManagerAgent
-    service, an HTTP.sys SSL binding and URL reservation, a Windows Firewall rule, and a file under
-    ProgramData whose ACL admits only SYSTEM and Administrators. requireAdministrator puts the consent
-    prompt up front, where the operator can decline before anything is shown, rather than having the
-    application discover halfway through an Apply that it cannot finish what it started.
+    Every operation the configuration window performs changes machine state: the NutManager Operators
+    group, the NutManagerAgent service, an HTTP.sys SSL binding and URL reservation, a Windows Firewall
+    rule, and a file under ProgramData whose ACL admits only SYSTEM and Administrators.
+    requireAdministrator puts the consent prompt up front, where the operator can decline before
+    anything is shown, rather than having the application discover halfway through an Apply that it
+    cannot finish what it started.
+
+    The service mode is unaffected. The SCM starts a service with the configured account's token and
+    does not run it through the shell's elevation path, and LocalSystem already holds more than this
+    manifest asks for.
 
     uiAccess stays false. This utility has no reason to drive another process's user interface.
   -->

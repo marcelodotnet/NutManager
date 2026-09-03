@@ -23,6 +23,7 @@ public sealed class AgentConfigStrings
         ["Window.Title"] = "NutManager Agent Config",
         ["Header.Subtitle"] = "Configure os protocolos e o acesso do NutManager Agent.",
         ["Header.Diagnostics"] = "Diagnóstico",
+        ["Header.Home"] = "Início",
         ["Header.Configuration"] = "Configuração",
 
         ["Transport.Title"] = "Transporte",
@@ -51,8 +52,8 @@ public sealed class AgentConfigStrings
         ["Https.Certificate.Valid"] = "Certificado válido e compatível com o host.",
         ["Https.Disabled.Hint"] = "Ative HTTPS para configurar host, porta e certificado.",
         ["Https.Copy"] = "Copiar",
-        ["Toast.EndpointCopied"] = "Endpoint copiado",
-        ["Toast.EndpointCopyFailed"] = "Não foi possível copiar o Endpoint.",
+        ["Toast.EndpointCopied"] = "Copiado!",
+        ["Toast.EndpointCopyFailed"] = "Não foi possível copiar.",
         ["Https.Invalid.Host"] = "Informe um host ou FQDN explícito.",
         ["Https.Invalid.HostFormat"] = "O host deve ser um nome simples, sem esquema, porta ou caminho.",
         ["Https.Invalid.Wildcard"] = "O host deve ser um nome explícito, nunca um curinga.",
@@ -116,7 +117,7 @@ public sealed class AgentConfigStrings
         ["Https.Import.AccessDenied"] = "Acesso ao repositório LocalMachine\\My negado. Execute como administrador.",
         ["Https.Import.Unavailable"] = "A importação de certificados não está disponível nesta instalação.",
 
-        ["Https.Reset"] = "Resetar",
+        ["Https.Reset"] = "Resetar HTTPS",
         ["Https.Reset.Tooltip"] = "Resetar configuração HTTPS",
         ["Https.Reset.Title"] = "Resetar configuração HTTPS?",
         ["Https.Reset.Message"] =
@@ -171,6 +172,8 @@ public sealed class AgentConfigStrings
         ["Resources.Listener.ServiceStopped"] = "Serviço parado; nada está ouvindo.",
         ["Resources.Listener.ServiceMissing"] = "NutManagerAgent não está instalado.",
         ["Resources.Listener.Incomplete"] = "Configuração de HTTPS incompleta.",
+        ["Resources.Listener.NotAnswering"] = "O endpoint não respondeu; o serviço está em execução, mas nada está ouvindo em {0}.",
+        ["Resources.Listener.Checking"] = "Ainda não houve resposta desta janela; a primeira verificação está em andamento.",
         ["Resources.Foreign"] = "Não pertence ao NutManager",
         ["Resources.Absent"] = "Não configurado",
         ["Resources.Unknown"] = "Não foi possível verificar",
@@ -194,6 +197,7 @@ public sealed class AgentConfigStrings
         ["Resources.State.Listener.Active"] = "Ativo",
         ["Resources.State.Listener.Incomplete"] = "Configuração incompleta",
         ["Resources.State.Listener.Unavailable"] = "Listener indisponível",
+        ["Resources.State.Listener.Checking"] = "Verificando",
 
         // The tooltip. Everything the card no longer shows inline, on one hover.
         ["Resources.Tooltip.State"] = "Estado: {0}",
@@ -217,6 +221,11 @@ public sealed class AgentConfigStrings
         ["Operators.NoMembers"] = "Nenhum membro.",
         ["Operators.Added"] = "{0} foi adicionado ao grupo.",
         ["Operators.AlreadyMember"] = "{0} já é membro do grupo.",
+        ["Operators.Removed"] = "{0} foi removido do grupo.",
+        ["Operators.NotMember"] = "{0} não era membro do grupo.",
+        ["Operators.RemoveFailed"] = "Não foi possível remover o usuário.",
+        ["Operators.NotFound"] = "O usuário informado não foi encontrado.",
+        ["Operators.Failed"] = "Não foi possível adicionar o usuário.",
         ["Operators.Created"] = "Grupo criado.",
         ["Operators.DirectoryTitle"] = "Criar grupo no domínio",
         ["Operators.DirectoryWarning"] = "Este servidor é um controlador de domínio e não possui uma base local independente. O grupo será criado no diretório do domínio e ficará visível em todos os servidores. Deseja continuar?",
@@ -244,6 +253,12 @@ public sealed class AgentConfigStrings
         ["Diagnostics.DotNet"] = ".NET Runtime 10 x64",
         ["Diagnostics.AspNetCore"] = "ASP.NET Core Runtime 10 x64",
         ["Diagnostics.AgentRegistered"] = "NutManagerAgent registrado",
+        ["Diagnostics.ServiceConfiguration"] = "Configuração do serviço",
+        ["Diagnostics.ServiceConfiguration.Failed"] = "Falha ao consultar",
+        ["Diagnostics.ServiceConfiguration.NoDetail"] =
+            "O Gerenciador de Controle de Serviços não informou um motivo.",
+        ["Diagnostics.ServiceInstall"] = "Instalação do serviço",
+        ["Diagnostics.ServiceInstall.Failed"] = "Falha ao registrar",
         ["Diagnostics.Nut"] = "NUT detectado",
         ["Diagnostics.Operators"] = "NutManager Operators",
         ["Diagnostics.EventLog"] = "Origem do log de eventos",
@@ -275,6 +290,108 @@ public sealed class AgentConfigStrings
         ["Message.Discarded"] = "Alterações descartadas.",
         ["Message.NoChanges"] = "Nenhuma alteração pendente.",
         ["Message.RefreshFailed"] = "Não foi possível ler a configuração desta máquina.",
+
+        ["Settings.Title"] = "Configurações",
+        ["Settings.Tab.General"] = "Geral",
+        ["Settings.Tab.Users"] = "Usuários",
+        ["Settings.Tab.Agent"] = "Agent",
+        ["Settings.Tab.About"] = "Sobre",
+
+        ["Service.StartType.Automatic"] = "Automático",
+        ["Service.StartType.Manual"] = "Manual",
+        ["Service.StartType.Disabled"] = "Desativado",
+        ["Service.StartType.Boot"] = "Inicialização do sistema",
+        ["Service.StartType.System"] = "Sistema",
+
+        ["Settings.Startup.Title"] = "Iniciar NutManager Agent com o Windows",
+        ["Settings.Startup.Description"] =
+            "Quando ativado, o Windows inicia o serviço automaticamente no boot. " +
+            "Desativar não interrompe o serviço em execução; apenas passa a exigir início manual.",
+        ["Settings.Startup.NotInstalled"] = "O serviço NutManagerAgent não está instalado nesta máquina.",
+        ["Settings.Startup.Automatic.Done"] = "O serviço passará a iniciar automaticamente com o Windows.",
+        ["Settings.Startup.Manual.Done"] = "O serviço passará a exigir início manual.",
+        ["Settings.Startup.Failed"] = "Não foi possível alterar o modo de início do serviço.",
+        ["Settings.Startup.Install"] = "Instalar serviço",
+        ["Settings.Startup.Manual.Title"] = "Alterar inicialização do serviço?",
+        ["Settings.Startup.Manual.Question"] =
+            "O NutManager Agent deixará de iniciar automaticamente com o Windows. " +
+            "O serviço em execução não será interrompido.",
+        ["Settings.Startup.Manual.Confirm"] = "Alterar para manual",
+
+        ["Settings.Appearance.Section"] = "Aparência e idioma",
+        ["Settings.Appearance.Theme"] = "Tema",
+        ["Settings.Appearance.Theme.Description"] = "Alterna entre o tema claro e o escuro desta janela.",
+        ["Settings.Appearance.Theme.Light"] = "Claro",
+        ["Settings.Appearance.Theme.Dark"] = "Escuro",
+        ["Settings.Appearance.Language"] = "Idioma",
+        ["Settings.Appearance.Language.Description"] = "Idioma da interface desta janela.",
+
+        ["Settings.Agent.Install.Title"] = "Instalação do Agent",
+        ["Settings.Agent.Install.Missing"] =
+            "O NutManager Agent ainda não está instalado como serviço do Windows.",
+        ["Settings.Agent.Install.Working"] = "Instalando...",
+        ["Settings.Agent.Install.GroupFailed"] =
+            "Não foi possível criar o grupo NutManager Operators, então o serviço não foi instalado.",
+        ["Settings.Agent.Install.GroupDirectory"] =
+            "O grupo NutManager Operators precisa ser criado no domínio antes de instalar o serviço.",
+        ["Settings.Agent.Remove.Action"] = "Remover serviço",
+        ["Settings.Agent.Remove.Working"] = "Removendo...",
+        ["Settings.Agent.Remove.Title"] = "Remover NutManager Agent?",
+        ["Settings.Agent.Remove.Question"] =
+            "O serviço NutManager Agent será removido deste computador. " +
+            "Se estiver em execução, ele será interrompido para concluir a remoção. " +
+            "O grupo NutManager Operators e seus usuários não serão removidos.",
+        ["Settings.Agent.Remove.Absent"] = "O serviço já não estava instalado.",
+        ["Settings.Agent.Remove.Pending"] =
+            "O serviço foi marcado para remoção e ainda está registrado. " +
+            "Feche o console de Serviços do Windows e verifique novamente.",
+        ["Settings.Agent.Remove.NotOwned"] =
+            "Existe um serviço com esse nome que não pertence ao NutManager, então nada foi removido.",
+        ["Settings.Agent.Remove.QueryFailed"] =
+            "Não foi possível verificar a configuração do serviço, então nada foi removido.",
+        ["Settings.Agent.Remove.Failed"] = "Não foi possível remover o serviço.",
+        ["Settings.Agent.Install.Already"] =
+            "O NutManager Agent já está instalado como serviço do Windows.",
+        ["Settings.Agent.Install.Action"] = "Instalar serviço",
+        ["Settings.Agent.Install.Failed"] = "Não foi possível instalar o serviço.",
+        ["Settings.Agent.Section"] = "Serviço e comunicação",
+        ["Settings.Permissions.Group"] = "Grupo do Windows: {0}",
+        ["Settings.Permissions.Intro"] =
+            "Usuários autorizados a administrar o NutManager Agent.",
+        ["Settings.Permissions.Members"] = "Usuários autorizados",
+        ["Settings.Permissions.Empty"] = "Nenhum usuário configurado.",
+        ["Settings.Permissions.Select"] = "Selecionar usuário...",
+        ["Settings.Permissions.GroupMissing"] =
+            "O grupo NutManager Operators ainda não existe. Ele é criado ao instalar o Agent.",
+        ["Settings.Permissions.Remove"] = "Remover",
+        ["Settings.Permissions.Remove.Title"] = "Remover usuário?",
+        ["Settings.Permissions.Remove.Question"] =
+            "{0} deixará de ter permissão para administrar o NutManager Agent. " +
+            "A conta do Windows não será removida.",
+        ["Settings.Agent.Service"] = "Serviço",
+        ["Settings.Agent.StartMode"] = "Modo de início",
+        ["Settings.Agent.Account"] = "Conta",
+        ["Settings.Agent.Transports"] = "Transportes",
+        ["Settings.Agent.HttpsPort"] = "Porta HTTPS",
+        ["Settings.Agent.None"] = "Nenhum",
+
+        ["About.Version"] = "Versão",
+        ["About.Build"] = "Build",
+        ["About.DotNet"] = ".NET Runtime",
+        ["About.AspNetCore"] = "ASP.NET Core Runtime",
+        ["About.Developer"] = "Desenvolvedor",
+        ["About.ProjectPage"] = "GitHub",
+        ["About.ProjectPage.Open"] = "Abrir página do projeto",
+        ["About.ProjectPage.Failed"] = "Não foi possível abrir o navegador. Copie o endereço acima.",
+        ["About.Product"] = "NutManager Agent",
+        ["About.Terms"] = "Termos",
+        ["About.Terms.Description"] =
+            "Consulte os termos de uso e as informações legais do NutManager.",
+        ["About.Terms.View"] = "Ver termos",
+        ["About.Unknown"] = "Desconhecido",
+
+        ["Terms.Title"] = "Termos",
+        ["Terms.Back"] = "Voltar",
     };
 
     private static readonly IReadOnlyDictionary<string, string> EnUs = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -282,6 +399,7 @@ public sealed class AgentConfigStrings
         ["Window.Title"] = "NutManager Agent Config",
         ["Header.Subtitle"] = "Configure the NutManager Agent's protocols and access.",
         ["Header.Diagnostics"] = "Diagnostics",
+        ["Header.Home"] = "Home",
         ["Header.Configuration"] = "Configuration",
 
         ["Transport.Title"] = "Transport",
@@ -310,8 +428,8 @@ public sealed class AgentConfigStrings
         ["Https.Certificate.Valid"] = "Certificate is valid and matches the host.",
         ["Https.Disabled.Hint"] = "Enable HTTPS to configure the host, port and certificate.",
         ["Https.Copy"] = "Copy",
-        ["Toast.EndpointCopied"] = "Endpoint copied",
-        ["Toast.EndpointCopyFailed"] = "The Endpoint could not be copied.",
+        ["Toast.EndpointCopied"] = "Copied!",
+        ["Toast.EndpointCopyFailed"] = "Could not copy.",
         ["Https.Invalid.Host"] = "Enter an explicit host or FQDN.",
         ["Https.Invalid.HostFormat"] = "The host must be a bare name, without a scheme, port or path.",
         ["Https.Invalid.Wildcard"] = "The host must be an explicit name, never a wildcard.",
@@ -373,7 +491,7 @@ public sealed class AgentConfigStrings
         ["Https.Import.AccessDenied"] = "Access to the LocalMachine\\My store was denied. Run as administrator.",
         ["Https.Import.Unavailable"] = "Certificate import is not available in this installation.",
 
-        ["Https.Reset"] = "Reset",
+        ["Https.Reset"] = "Reset HTTPS",
         ["Https.Reset.Tooltip"] = "Reset HTTPS configuration",
         ["Https.Reset.Title"] = "Reset the HTTPS configuration?",
         ["Https.Reset.Message"] =
@@ -428,6 +546,8 @@ public sealed class AgentConfigStrings
         ["Resources.Listener.ServiceStopped"] = "Service stopped; nothing is listening.",
         ["Resources.Listener.ServiceMissing"] = "NutManagerAgent is not installed.",
         ["Resources.Listener.Incomplete"] = "HTTPS configuration is incomplete.",
+        ["Resources.Listener.NotAnswering"] = "The endpoint did not answer; the service is running, but nothing is listening on {0}.",
+        ["Resources.Listener.Checking"] = "This window has not had an answer yet; the first check is under way.",
         ["Resources.Foreign"] = "Not owned by NutManager",
         ["Resources.Absent"] = "Not configured",
         ["Resources.Unknown"] = "Could not be verified",
@@ -444,6 +564,7 @@ public sealed class AgentConfigStrings
         ["Resources.State.Listener.Active"] = "Active",
         ["Resources.State.Listener.Incomplete"] = "Incomplete configuration",
         ["Resources.State.Listener.Unavailable"] = "Listener unavailable",
+        ["Resources.State.Listener.Checking"] = "Checking",
 
         ["Resources.Tooltip.State"] = "State: {0}",
         ["Resources.Tooltip.Port"] = "Port: {0}",
@@ -466,6 +587,11 @@ public sealed class AgentConfigStrings
         ["Operators.NoMembers"] = "No members.",
         ["Operators.Added"] = "{0} was added to the group.",
         ["Operators.AlreadyMember"] = "{0} is already a member of the group.",
+        ["Operators.Removed"] = "{0} was removed from the group.",
+        ["Operators.NotMember"] = "{0} was not a member of the group.",
+        ["Operators.RemoveFailed"] = "The user could not be removed.",
+        ["Operators.NotFound"] = "The Windows account could not be found.",
+        ["Operators.Failed"] = "The user could not be added.",
         ["Operators.Created"] = "Group created.",
         ["Operators.DirectoryTitle"] = "Create the group in the domain",
         ["Operators.DirectoryWarning"] = "This server is a domain controller and has no independent local database. The group will be created in the domain directory and will be visible on every server. Continue?",
@@ -493,6 +619,12 @@ public sealed class AgentConfigStrings
         ["Diagnostics.DotNet"] = ".NET Runtime 10 x64",
         ["Diagnostics.AspNetCore"] = "ASP.NET Core Runtime 10 x64",
         ["Diagnostics.AgentRegistered"] = "NutManagerAgent registered",
+        ["Diagnostics.ServiceConfiguration"] = "Service configuration",
+        ["Diagnostics.ServiceConfiguration.Failed"] = "Could not be queried",
+        ["Diagnostics.ServiceConfiguration.NoDetail"] =
+            "The Service Control Manager gave no reason.",
+        ["Diagnostics.ServiceInstall"] = "Service installation",
+        ["Diagnostics.ServiceInstall.Failed"] = "Could not be registered",
         ["Diagnostics.Nut"] = "NUT detected",
         ["Diagnostics.Operators"] = "NutManager Operators",
         ["Diagnostics.EventLog"] = "Event Log source",
@@ -524,6 +656,109 @@ public sealed class AgentConfigStrings
         ["Message.Discarded"] = "Changes discarded.",
         ["Message.NoChanges"] = "No pending changes.",
         ["Message.RefreshFailed"] = "This machine's configuration could not be read.",
+
+        ["Settings.Title"] = "Settings",
+        ["Settings.Tab.General"] = "General",
+        ["Settings.Tab.Users"] = "Users",
+        ["Settings.Tab.Agent"] = "Agent",
+        ["Settings.Tab.About"] = "About",
+
+        ["Service.StartType.Automatic"] = "Automatic",
+        ["Service.StartType.Manual"] = "Manual",
+        ["Service.StartType.Disabled"] = "Disabled",
+        ["Service.StartType.Boot"] = "Boot",
+        ["Service.StartType.System"] = "System",
+
+        ["Settings.Startup.Title"] = "Start NutManager Agent with Windows",
+        ["Settings.Startup.Description"] =
+            "When on, Windows starts the service automatically at boot. " +
+            "Turning it off does not stop the running service; it only means the service must be started by hand.",
+        ["Settings.Startup.NotInstalled"] = "The NutManagerAgent service is not installed on this machine.",
+        ["Settings.Startup.Automatic.Done"] = "The service will now start automatically with Windows.",
+        ["Settings.Startup.Manual.Done"] = "The service will now have to be started by hand.",
+        ["Settings.Startup.Failed"] = "The service start mode could not be changed.",
+        ["Settings.Startup.Install"] = "Install service",
+        ["Settings.Startup.Manual.Title"] = "Change how the service starts?",
+        ["Settings.Startup.Manual.Question"] =
+            "NutManager Agent will no longer start automatically with Windows. " +
+            "The running service will not be stopped.",
+        ["Settings.Startup.Manual.Confirm"] = "Change to manual",
+
+        ["Settings.Appearance.Section"] = "Appearance and language",
+        ["Settings.Appearance.Theme"] = "Theme",
+        ["Settings.Appearance.Theme.Description"] = "Switches this window between the light and dark themes.",
+        ["Settings.Appearance.Theme.Light"] = "Light",
+        ["Settings.Appearance.Theme.Dark"] = "Dark",
+        ["Settings.Appearance.Language"] = "Language",
+        ["Settings.Appearance.Language.Description"] = "The interface language of this window.",
+
+        ["Settings.Agent.Install.Title"] = "Agent installation",
+        ["Settings.Agent.Install.Missing"] =
+            "NutManager Agent is not installed as a Windows service yet.",
+        ["Settings.Agent.Install.Working"] = "Installing...",
+        ["Settings.Agent.Install.GroupFailed"] =
+            "The NutManager Operators group could not be created, so the service was not installed.",
+        ["Settings.Agent.Install.GroupDirectory"] =
+            "The NutManager Operators group has to be created in the directory before the service " +
+            "can be installed.",
+        ["Settings.Agent.Remove.Action"] = "Remove service",
+        ["Settings.Agent.Remove.Working"] = "Removing...",
+        ["Settings.Agent.Remove.Title"] = "Remove NutManager Agent?",
+        ["Settings.Agent.Remove.Question"] =
+            "The NutManager Agent service will be removed from this computer. " +
+            "If it is running, it will be stopped to complete the removal. " +
+            "The NutManager Operators group and its users will not be removed.",
+        ["Settings.Agent.Remove.Absent"] = "The service was already not installed.",
+        ["Settings.Agent.Remove.Pending"] =
+            "The service is marked for removal and is still registered. " +
+            "Close the Windows Services console and check again.",
+        ["Settings.Agent.Remove.NotOwned"] =
+            "A service with that name exists but does not belong to NutManager, so nothing was removed.",
+        ["Settings.Agent.Remove.QueryFailed"] =
+            "The service configuration could not be verified, so nothing was removed.",
+        ["Settings.Agent.Remove.Failed"] = "The service could not be removed.",
+        ["Settings.Agent.Install.Already"] =
+            "NutManager Agent is already installed as a Windows service.",
+        ["Settings.Agent.Install.Action"] = "Install service",
+        ["Settings.Agent.Install.Failed"] = "The service could not be installed.",
+        ["Settings.Agent.Section"] = "Service and communication",
+        ["Settings.Permissions.Group"] = "Windows group: {0}",
+        ["Settings.Permissions.Intro"] =
+            "Users authorized to administer NutManager Agent.",
+        ["Settings.Permissions.Members"] = "Authorized users",
+        ["Settings.Permissions.Empty"] = "No user configured.",
+        ["Settings.Permissions.Select"] = "Select user...",
+        ["Settings.Permissions.GroupMissing"] =
+            "The NutManager Operators group does not exist yet. It is created when the Agent is installed.",
+        ["Settings.Permissions.Remove"] = "Remove",
+        ["Settings.Permissions.Remove.Title"] = "Remove user?",
+        ["Settings.Permissions.Remove.Question"] =
+            "{0} will no longer be allowed to administer NutManager Agent. " +
+            "The Windows account will not be removed.",
+        ["Settings.Agent.Service"] = "Service",
+        ["Settings.Agent.StartMode"] = "Start mode",
+        ["Settings.Agent.Account"] = "Account",
+        ["Settings.Agent.Transports"] = "Transports",
+        ["Settings.Agent.HttpsPort"] = "HTTPS port",
+        ["Settings.Agent.None"] = "None",
+
+        ["About.Version"] = "Version",
+        ["About.Build"] = "Build",
+        ["About.DotNet"] = ".NET Runtime",
+        ["About.AspNetCore"] = "ASP.NET Core Runtime",
+        ["About.Developer"] = "Developer",
+        ["About.ProjectPage"] = "GitHub",
+        ["About.ProjectPage.Open"] = "Open the project page",
+        ["About.ProjectPage.Failed"] = "The browser could not be opened. Copy the address above.",
+        ["About.Product"] = "NutManager Agent",
+        ["About.Terms"] = "Terms",
+        ["About.Terms.Description"] =
+            "Read the NutManager terms of use and legal information.",
+        ["About.Terms.View"] = "View terms",
+        ["About.Unknown"] = "Unknown",
+
+        ["Terms.Title"] = "Terms",
+        ["Terms.Back"] = "Back",
     };
 
     private readonly IReadOnlyDictionary<string, string> _strings;

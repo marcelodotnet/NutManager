@@ -4,6 +4,8 @@ using Avalonia.Media;
 
 using NutManager.Agent.Config.ViewModels;
 
+using NutManager.Agent.Config.Localization;
+
 namespace NutManager.Agent.Config.Presentation;
 
 /// <summary>
@@ -32,6 +34,32 @@ public static class AgentConfigConverters
         }));
 
     /// <summary>
+    /// The glyph beside a settings result.
+    ///
+    /// All three are discs, so the line keeps its shape and only its meaning changes. Warning is the
+    /// same outlined exclamation the confirmation overlay uses: manual start is what the operator
+    /// asked for and it worked, so what the line owes them is the consequence, not a hazard sign.
+    /// </summary>
+    public static readonly IValueConverter SettingsFeedbackIcon =
+        new FuncValueConverter<AgentSettingsFeedback, Geometry?>(kind => Resource<Geometry>(kind switch
+        {
+            AgentSettingsFeedback.Success => "AgentIconStateReady",
+            AgentSettingsFeedback.Warning => "NutIconWarning",
+            AgentSettingsFeedback.Error => "AgentIconStateError",
+            _ => "AgentIconStateNotConfigured",
+        }));
+
+    /// <summary>The same three, in the palette the rest of the product already uses for them.</summary>
+    public static readonly IValueConverter SettingsFeedbackBrush =
+        new FuncValueConverter<AgentSettingsFeedback, IBrush?>(kind => Resource<IBrush>(kind switch
+        {
+            AgentSettingsFeedback.Success => "NutHealthyBrush",
+            AgentSettingsFeedback.Warning => "NutWarningBrush",
+            AgentSettingsFeedback.Error => "NutCriticalBrush",
+            _ => "NutTextSecondaryBrush",
+        }));
+
+    /// <summary>
     /// An apply result to its colour. Failure is critical; anything else is ordinary secondary text —
     /// a successful save should not shout.
     /// </summary>
@@ -39,7 +67,7 @@ public static class AgentConfigConverters
         new FuncValueConverter<bool, IBrush?>(failed =>
             Resource<IBrush>(failed ? "NutCriticalBrush" : "NutTextSecondaryBrush"));
 
-    /// <summary>The tick or the warning triangle beside the certificate verdict.</summary>
+    /// <summary>The tick or the warning disc beside the certificate verdict.</summary>
     public static readonly IValueConverter VerdictIcon =
         new FuncValueConverter<bool, Geometry?>(valid =>
             Resource<Geometry>(valid ? "NutIconSuccess" : "NutIconWarning"));
@@ -63,7 +91,7 @@ public static class AgentConfigConverters
     /// </summary>
     public static readonly IValueConverter CandidateIcon =
         new FuncValueConverter<bool, Geometry?>(usable =>
-            Resource<Geometry>(usable ? "AgentIconStateReady" : "AgentIconStateAttention"));
+            Resource<Geometry>(usable ? "AgentIconStateReady" : "NutIconWarning"));
 
     public static readonly IValueConverter CandidateBrush =
         new FuncValueConverter<bool, IBrush?>(usable =>
@@ -79,7 +107,7 @@ public static class AgentConfigConverters
         new FuncValueConverter<AgentApplyResultKind, Geometry?>(kind => Resource<Geometry>(kind switch
         {
             AgentApplyResultKind.Success => "AgentIconStateReady",
-            AgentApplyResultKind.Warning => "AgentIconStateAttention",
+            AgentApplyResultKind.Warning => "NutIconWarning",
             AgentApplyResultKind.Error => "AgentIconStateError",
             _ => "NutIconInfo",
         }));
@@ -107,6 +135,24 @@ public static class AgentConfigConverters
     public static readonly IValueConverter ToastBrush =
         new FuncValueConverter<AgentToastKind, IBrush?>(kind => Resource<IBrush>(
             kind is AgentToastKind.Success ? "NutHealthyBrush" : "NutCriticalBrush"));
+
+    /// <summary>
+    /// One converter per block kind, so the terms page can pick a style per line without a selector.
+    ///
+    /// A DataTemplateSelector would be the other way to do this, and it would mean a class per kind
+    /// plus a resource entry each, to choose between four TextBlocks that differ by a font size.
+    /// These read the discriminator the parser already produced.
+    /// </summary>
+    public static readonly IValueConverter IsTermsTitle = Kind(AgentTermsBlockKind.Title);
+
+    public static readonly IValueConverter IsTermsHeading = Kind(AgentTermsBlockKind.Heading);
+
+    public static readonly IValueConverter IsTermsParagraph = Kind(AgentTermsBlockKind.Paragraph);
+
+    public static readonly IValueConverter IsTermsBullet = Kind(AgentTermsBlockKind.Bullet);
+
+    private static IValueConverter Kind(AgentTermsBlockKind kind) =>
+        new FuncValueConverter<AgentTermsBlockKind, bool>(value => value == kind);
 
     /// <summary>
     /// Looks the key up in the application's merged dictionaries, which is where the linked NutManager

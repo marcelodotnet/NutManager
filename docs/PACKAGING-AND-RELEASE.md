@@ -327,9 +327,16 @@ demonstrated. Removing profiles and credentials is done from the application.
 
 ### Agent
 
-Installs the framework-dependent `NutManager.Agent.exe` and `NutManager.Agent.Config.exe` to
-`C:\Program Files\NutManager Agent`, adds the **NutManager Agent Config** Start Menu shortcut, and
-registers `NutManagerAgent` as LocalSystem with Automatic start type. Registers the
+Installs the framework-dependent `NutManager.Agent.exe` to `C:\Program Files\NutManager Agent`,
+adds the **NutManager Agent Config** Start Menu shortcut, and registers `NutManagerAgent` as
+LocalSystem with Automatic start type.
+
+There is one executable, and it runs in one of two modes. The service is registered with
+`--service`; the Start Menu shortcut launches the same file with `--config`, which opens the
+configuration window. No arguments resolves by context, so a service registered by an earlier
+version keeps starting correctly; any other command line is refused with exit code 2. Earlier
+versions installed a second executable, `NutManager.Agent.Config.exe`, which a major upgrade removes
+along with the component that owned it. Registers the
 `NutManager Agent` Event Log source. Creates `%ProgramData%\NutManager\Agent` and then leaves it alone.
 
 A fresh installation does **not** start the Agent. Upgrade/uninstall may stop `NutManagerAgent` when
