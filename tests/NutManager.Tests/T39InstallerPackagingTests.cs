@@ -600,6 +600,21 @@ public sealed class T39InstallerPackagingTests
         Assert.Equal(2, Regex.Matches(agent, "Permanent=\"yes\"").Count);
     }
 
+    [Fact]
+    public void SharedRuntimeBundlesParticipateInBurnButAreNeverRepairedWithTheAgent()
+    {
+        var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
+        var runtimePackages = Regex.Matches(agent, "<ExePackage .*?</ExePackage>", RegexOptions.Singleline);
+
+        Assert.Equal(2, runtimePackages.Count);
+        foreach (Match runtimePackage in runtimePackages)
+        {
+            Assert.Contains("Protocol=\"burn\"", runtimePackage.Value, StringComparison.Ordinal);
+            Assert.DoesNotContain("RepairArguments=", runtimePackage.Value, StringComparison.Ordinal);
+            Assert.Contains("Permanent=\"yes\"", runtimePackage.Value, StringComparison.Ordinal);
+        }
+    }
+
     [Theory]
     [InlineData(true, true, false, false)]
     [InlineData(false, false, true, true)]
@@ -611,8 +626,12 @@ public sealed class T39InstallerPackagingTests
         bool expectDotNetInstall,
         bool expectAspNetInstall)
     {
-        Assert.Equal(expectDotNetInstall, !dotNetPresent);
-        Assert.Equal(expectAspNetInstall, !aspNetPresent);
+        var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
+        var dotNetPackage = Package(agent, "DotNetRuntime");
+        var aspNetPackage = Package(agent, "AspNetCoreRuntime");
+
+        Assert.Equal(expectDotNetInstall, RuntimeNeedsInstall(dotNetPackage, dotNetPresent ? "10.0.11" : null));
+        Assert.Equal(expectAspNetInstall, RuntimeNeedsInstall(aspNetPackage, aspNetPresent ? "10.0.11" : null));
 
         // Both options default to yes, so every missing prerequisite is planned for /quiet and the
         // Agent is allowed only after both independent requirements are present or planned.
@@ -630,11 +649,9 @@ public sealed class T39InstallerPackagingTests
     [InlineData("10.1.0")]
     public void CompatibleServicedTenXVersionsDoNotTriggerDownloads(string installedVersion)
     {
-        Assert.True(Version.Parse(installedVersion) >= new Version(10, 0, 0));
-
         var agent = WithoutComments(Read("installer/Agent/Bundle.wxs"));
-        Assert.Contains("DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0", agent, StringComparison.Ordinal);
-        Assert.Contains("AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0", agent, StringComparison.Ordinal);
+        Assert.False(RuntimeNeedsInstall(Package(agent, "DotNetRuntime"), installedVersion));
+        Assert.False(RuntimeNeedsInstall(Package(agent, "AspNetCoreRuntime"), installedVersion));
     }
 
     [Fact]
@@ -705,6 +722,23 @@ public sealed class T39InstallerPackagingTests
         Regex.Match(
             Read("installer/Common/Product.wxi"),
             $@"<\?define\s+{Regex.Escape(name)}\s*=\s*""([^""]*)""\s*\?>").Groups[1].Value;
+
+    private static string Package(string bundle, string id) =>
+        Regex.Match(
+            bundle,
+            $@"<ExePackage\s+Id=""{Regex.Escape(id)}"".*?</ExePackage>",
+            RegexOptions.Singleline).Value;
+
+    private static bool RuntimeNeedsInstall(string package, string? installedVersion)
+    {
+        Assert.NotEmpty(package);
+        var condition = Regex.Match(package, "DetectCondition=\"([^\"]+)\"").Groups[1].Value;
+        var thresholdMatch = Regex.Match(condition, @"&gt;=\s+v\$\(([^)]+)\)\.0\.0");
+        Assert.True(thresholdMatch.Success, $"Unexpected runtime detect condition: {condition}");
+
+        var minimum = new Version(int.Parse(Define(thresholdMatch.Groups[1].Value)), 0, 0);
+        return installedVersion is null || Version.Parse(installedVersion) < minimum;
+    }
 
     private static string StringValue(string localization, string id) =>
         Regex.Match(localization, $@"<String\s+Id=""{Regex.Escape(id)}""\s+Value=""([^""]*)""").Groups[1].Value;

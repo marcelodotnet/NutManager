@@ -156,6 +156,13 @@
         Vital="yes", with no retry and no fallback mirror. If the download or the install fails, the
         bundle fails and says so; it does not proceed to lay down an Agent that cannot start.
 
+        The Microsoft installers are themselves Burn bundles, so Protocol="burn" lets the parent
+        coordinate their progress and restart state instead of treating them as opaque executables.
+
+        There is deliberately no RepairArguments. These are shared machine prerequisites, not Agent
+        payloads: repairing NutManager must repair only the Agent MSI. Re-running either Microsoft
+        installer during bundle maintenance needlessly revalidates and repairs every runtime MSI.
+
         InstallCondition is the operator's choice; DetectCondition is the machine's state. Both must
         want it before anything is downloaded.
       -->
@@ -165,10 +172,10 @@
                   PerMachine="yes"
                   Permanent="yes"
                   Vital="yes"
+                  Protocol="burn"
                   DetectCondition="DotNetRuntimeVersion &gt;= v$(DotNetMajorVersion).0.0"
                   InstallCondition="InstallDotNetRuntime = 1"
                   InstallArguments="/install /quiet /norestart"
-                  RepairArguments="/repair /quiet /norestart"
                   UninstallArguments="/uninstall /quiet /norestart">
         <ExePackagePayload Name="$(DotNetRuntimeFileName)"
                            ProductName="$(DotNetRuntimeDisplayName)"
@@ -185,10 +192,10 @@
                   PerMachine="yes"
                   Permanent="yes"
                   Vital="yes"
+                  Protocol="burn"
                   DetectCondition="AspNetCoreRuntimeVersion &gt;= v$(AspNetCoreMajorVersion).0.0"
                   InstallCondition="InstallAspNetRuntime = 1"
                   InstallArguments="/install /quiet /norestart"
-                  RepairArguments="/repair /quiet /norestart"
                   UninstallArguments="/uninstall /quiet /norestart">
         <ExePackagePayload Name="$(AspNetCoreRuntimeFileName)"
                            ProductName="$(AspNetCoreRuntimeDisplayName)"

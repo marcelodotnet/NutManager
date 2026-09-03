@@ -100,7 +100,12 @@ foreach ($required in @($brandingLogo, $themeLocalizationDesktop, $themeLocaliza
 }
 
 # A stale artifacts directory is how a release ends up shipping a file from the previous version.
-if (Test-Path -LiteralPath $artifacts) { Remove-Item -LiteralPath $artifacts -Recurse -Force }
+if (Test-Path -LiteralPath $artifacts)
+{
+    Get-ChildItem -LiteralPath $artifacts -Force |
+        Where-Object Name -ne 'diagnostics' |
+        Remove-Item -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $artifacts, $staging | Out-Null
 
 # ---------------------------------------------------------------- build and test
